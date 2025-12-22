@@ -252,6 +252,7 @@
             <div id="resultContainer" class="result-image-container hidden">
                 <img id="resultImage" alt="Resized Image">
                 <br><br>
+                <div id="imageName" style="color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 0.9rem;"></div>
                 <a id="downloadLink" class="btn" style="display:inline-block; text-decoration: none; width: auto;" download="resized-nanobanana.png">Download</a>
             </div>
             
@@ -279,6 +280,7 @@
     const resultImage = document.getElementById('resultImage');
     const placeholderText = document.getElementById('placeholderText');
     const downloadLink = document.getElementById('downloadLink');
+    const imageName = document.getElementById('imageName');
 
     let currentFile = null;
 
@@ -371,11 +373,21 @@
                 throw new Error(errData.detail || 'Failed to resize');
             }
 
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
+            const data = await response.json();
+            console.log('Response data:', data);
+            const imageUrl = data.url;
+            const imageNameValue = data.name;
             
-            resultImage.src = url;
-            downloadLink.href = url;
+            if (!imageUrl || !imageNameValue) {
+                console.error('Missing url or name in response:', data);
+                throw new Error('Invalid response: missing url or name');
+            }
+            
+            console.log('Setting image URL:', imageUrl);
+            resultImage.src = imageUrl;
+            downloadLink.href = imageUrl;
+            downloadLink.download = imageNameValue;
+            imageName.textContent = `Image: ${imageNameValue}`;
             resultContainer.classList.remove('hidden');
             
         } catch (error) {
