@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nano Banana Resizer</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --primary: #FFD700; /* Banana Yellow */
+            --primary-hover: #E6C200;
+            --text-main: #ffffff;
+            --text-secondary: #b0b0b0;
+            --border: #333;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            color: var(--primary);
+            font-weight: 800;
+            font-size: 2.5rem;
+            margin: 0;
+            letter-spacing: -1px;
+        }
+
+        p.subtitle {
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+        }
+
+        @media (min-width: 768px) {
+            .workspace {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .upload-section, .result-section {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 400px;
+        }
+
+        /* Upload Area */
+        .drop-zone {
+            width: 100%;
+            height: 250px;
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 1.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--primary);
+            background: rgba(255, 215, 0, 0.05);
+        }
+
+        .drop-zone input {
+            display: none;
+        }
+
+        .drop-zone-text {
+            color: var(--text-secondary);
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .drop-zone img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+            position: absolute;
+            z-index: 10;
+        }
+
+        /* Controls */
+        .controls {
+            width: 100%;
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        select, input[type="text"] {
+            background: #2a2a2a;
+            border: 1px solid var(--border);
+            color: white;
+            padding: 0.8rem 1rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        select:focus, input[type="text"]:focus {
+            border-color: var(--primary);
+        }
+
+        .btn {
+            background: var(--primary);
+            color: #000;
+            border: none;
+            padding: 0.8rem 2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.1s, background 0.2s;
+            width: 100%;
+        }
+
+        .btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Result Area */
+        .result-image-container {
+            width: 100%;
+            text-align: center;
+        }
+
+        .result-image-container img {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        .loader {
+            display: none;
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: var(--primary);
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+        
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden { display: none; }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Nano Banana Resizer</h1>
+        <p class="subtitle">Intelligent Aspect Ratio Adaptation powered by Gemini 3 Pro</p>
+    </header>
+
+    <div class="workspace">
+        
+        <!-- Input Section -->
+        <div class="upload-section">
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-text" id="dropZoneText">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 10px; opacity: 0.7;">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <br>Drag & Drop or Click to Upload
+                </div>
+                <!-- Image preview -->
+                <img id="previewImage" class="hidden" alt="Preview">
+                <input type="file" id="fileInput" accept="image/*">
+            </div>
+
+            <div class="controls">
+                <select id="aspectRatioSelect">
+                    <option value="16:9">16:9 (Landscape)</option>
+                    <option value="9:16">9:16 (Story/reel)</option>
+                    <option value="1:1">1:1 (Square)</option>
+                    <option value="4:3">4:3 (Standard)</option>
+                    <option value="3:4">3:4 (Portrait)</option>
+                    <option value="21:9">21:9 (Ultrawide)</option>
+                    <option value="Custom">Custom...</option>
+                </select>
+                <input type="text" id="customAspectRatio" placeholder="e.g. 2:1" class="hidden">
+            </div>
+
+            <button class="btn" id="resizeBtn" disabled>Resize Image</button>
+        </div>
+
+        <!-- Result Section -->
+        <div class="result-section">
+            <h2 style="margin-top: 0; color: var(--text-secondary); font-size: 1.2rem;">Result</h2>
+            
+            <div id="loader" class="loader hidden"></div>
+            <div id="processingText" class="hidden" style="color: var(--text-secondary); margin-bottom: 1rem;">Thinking...</div>
+            
+            <div id="resultContainer" class="result-image-container hidden">
+                <img id="resultImage" alt="Resized Image">
+                <br><br>
+                <a id="downloadLink" class="btn" style="display:inline-block; text-decoration: none; width: auto;" download="resized-nanobanana.png">Download</a>
+            </div>
+            
+            <div id="placeholderText" style="color: #444; margin-top: auto; margin-bottom: auto;">
+                Result will appear here
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const previewImage = document.getElementById('previewImage');
+    const dropZoneText = document.getElementById('dropZoneText');
+    const resizeBtn = document.getElementById('resizeBtn');
+    const aspectRatioSelect = document.getElementById('aspectRatioSelect');
+    const customAspectRatio = document.getElementById('customAspectRatio');
+    
+    // Result elements
+    const loader = document.getElementById('loader');
+    const processingText = document.getElementById('processingText');
+    const resultContainer = document.getElementById('resultContainer');
+    const resultImage = document.getElementById('resultImage');
+    const placeholderText = document.getElementById('placeholderText');
+    const downloadLink = document.getElementById('downloadLink');
+
+    let currentFile = null;
+
+    // Handle Drag & Drop
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            handleFile(e.dataTransfer.files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) {
+            handleFile(fileInput.files[0]);
+        }
+    });
+
+    function handleFile(file) {
+        if (!file.type.startsWith('image/')) {
+            alert('Please upload an image file.');
+            return;
+        }
+        currentFile = file;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            previewImage.src = e.target.result;
+            previewImage.classList.remove('hidden');
+            dropZoneText.classList.add('hidden');
+            resizeBtn.disabled = false;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // Toggle custom input
+    aspectRatioSelect.addEventListener('change', () => {
+        if (aspectRatioSelect.value === 'Custom') {
+            customAspectRatio.classList.remove('hidden');
+            customAspectRatio.focus();
+        } else {
+            customAspectRatio.classList.add('hidden');
+        }
+    });
+
+    // Resize Action
+    resizeBtn.addEventListener('click', async () => {
+        if (!currentFile) return;
+
+        let ratio = aspectRatioSelect.value;
+        if (ratio === 'Custom') {
+            ratio = customAspectRatio.value.trim();
+            if (!ratio) {
+                alert('Please enter a custom aspect ratio');
+                return;
+            }
+        }
+
+        // UI Loading State
+        resizeBtn.disabled = true;
+        resizeBtn.textContent = 'Processing...';
+        loader.classList.remove('hidden'); // Fix: remove hidden class to show
+        loader.style.display = 'inline-block'; // Ensure display is set
+        processingText.classList.remove('hidden');
+        resultContainer.classList.add('hidden');
+        placeholderText.classList.add('hidden');
+
+        const formData = new FormData();
+        formData.append('file', currentFile);
+        formData.append('aspect_ratio', ratio);
+
+        try {
+            const response = await fetch('/resize', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || 'Failed to resize');
+            }
+
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            
+            resultImage.src = url;
+            downloadLink.href = url;
+            resultContainer.classList.remove('hidden');
+            
+        } catch (error) {
+            alert('Error: ' + error.message);
+            placeholderText.classList.remove('hidden');
+        } finally {
+            // Reset UI
+            resizeBtn.disabled = false;
+            resizeBtn.textContent = 'Resize Image';
+            loader.style.display = 'none';
+            loader.classList.add('hidden');
+            processingText.classList.add('hidden');
+        }
+    });
+</script>
+
+</body>
+</html>
