@@ -74,10 +74,12 @@ except Exception as e:
 @app.post("/resize", response_class=JSONResponse)
 async def resize_image(
     file: UploadFile = File(...),
-    aspect_ratio: str = Form(..., description="Target aspect ratio, e.g., '16:9', '1:1', '4:3'")
+    aspect_ratio: str = Form(..., description="Target aspect ratio, e.g., '16:9', '1:1', '4:3'"),
+    prompt: str = Form(None, description="Optional custom prompt for image editing. If not provided, uses default resizing prompt.")
 ):
     """
-    Endpoint to resize an image intelligently using Gemini 3 Pro (Nano Banana Pro).
+    Endpoint to resize or edit an image intelligently using Gemini 3 Pro (Nano Banana Pro).
+    If a custom prompt is provided, it will be used for editing; otherwise, defaults to resizing with the specified aspect ratio.
     """
     global client
     if not client:
@@ -95,12 +97,13 @@ async def resize_image(
         pil_image = Image.open(io.BytesIO(image_bytes))
         
         # 2. Construct the structured prompt
-        # User's example template:
-        # "recreate this image in 16:9 ratio format and keep all the the information of image intact . you can rearrange the elements to ensure it is perfect."
-        prompt = (
-            f"recreate this image in {aspect_ratio} ratio format and keep all the the information of image intact . "
-            "you can rearrange the elements to ensure it is perfect."
-        )
+        if prompt:
+            use_prompt = prompt
+        else:
+            use_prompt = (
+                f"recreate this image in {aspect_ratio} ratio format and keep all the the information of image intact . "
+                "you can rearrange the elements to ensure it is perfect."
+            )
         
         # 3. Call the AI Service
         # Using 'gemini-3-pro-image-preview' as per documentation for Nano Banana Pro equivalent features
@@ -109,7 +112,7 @@ async def resize_image(
 
         response = client.models.generate_content(
             model=model_name,
-            contents=[prompt, pil_image],
+            contents=[use_prompt, pil_image],
             config=types.GenerateContentConfig(
                 response_modalities=["Image"],
                 image_config=types.ImageConfig(

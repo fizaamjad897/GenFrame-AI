@@ -237,9 +237,10 @@
                     <option value="Custom">Custom...</option>
                 </select>
                 <input type="text" id="customAspectRatio" placeholder="e.g. 2:1" class="hidden">
+                <textarea id="promptInput" placeholder="Optional: Enter custom prompt for image editing (leave empty for default resizing)" rows="3" style="width: 100%; margin-top: 10px; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--card-bg); color: var(--text-main); resize: vertical;"></textarea>
             </div>
 
-            <button class="btn" id="resizeBtn" disabled>Resize Image</button>
+            <button class="btn" id="resizeBtn" disabled>Process Image</button>
         </div>
 
         <!-- Result Section -->
@@ -272,6 +273,7 @@
     const resizeBtn = document.getElementById('resizeBtn');
     const aspectRatioSelect = document.getElementById('aspectRatioSelect');
     const customAspectRatio = document.getElementById('customAspectRatio');
+    const promptInput = document.getElementById('promptInput');
     
     // Result elements
     const loader = document.getElementById('loader');
@@ -349,6 +351,8 @@
             }
         }
 
+        const prompt = promptInput.value.trim();
+
         // UI Loading State
         resizeBtn.disabled = true;
         resizeBtn.textContent = 'Processing...';
@@ -361,6 +365,9 @@
         const formData = new FormData();
         formData.append('file', currentFile);
         formData.append('aspect_ratio', ratio);
+        if (prompt) {
+            formData.append('prompt', prompt);
+        }
 
         try {
             const response = await fetch('/resize', {
@@ -396,7 +403,7 @@
         } finally {
             // Reset UI
             resizeBtn.disabled = false;
-            resizeBtn.textContent = 'Resize Image';
+            resizeBtn.textContent = 'Process Image';
             loader.style.display = 'none';
             loader.classList.add('hidden');
             processingText.classList.add('hidden');

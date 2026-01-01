@@ -1,17 +1,20 @@
 # Nano Banana Resizer (Gemini Powered)
 
-This is a FastAPI application that uses Google's **Gemini 3 Pro** (specifically the `gemini-3-pro-image-preview` model) to intelligently resize images to a target aspect ratio. Unlike standard cropping, this tool uses generative AI to rearrange elements and extend backgrounds, keeping critical information intact.
+This is a FastAPI application that uses Google's **Gemini 3 Pro** (specifically the `gemini-3-pro-image-preview` model) to intelligently resize and edit images. Unlike standard cropping, this tool uses generative AI to rearrange elements, extend backgrounds, and apply custom edits while keeping critical information intact.
 
 ## Features
 
 - **Intelligent Resizing**: Rearranges and extends image content to fit new aspect ratios (e.g., converting a landscape photo to a portrait story) without losing key subjects.
+- **Custom Prompt Editing**: Apply any image transformation using natural language prompts (e.g., "make it black and white", "add a sunset background").
 - **Modern UI**: Dark-themed, drag-and-drop web interface for easy usage.
 - **API Support**: Provides a REST API endpoint for integration.
+- **Cloud Storage**: Automatically uploads processed images to Digital Ocean Spaces.
 
 ## Prerequisites
 
 - Python 3.9+
 - A Google Cloud API Key with access to Generative AI (Gemini).
+- Digital Ocean Spaces account for image storage.
 
 ## Setup
 
@@ -33,9 +36,13 @@ This is a FastAPI application that uses Google's **Gemini 3 Pro** (specifically 
 
 4.  **Configure Environment**:
     - Create a `.env` file in the root directory.
-    - Add your Google API Key:
+    - Add your API keys and configuration:
       ```env
-      GOOGLE_API_KEY=your_actual_api_key_here
+      GOOGLE_API_KEY=your_actual_google_api_key_here
+      ACCESS_KEY_ID=your_digital_ocean_access_key
+      SECRET_KEY=your_digital_ocean_secret_key
+      ENDPOINT=https://your-region.digitaloceanspaces.com
+      SPACENAME=your_space_name
       ```
 
 ## Running the App
@@ -53,10 +60,75 @@ The application will be available at: **http://localhost:8000**
 1.  Open the web interface in your browser.
 2.  Drag and drop an image.
 3.  Select a target aspect ratio (e.g., 16:9, 9:16) or enter a custom one.
-4.  Click **Resize Image**.
-5.  Wait for the AI to process and download the result.
+4.  **Optional**: Enter a custom prompt for advanced editing (e.g., "make it black and white", "add cartoon effects").
+5.  Click **Process Image**.
+6.  Wait for the AI to process and download the result.
+
+## API Documentation
+
+### Endpoint: `POST /resize`
+
+Processes an image using Gemini AI for resizing and/or custom editing.
+
+#### Request Body (Form Data)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | File | Yes | Image file to process (supported formats: PNG, JPG, JPEG, etc.) |
+| `aspect_ratio` | String | Yes | Target aspect ratio (e.g., "16:9", "1:1", "4:3") |
+| `prompt` | String | No | Custom prompt for image editing. If not provided, uses default resizing prompt |
+
+#### Response
+
+**Success (200):**
+```json
+{
+  "url": "https://your-space.region.digitaloceanspaces.com/resized_images/20260101_120000_abc123.png",
+  "name": "20260101_120000_abc123.png"
+}
+```
+
+**Error (500):**
+```json
+{
+  "detail": "Error message describing what went wrong"
+}
+```
+
+#### Example Usage
+
+**Using curl:**
+```bash
+curl -X POST "http://localhost:8000/resize" \
+  -F "file=@image.jpg" \
+  -F "aspect_ratio=16:9" \
+  -F "prompt=make this image look like a painting"
+```
+
+**Using Python:**
+```python
+import requests
+
+with open('image.jpg', 'rb') as f:
+    files = {'file': f}
+    data = {
+        'aspect_ratio': '16:9',
+        'prompt': 'add a sunset background'  # optional
+    }
+    response = requests.post('http://localhost:8000/resize', files=files, data=data)
+    print(response.json())
+```
+
+#### Notes
+
+- Images are automatically uploaded to Digital Ocean Spaces and publicly accessible via the returned URL
+- The `prompt` field allows for flexible image editing beyond just resizing
+- If no `prompt` is provided, the system uses a default prompt that focuses on intelligent resizing while preserving image content
+- Processing time depends on image size and complexity (typically 10-30 seconds)
 
 ## Tech Stack
 
 - **Backend**: FastAPI, Google GenAI SDK (`google-genai`)
 - **Frontend**: HTML5, CSS3, JavaScript (Vanilla)
+- **Storage**: Digital Ocean Spaces (S3-compatible)
+- **AI Model**: Google Gemini 3 Pro (`gemini-3-pro-image-preview`)
