@@ -1,13 +1,15 @@
-# Nano Banana Resizer (Gemini Powered)
+# Visual Engine Backend - Authentication & Image Processing API
 
-This is a FastAPI application that uses Google's **Gemini 3 Pro** (specifically the `gemini-3-pro-image-preview` model) to intelligently resize and edit images. Unlike standard cropping, this tool uses generative AI to rearrange elements, extend backgrounds, and apply custom edits while keeping critical information intact.
+This is the backend service for Visual Engine, a FastAPI-based application with JWT authentication, image processing via Google Gemini AI, and usage tracking with MongoDB.
 
 ## Features
 
-- **Intelligent Resizing**: Rearranges and extends image content to fit new aspect ratios (e.g., converting a landscape photo to a portrait story) without losing key subjects.
-- **Custom Prompt Editing**: Apply any image transformation using natural language prompts (e.g., "make it black and white", "add a sunset background").
-- **Modern UI**: Dark-themed, drag-and-drop web interface for easy usage.
-- **API Support**: Provides a REST API endpoint for integration.
+- **User Authentication**: JWT-based auth with registration, login, and password reset
+- **Image Processing**: AI-powered image resizing using Google Gemini 3 Pro
+- **Usage Tracking**: Track user API hits with plan-based limits (Starter: 50 demo hits, then 1,000 monthly)
+- **MongoDB Integration**: Persistent user data and usage tracking
+- **CORS Support**: Built-in CORS middleware for frontend integration
+- **Email Password Reset**: Automated password reset emails with secure tokens
 - **Cloud Storage**: Automatically uploads processed images to Digital Ocean Spaces.
 
 ## Prerequisites
