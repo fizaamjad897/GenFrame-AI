@@ -68,7 +68,7 @@ The application will be available at: **http://localhost:8000**
 
 ## API Documentation
 
-### Endpoint: `POST /resize`
+### Endpoint: `POST /api/resize`
 
 Processes an image using Gemini AI for resizing and/or custom editing.
 

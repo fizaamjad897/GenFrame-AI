@@ -202,7 +202,7 @@ async def generate_bill(current_user = Depends(get_current_user)):
     return bill
 
 
-@app.post("/resize", response_class=JSONResponse)
+@app.post("/api/resize", response_class=JSONResponse)
 async def resize_image(
     file: UploadFile = File(...),
     aspect_ratio: str = Form(..., description="Target aspect ratio, e.g., '16:9', '1:1', '4:3'"),

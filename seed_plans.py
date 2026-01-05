@@ -28,7 +28,7 @@ def seed_plans():
             {
                 "name": "Starter",
                 "price": 159.0,
-                "includedUnits": 50,
+                "includedUnits": 1000,
                 "costPerUnit": 0.795,
                 "bestFor": "Startups & Initial Testing",
                 "features": [
