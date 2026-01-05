@@ -32,7 +32,7 @@ def seed_plans():
                 "costPerUnit": 0.795,
                 "bestFor": "Startups & Initial Testing",
                 "features": [
-                    "50 Image Units",
+                    "1,000 Image Units",
                     "ADA Compliance Layer",
                     "Visual Accessibility Scan",
                     "Standard AI Resizing",

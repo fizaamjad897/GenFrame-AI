@@ -157,7 +157,7 @@ async def reset_password(request: ResetPasswordRequest):
     
     return {"message": "Password reset successfully"}
 
-@app.get("/api/users/me", response_model=UserResponse)
+@app.get("/users/me", response_model=UserResponse)
 async def get_current_user_info(current_user = Depends(get_current_user)):
     """Get current user info"""
     return user_doc_to_response(current_user)
