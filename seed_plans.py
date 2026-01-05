@@ -28,11 +28,11 @@ def seed_plans():
             {
                 "name": "Starter",
                 "price": 159.0,
-                "includedUnits": 200,
+                "includedUnits": 50,
                 "costPerUnit": 0.795,
                 "bestFor": "Startups & Initial Testing",
                 "features": [
-                    "200 Image Units",
+                    "50 Image Units",
                     "ADA Compliance Layer",
                     "Visual Accessibility Scan",
                     "Standard AI Resizing",

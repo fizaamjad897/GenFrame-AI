@@ -218,7 +218,7 @@ async def resize_image(
     # Check user's plan and hits
     user_id = str(current_user["_id"])
     current_units = current_user.get("units", 0)
-    max_units = current_user.get("maxUnits", 200)
+    max_units = current_user.get("maxUnits", 0)
     
     if current_units >= max_units:
         raise HTTPException(

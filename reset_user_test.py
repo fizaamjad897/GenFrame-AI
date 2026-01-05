@@ -15,18 +15,18 @@ def reset_test_user():
     # We'll update ALL users to 200 units and reset plan to empty
     result = users_collection.update_many(
         {},
-        {"$set": {"maxUnits": 200, "units": 0, "plan": ""}}
+        {"$set": {"maxUnits": 50, "units": 0, "plan": ""}}
     )
     
-    print(f"✅ Reset {result.modified_count} users to 200 units, 0 usage, and No Plan.")
+    print(f"✅ Reset {result.modified_count} users to 50 units, 0 usage, and No Plan.")
     
     # Also ensure the Starter plan in 'plans' collection is correct
     plans_collection = db["plans"]
     plans_collection.update_one(
         {"name": "Starter"},
-        {"$set": {"includedUnits": 200}}
+        {"$set": {"includedUnits": 50}}
     )
-    print("✅ Updated 'Starter' plan to 200 units in database.")
+    print("✅ Updated 'Starter' plan to 50 units in database.")
 
 if __name__ == "__main__":
     reset_test_user()

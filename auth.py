@@ -134,7 +134,7 @@ def create_user(user_data: UserRegister):
         "presentationId": user_data.presentationId,
         "plan": "",
         "units": 0,
-        "maxUnits": 200,  # Free allotment
+        "maxUnits": 0,  # Default: No free credits
         "createdAt": datetime.utcnow(),
         "updatedAt": datetime.utcnow(),
     }
@@ -265,7 +265,7 @@ def user_doc_to_response(user_doc):
         "avatar": user_doc.get("avatar"),
         "plan": user_doc.get("plan", ""),
         "units": user_doc.get("units", 0),
-        "maxUnits": user_doc.get("maxUnits", 200),
+        "maxUnits": user_doc.get("maxUnits", 0),
         "createdAt": user_doc.get("createdAt"),
     }
 
@@ -301,9 +301,9 @@ def get_user_usage_stats(user_id: str):
         "userId": user_id,
         "plan": user.get("plan") or "free tier",
         "unitsUsed": user.get("units", 0),
-        "maxUnits": user.get("maxUnits", 200),
-        "remainingUnits": user.get("maxUnits", 200) - user.get("units", 0),
-        "overageUnits": max(0, user.get("units", 0) - user.get("maxUnits", 200)),
+        "maxUnits": user.get("maxUnits", 0),
+        "remainingUnits": user.get("maxUnits", 0) - user.get("units", 0),
+        "overageUnits": max(0, user.get("units", 0) - user.get("maxUnits", 0)),
         "currentMonthOperations": usage_count
     }
 
@@ -340,7 +340,7 @@ def generate_monthly_bill(user_id: str):
         period_end = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
     
     units_used = user.get("units", 0)
-    max_units = user.get("maxUnits", 200)
+    max_units = user.get("maxUnits", 0)
     overage_units = max(0, units_used - max_units)
     overage_charge = calculate_overage_charge(units_used, max_units)
     

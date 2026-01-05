@@ -26,7 +26,7 @@ class User(BaseModel):
     fullName: Optional[str] = None
     plan: str = ""  # Default is no plan
     units: int = 0
-    maxUnits: int = 200  # Default for free allotment
+    maxUnits: int = 0  # Default: No free credits
     createdAt: datetime = None
     updatedAt: datetime = None
 
