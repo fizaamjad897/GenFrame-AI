@@ -34,18 +34,9 @@ app.add_middleware(
 
 
 
-# Dependency for authentication (supports X-API-KEY header first)
-def get_current_user(request: Request, authorization: str = Header(None), x_api_key: str = Header(None, alias="X-API-KEY")):
-    # If API key provided, verify it first
-    if x_api_key:
-        user, key_type = auth_module.verify_api_key(x_api_key)
-        if not user:
-            raise HTTPException(status_code=401, detail="Invalid API key")
-        # Store key type in request state for endpoint verification
-        request.state.key_type = key_type
-        return user
-
-    # Otherwise fallback to Bearer token
+# Dependency for JWT auth (user management endpoints)
+def get_current_user_jwt(authorization: str = Header(None)):
+    """JWT authentication for user management endpoints only"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
@@ -58,8 +49,17 @@ def get_current_user(request: Request, authorization: str = Header(None), x_api_
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     
-    # Bearer token has full access
-    request.state.key_type = "all"
+    return user
+
+# Dependency for API key auth (image processing endpoints)
+def get_current_user_apikey(request: Request, x_api_key: str = Header(..., alias="X-API-KEY")):
+    """API key authentication required for image processing endpoints"""
+    user, key_type = auth_module.verify_api_key(x_api_key)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    # Store key type in request state for endpoint verification
+    request.state.key_type = key_type
     return user
 
 # Initialize Gemini Client (lazy init or global if key is present)
@@ -132,14 +132,14 @@ async def reset_password(request: ResetPasswordRequest):
     return {"message": "Password reset successfully"}
 
 @app.get("/api/users/me", response_model=UserResponse)
-async def get_current_user_info(current_user = Depends(get_current_user)):
+async def get_current_user_info(current_user = Depends(get_current_user_jwt)):
     """Get current user info"""
     return user_doc_to_response(current_user)
 
 @app.post("/api/users/api-key")
 async def create_api_key_endpoint(
     type: str = Query(..., regex="^(resize|create)$"),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user_jwt)
 ):
     """Create an API key for the authenticated user and specific type (resize/create)."""
     user_id = str(current_user["_id"])
@@ -159,7 +159,7 @@ async def create_api_key_endpoint(
 @app.delete("/api/users/api-key")
 async def delete_api_key_endpoint(
     type: str = Query(..., regex="^(resize|create)$"),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user_jwt)
 ):
     """Delete the active API key for the authenticated user and type."""
     user_id = str(current_user["_id"])
@@ -178,7 +178,7 @@ async def get_plans():
     return plans
 
 @app.get("/api/users/usage")
-async def get_usage(current_user = Depends(get_current_user)):
+async def get_usage(current_user = Depends(get_current_user_jwt)):
     """Get usage stats for current user"""
     stats = get_user_usage_stats(str(current_user["_id"]))
     if not stats:
@@ -186,7 +186,7 @@ async def get_usage(current_user = Depends(get_current_user)):
     return stats
 
 @app.get("/api/users/billing-history")
-async def get_billing(current_user = Depends(get_current_user)):
+async def get_billing(current_user = Depends(get_current_user_jwt)):
     """Get billing history for current user"""
     history = get_billing_history(str(current_user["_id"]))
     for bill in history:
@@ -194,7 +194,7 @@ async def get_billing(current_user = Depends(get_current_user)):
     return history
 
 @app.post("/api/billing/generate")
-async def generate_bill(current_user = Depends(get_current_user)):
+async def generate_bill(current_user = Depends(get_current_user_jwt)):
     """Manually generate a bill for the current period (for demo)"""
     bill = generate_monthly_bill(str(current_user["_id"]))
     if not bill:
@@ -208,18 +208,17 @@ async def resize_image(
     request: Request,
     file: UploadFile = File(...),
     aspect_ratio: str = Form(..., description="Target aspect ratio, e.g., '16:9', '1:1', '4:3'"),
-    prompt: str = Form(None, description="Optional custom prompt for image editing."),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user_apikey)
 ):
     """
-    Endpoint to resize/edit image.
-    Requires 'resize' API Key or user login. 
+    Endpoint to resize image.
+    Requires 'resize' API Key (X-API-KEY header).
     Deducts 1 'resize' credit.
     Returns image bytes directly.
     """
     # 1. Scope Enforcement
-    key_type = getattr(request.state, "key_type", "all")
-    if key_type != "resize" and key_type != "all":
+    key_type = getattr(request.state, "key_type", None)
+    if key_type != "resize":
          raise HTTPException(status_code=403, detail="Invalid API Key type for this endpoint. Use a 'resize' key.")
 
     global client
@@ -243,12 +242,7 @@ async def resize_image(
         image_bytes = await file.read()
         pil_image = Image.open(io.BytesIO(image_bytes))
         
-        if prompt:
-            use_prompt = prompt
-        else:
-            use_prompt = (
-                f"recreate this image in {aspect_ratio} ratio format and keep all the information intact."
-            )
+        use_prompt = f"recreate this image in {aspect_ratio} ratio format and keep all the information intact."
         
         model_name = "gemini-3-pro-image-preview" 
 
@@ -301,17 +295,17 @@ async def create_image(
     prompt: str = Form(..., description="Prompt to generate image."),
     aspect_ratio: str = Form(..., description="Target aspect ratio, e.g., '16:9', '1:1'"),
     file: UploadFile = File(None, description="Optional reference image."),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user_apikey)
 ):
     """
     Endpoint to create new image from prompt (and optional reference).
-    Requires 'create' API Key or user login.
+    Requires 'create' API Key (X-API-KEY header).
     Deducts 1 'create' credit.
     Returns image bytes directly.
     """
     # 1. Scope Enforcement
-    key_type = getattr(request.state, "key_type", "all")
-    if key_type != "create" and key_type != "all":
+    key_type = getattr(request.state, "key_type", None)
+    if key_type != "create":
          raise HTTPException(status_code=403, detail="Invalid API Key type for this endpoint. Use a 'create' key.")
 
     global client
