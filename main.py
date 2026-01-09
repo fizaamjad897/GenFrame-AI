@@ -18,10 +18,18 @@ from auth import (
     generate_monthly_bill, log_usage
 )
 import auth as auth_module
+from middleware import SecurityMiddleware
+from validators import (
+    validate_image_upload, validate_aspect_ratio, validate_prompt,
+    validate_user_input, validate_key_type, ValidationError
+)
 
 load_dotenv()
 
 app = FastAPI(title="Visual Engine (Gemini Powered)")
+
+# Add Security Middleware (MUST be first)
+app.add_middleware(SecurityMiddleware)
 
 # Add CORS middleware
 app.add_middleware(
@@ -29,7 +37,7 @@ app.add_middleware(
     allow_origins=["*"],  # Allows all origins
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_headers=["Authorization", "Content-Type", "X-API-KEY"],  # Specific headers for security
 )
 
 
@@ -142,6 +150,10 @@ async def create_api_key_endpoint(
     current_user = Depends(get_current_user_jwt)
 ):
     """Create an API key for the authenticated user and specific type (resize/create)."""
+    # Validate key type
+    if not validate_key_type(type):
+        raise HTTPException(status_code=400, detail="Invalid key type")
+    
     user_id = str(current_user["_id"])
     
     # Check if key exists for this type
@@ -238,8 +250,16 @@ async def resize_image(
             raise HTTPException(status_code=500, detail="Server Configuration Error: API Key missing")
 
     try:
-        # 4. Process Request
-        image_bytes = await file.read()
+        # 2. Validate aspect ratio
+        if not validate_aspect_ratio(aspect_ratio):
+            raise HTTPException(status_code=400, detail="Invalid aspect ratio format")
+        
+        # 3. Validate and process image
+        try:
+            image_bytes = await validate_image_upload(file)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
         pil_image = Image.open(io.BytesIO(image_bytes))
         
         use_prompt = f"recreate this image in {aspect_ratio} ratio format and keep all the information intact."
@@ -325,10 +345,23 @@ async def create_image(
             raise HTTPException(status_code=500, detail="Server Configuration Error: API Key missing")
 
     try:
+        # 2. Validate prompt
+        try:
+            validated_prompt = validate_prompt(prompt)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # 3. Validate aspect ratio
+        if not validate_aspect_ratio(aspect_ratio):
+            raise HTTPException(status_code=400, detail="Invalid aspect ratio format")
+        
         # 4. Prepare Contents
-        contents = [prompt]
+        contents = [validated_prompt]
         if file:
-            image_bytes = await file.read()
+            try:
+                image_bytes = await validate_image_upload(file)
+            except ValidationError as e:
+                raise HTTPException(status_code=400, detail=str(e))
             pil_image = Image.open(io.BytesIO(image_bytes))
             contents.append(pil_image)
         
