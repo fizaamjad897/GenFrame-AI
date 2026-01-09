@@ -1,5 +1,5 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header
-from fastapi.responses import Response, FileResponse, JSONResponse
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header, Request, Query
+from fastapi.responses import Response, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
@@ -8,18 +8,16 @@ from google.genai import types
 from PIL import Image
 import io
 from datetime import datetime
-import uuid
-import boto3
-from botocore.config import Config
 from models import UserRegister, UserLogin, ForgotPasswordRequest, ResetPasswordRequest, TokenResponse, UserResponse, PlanUpgradeRequest
 from auth import (
     create_user, verify_user_credentials, create_access_token, 
-    verify_token, get_user_by_id, increment_user_units, 
+    verify_token, get_user_by_id, 
     create_password_reset_token, reset_password_by_token, 
     send_password_reset_email, user_doc_to_response,
     get_all_plans, get_user_usage_stats, get_billing_history,
     generate_monthly_bill, log_usage
 )
+import auth as auth_module
 
 load_dotenv()
 
@@ -34,15 +32,20 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-# Digital Ocean Spaces Configuration (matching NestJS env variable names)
-# We use specific DO_ prefixes to avoid shadowing conflicts in .env
-DO_SPACES_ACCESS_KEY = (os.getenv("DO_ACCESS_KEY_ID") or os.getenv("ACCESS_KEY_ID", "")).strip("'\" ")
-DO_SPACES_SECRET_KEY = (os.getenv("DO_SECRET_KEY") or os.getenv("SECRET_KEY", "")).strip("'\" ")
-DO_SPACES_ENDPOINT = os.getenv("ENDPOINT", "").strip("'\" ")
-DO_SPACES_BUCKET_NAME = os.getenv("SPACENAME", "").strip("'\" ")
 
-# Dependency for authentication
-def get_current_user(authorization: str = Header(None)):
+
+# Dependency for authentication (supports X-API-KEY header first)
+def get_current_user(request: Request, authorization: str = Header(None), x_api_key: str = Header(None, alias="X-API-KEY")):
+    # If API key provided, verify it first
+    if x_api_key:
+        user, key_type = auth_module.verify_api_key(x_api_key)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        # Store key type in request state for endpoint verification
+        request.state.key_type = key_type
+        return user
+
+    # Otherwise fallback to Bearer token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
@@ -55,6 +58,8 @@ def get_current_user(authorization: str = Header(None)):
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     
+    # Bearer token has full access
+    request.state.key_type = "all"
     return user
 
 # Initialize Gemini Client (lazy init or global if key is present)
@@ -67,38 +72,7 @@ if GOOGLE_API_KEY:
 else:
     print("Warning: GOOGLE_API_KEY not set in .env")
 
-# Initialize Digital Ocean Spaces client (matching NestJS implementation exactly)
-if not DO_SPACES_ENDPOINT or not DO_SPACES_BUCKET_NAME:
-    raise ValueError("ENDPOINT and SPACENAME must be set in environment variables")
 
-if not DO_SPACES_ACCESS_KEY or not DO_SPACES_SECRET_KEY:
-    raise ValueError("ACCESS_KEY_ID and SECRET_KEY must be set in environment variables")
-
-try:
-    # Clean endpoint - remove protocol if present
-    endpoint_clean = DO_SPACES_ENDPOINT.replace('https://', '').replace('http://', '').strip()
-    
-    # Extract region from endpoint (e.g., sfo3.digitaloceanspaces.com -> sfo3)
-    region = endpoint_clean.split('.')[0] if '.' in endpoint_clean else 'nyc3'
-    
-    # Ensure endpoint has protocol for boto3
-    endpoint_url = endpoint_clean if endpoint_clean.startswith('http') else f'https://{endpoint_clean}'
-    
-    s3_client = boto3.client(
-        's3',
-        endpoint_url=endpoint_url,
-        aws_access_key_id=DO_SPACES_ACCESS_KEY,
-        aws_secret_access_key=DO_SPACES_SECRET_KEY,
-        region_name=region,
-        config=Config(
-            signature_version='s3v4',
-            s3={'addressing_style': 'virtual'} # Recommended for Digital Ocean
-        )
-    )
-    print("Digital Ocean Spaces client initialized")
-except Exception as e:
-    print(f"Error: Failed to initialize Digital Ocean Spaces client: {e}")
-    raise
 
 @app.post("/api/users/register", response_model=TokenResponse)
 async def register(user_data: UserRegister):
@@ -157,15 +131,42 @@ async def reset_password(request: ResetPasswordRequest):
     
     return {"message": "Password reset successfully"}
 
-@app.get("api/users/me", response_model=UserResponse)
+@app.get("/api/users/me", response_model=UserResponse)
 async def get_current_user_info(current_user = Depends(get_current_user)):
     """Get current user info"""
     return user_doc_to_response(current_user)
 
-    return {
-        "message": f"Plan upgraded to {request.plan}",
-        "user": user_doc_to_response(updated_user)
-    }
+@app.post("/api/users/api-key")
+async def create_api_key_endpoint(
+    type: str = Query(..., regex="^(resize|create)$"),
+    current_user = Depends(get_current_user)
+):
+    """Create an API key for the authenticated user and specific type (resize/create)."""
+    user_id = str(current_user["_id"])
+    
+    # Check if key exists for this type
+    api_keys = current_user.get("api_keys", {})
+    if type == "resize" and api_keys.get("resize_hash"):
+         raise HTTPException(status_code=400, detail="Resize API key already exists. Delete it first.")
+    if type == "create" and api_keys.get("create_hash"):
+         raise HTTPException(status_code=400, detail="Create API key already exists. Delete it first.")
+         
+    raw_key = auth_module.generate_api_key_for_user(user_id, type)
+    if not raw_key:
+        raise HTTPException(status_code=500, detail="Failed to create API key")
+    return {"api_key": raw_key, "type": type, "message": "Store this key securely. It will not be shown again."}
+
+@app.delete("/api/users/api-key")
+async def delete_api_key_endpoint(
+    type: str = Query(..., regex="^(resize|create)$"),
+    current_user = Depends(get_current_user)
+):
+    """Delete the active API key for the authenticated user and type."""
+    user_id = str(current_user["_id"])
+    success = auth_module.delete_api_key(user_id, type)
+    if not success:
+        raise HTTPException(status_code=400, detail=f"No {type} API key to delete")
+    return {"message": f"{type} API key deleted"}
 
 @app.get("/api/plans")
 async def get_plans():
@@ -202,32 +203,34 @@ async def generate_bill(current_user = Depends(get_current_user)):
     return bill
 
 
-@app.post("/api/resize", response_class=JSONResponse)
+@app.post("/api/resize")
 async def resize_image(
+    request: Request,
     file: UploadFile = File(...),
     aspect_ratio: str = Form(..., description="Target aspect ratio, e.g., '16:9', '1:1', '4:3'"),
-    prompt: str = Form(None, description="Optional custom prompt for image editing. If not provided, uses default resizing prompt."),
+    prompt: str = Form(None, description="Optional custom prompt for image editing."),
     current_user = Depends(get_current_user)
 ):
     """
-    Endpoint to resize or edit an image intelligently using Gemini 3 Pro (Nano Banana Pro).
-    If a custom prompt is provided, it will be used for editing; otherwise, defaults to resizing with the specified aspect ratio.
+    Endpoint to resize/edit image.
+    Requires 'resize' API Key or user login. 
+    Deducts 1 'resize' credit.
+    Returns image bytes directly.
     """
+    # 1. Scope Enforcement
+    key_type = getattr(request.state, "key_type", "all")
+    if key_type != "resize" and key_type != "all":
+         raise HTTPException(status_code=403, detail="Invalid API Key type for this endpoint. Use a 'resize' key.")
+
     global client
     
-    # Check user's plan and hits
+    # 2. Credit Check & Deduction
     user_id = str(current_user["_id"])
-    current_units = current_user.get("units", 0)
-    max_units = current_user.get("maxUnits", 0)
-    
-    if current_units >= max_units:
-        raise HTTPException(
-            status_code=429, 
-            detail=f"You have reached your {current_user.get('plan', 'Free Tier')} limit of {max_units} units. Please upgrade your plan."
-        )
-    
+    if not auth_module.check_and_deduct_credits(user_id, "resize"):
+        raise HTTPException(status_code=402, detail="Insufficient resize credits (monthly or addon).")
+
+    # 3. Initialize Gemini
     if not client:
-        # Try reloading env if key was added later
         load_dotenv()
         GOOGLE_API_KEY_LATEST = os.getenv("GOOGLE_API_KEY")
         if GOOGLE_API_KEY_LATEST:
@@ -236,22 +239,17 @@ async def resize_image(
             raise HTTPException(status_code=500, detail="Server Configuration Error: API Key missing")
 
     try:
-        # 1. Read the image
+        # 4. Process Request
         image_bytes = await file.read()
         pil_image = Image.open(io.BytesIO(image_bytes))
         
-        # 2. Construct the structured prompt
         if prompt:
             use_prompt = prompt
         else:
             use_prompt = (
-                f"recreate this image in {aspect_ratio} ratio format and keep all the the information of image intact . "
-                "you can rearrange the elements to ensure it is perfect."
+                f"recreate this image in {aspect_ratio} ratio format and keep all the information intact."
             )
         
-        # 3. Call the AI Service
-        # Using 'gemini-3-pro-image-preview' as per documentation for Nano Banana Pro equivalent features
-        # If this model is not available to the key, user might need to change it to 'gemini-2.0-flash-exp' or similar.
         model_name = "gemini-3-pro-image-preview" 
 
         response = client.models.generate_content(
@@ -265,7 +263,6 @@ async def resize_image(
             )
         )
         
-        # 4. Extract the generated image
         image_data = None
         if response.parts:
             for part in response.parts:
@@ -276,83 +273,113 @@ async def resize_image(
         if not image_data:
             print(f"Full Response: {response}")
             raise HTTPException(status_code=500, detail="No image content returned from API.")
-        
-        # 5. Upload to Digital Ocean Spaces (matching NestJS implementation exactly)
-        uploaded_url = None
-        image_name = None
-        
-        # Generate a unique filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_id = str(uuid.uuid4())[:8]
-        filename = f"resized_images/{timestamp}_{unique_id}.png"
-        image_name = f"{timestamp}_{unique_id}.png"
-        
-        try:
-            bucket_name = DO_SPACES_BUCKET_NAME
             
-            # Upload to Digital Ocean Spaces (matching NestJS implementation)
-            s3_client.put_object(
-                Bucket=bucket_name,
-                Key=filename,
-                Body=image_data,
-                ContentType='image/png',
-                ACL='public-read'  # Make the image publicly accessible
-            )
-            
-            # Construct the public URL (matching NestJS format: https://{bucketName}.{endpoint}/{fileName})
-            # Clean endpoint for URL construction (remove protocol if present)
-            endpoint_for_url = DO_SPACES_ENDPOINT.replace('https://', '').replace('http://', '').strip()
-            uploaded_url = f"https://{bucket_name}.{endpoint_for_url}/{filename}"
-            print(f"Image uploaded to Digital Ocean Spaces: {uploaded_url}")
-        except Exception as upload_error:
-            print(f"Error uploading to Digital Ocean Spaces: {upload_error}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Image generated but failed to upload to storage: {str(upload_error)}"
-            )
+        # 5. Log Usage (without URL)
+        log_usage(
+            user_id=user_id,
+            operation="resize",
+            aspect_ratio=aspect_ratio,
+            success=True,
+            image_url="direct_download" 
+        )
         
-        # 6. Return JSON response with URL and name
-        if not uploaded_url or not image_name:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate upload URL or image name"
-            )
-        
-        response_data = {
-            "url": uploaded_url,
-            "name": image_name
-        }
-        print(f"Returning response: {response_data}")
-        
-        # Explicitly return JSONResponse to ensure proper serialization
-        return JSONResponse(content=response_data, status_code=200)
+        # 6. Return Image Directly
+        return Response(content=image_data, media_type="image/png")
                 
     except HTTPException:
-        # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
         print(f"Error processing request: {e}")
-        import traceback
-        traceback.print_exc()
-        # In production, be careful about exposing raw error details
+        # Log failure
+        log_usage(user_id=str(current_user["_id"]), operation="resize", aspect_ratio=aspect_ratio, success=False, image_url=None)
         raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
+
+
+@app.post("/api/create")
+async def create_image(
+    request: Request,
+    prompt: str = Form(..., description="Prompt to generate image."),
+    aspect_ratio: str = Form(..., description="Target aspect ratio, e.g., '16:9', '1:1'"),
+    file: UploadFile = File(None, description="Optional reference image."),
+    current_user = Depends(get_current_user)
+):
+    """
+    Endpoint to create new image from prompt (and optional reference).
+    Requires 'create' API Key or user login.
+    Deducts 1 'create' credit.
+    Returns image bytes directly.
+    """
+    # 1. Scope Enforcement
+    key_type = getattr(request.state, "key_type", "all")
+    if key_type != "create" and key_type != "all":
+         raise HTTPException(status_code=403, detail="Invalid API Key type for this endpoint. Use a 'create' key.")
+
+    global client
     
-    finally:
-        # Always increment units for successful or attempted operations
-        if current_user:
-            user_id = str(current_user["_id"])
-            increment_user_units(user_id)
-            # Log usage for detailed tracking and billing
-            # We use local variables from the try block if they exist
-            img_url = locals().get('uploaded_url')
-            is_success = img_url is not None
-            log_usage(
-                user_id=user_id,
-                operation="resize",
-                aspect_ratio=aspect_ratio,
-                success=is_success,
-                image_url=img_url
+    # 2. Credit Check & Deduction
+    user_id = str(current_user["_id"])
+    if not auth_module.check_and_deduct_credits(user_id, "create"):
+        raise HTTPException(status_code=402, detail="Insufficient create credits (monthly or addon).")
+
+    # 3. Initialize Gemini
+    if not client:
+        load_dotenv()
+        GOOGLE_API_KEY_LATEST = os.getenv("GOOGLE_API_KEY")
+        if GOOGLE_API_KEY_LATEST:
+            client = genai.Client(api_key=GOOGLE_API_KEY_LATEST)
+        else:
+            raise HTTPException(status_code=500, detail="Server Configuration Error: API Key missing")
+
+    try:
+        # 4. Prepare Contents
+        contents = [prompt]
+        if file:
+            image_bytes = await file.read()
+            pil_image = Image.open(io.BytesIO(image_bytes))
+            contents.append(pil_image)
+        
+        model_name = "gemini-3-pro-image-preview" 
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                response_modalities=["Image"],
+                image_config=types.ImageConfig(
+                    aspect_ratio=aspect_ratio
+                )
             )
+        )
+        
+        image_data = None
+        if response.parts:
+            for part in response.parts:
+                if part.inline_data:
+                    image_data = part.inline_data.data
+                    break
+        
+        if not image_data:
+            print(f"Full Response: {response}")
+            raise HTTPException(status_code=500, detail="No image content returned from API.")
+            
+        # 5. Log Usage
+        log_usage(
+            user_id=user_id,
+            operation="create",
+            aspect_ratio=aspect_ratio,
+            success=True,
+            image_url="direct_download"
+        )
+        
+        # 6. Return Image Directly
+        return Response(content=image_data, media_type="image/png")
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error processing request: {e}")
+        log_usage(user_id=str(current_user["_id"]), operation="create", aspect_ratio=aspect_ratio, success=False, image_url=None)
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
 
 @app.get("/")
 async def read_root():

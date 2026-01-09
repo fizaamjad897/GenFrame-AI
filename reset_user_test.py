@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017").strip("'\" ")
-DB_NAME = os.getenv("DB_NAME", "visual_engine").strip("'\" ")
+DB_NAME = os.getenv("DB_NAME", "visual_engine_secure").strip("'\" ")
 
 def reset_test_user():
     client = MongoClient(MONGODB_URL)
