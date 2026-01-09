@@ -33,7 +33,13 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
-
+@app.get("/api/")
+async def api_health():
+    return {
+        "status": "online",
+        "service": "Visual Engine API",
+        "version": "1.0.0"
+    }
 # Digital Ocean Spaces Configuration (matching NestJS env variable names)
 # We use specific DO_ prefixes to avoid shadowing conflicts in .env
 DO_SPACES_ACCESS_KEY = (os.getenv("DO_ACCESS_KEY_ID") or os.getenv("ACCESS_KEY_ID", "")).strip("'\" ")
