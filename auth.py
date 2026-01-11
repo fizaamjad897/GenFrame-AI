@@ -3,6 +3,9 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 import uuid
+import secrets
+import hmac
+import hashlib
 from models import User, UserRegister, UserLogin, ForgotPasswordRequest, ResetPasswordRequest
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -20,12 +23,14 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Use JWT_SECRET to avoid conflict with Digital Ocean SECRET_KEY
 JWT_SECRET = os.getenv("JWT_SECRET") or os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
 SECRET_KEY = JWT_SECRET.strip("'\" ")
+# HMAC secret for API keys (fallback to SECRET_KEY if not provided)
+API_KEY_SECRET = os.getenv("API_KEY_SECRET", SECRET_KEY).strip("'\" ")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # Extend to 1 week for better UX during development
 
 # MongoDB
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-DB_NAME = os.getenv("DB_NAME", "visual_engine")
+DB_NAME = os.getenv("DB_NAME", "visual_engine_secure")
 
 # Email configuration
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
@@ -35,7 +40,7 @@ SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "your-app-password")
 
 # Initialize MongoDB
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017").strip("'\" ")
-DB_NAME = os.getenv("DB_NAME", "visual_engine").strip("'\" ")
+DB_NAME = os.getenv("DB_NAME", "visual_engine_secure").strip("'\" ")
 
 def get_db_client(url, max_retries=3):
     import time
@@ -133,8 +138,20 @@ def create_user(user_data: UserRegister):
         "fingerprint": user_data.fingerprint,
         "presentationId": user_data.presentationId,
         "plan": "",
-        "units": 0,
-        "maxUnits": 0,  # Default: No free credits
+        "credits": {
+            "monthly_resize_used": 0,
+            "monthly_resize_max": 0,
+            "addon_resize_used": 0,
+            "addon_resize_max": 0,
+            "monthly_create_used": 0,
+            "monthly_create_max": 0,
+            "addon_create_used": 0,
+            "addon_create_max": 0
+        },
+        "api_keys": {
+            "resize_hash": None,
+            "create_hash": None
+        },
         "createdAt": datetime.utcnow(),
         "updatedAt": datetime.utcnow(),
     }
@@ -153,27 +170,100 @@ def verify_user_credentials(email: str, password: str):
     
     return user
 
-def increment_user_units(user_id: str):
+def check_and_deduct_credits(user_id: str, credit_type: str):
+    """
+    Deduct credit for specific operation type ('resize' or 'create').
+    Priority: Monthly credits -> Addon credits.
+    Returns True if successful, False if insufficient credits.
+    """
     from bson import ObjectId
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        return False
+        
+    credits = user.get("credits", {})
+    
+    monthly_used_key = f"monthly_{credit_type}_used"
+    monthly_max_key = f"monthly_{credit_type}_max"
+    addon_used_key = f"addon_{credit_type}_used"
+    addon_max_key = f"addon_{credit_type}_max"
+    
+    # Check monthly first (used < max)
+    if credits.get(monthly_used_key, 0) < credits.get(monthly_max_key, 0):
+        result = users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {
+                "$inc": {f"credits.{monthly_used_key}": 1}, 
+                "$set": {"updatedAt": datetime.utcnow()}
+            }
+        )
+        return result.modified_count > 0
+        
+    # Check addon second (used < max)
+    if credits.get(addon_used_key, 0) < credits.get(addon_max_key, 0):
+        result = users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {
+                "$inc": {f"credits.{addon_used_key}": 1}, 
+                "$set": {"updatedAt": datetime.utcnow()}
+            }
+        )
+        return result.modified_count > 0
+        
+    return False
+
+def update_user_plan(user_id: str, plan_name: str):
+    from bson import ObjectId
+    # Fetch plan details to get credit limits
+    plan = plans_collection.find_one({"name": plan_name.capitalize()})
+    if not plan:
+        return False
+        
+    plan_credits = plan.get("credits", {})
+    
     result = users_collection.update_one(
         {"_id": ObjectId(user_id)},
-        {"$inc": {"units": 1}, "$set": {"updatedAt": datetime.utcnow()}}
+        {
+            "$set": {
+                "plan": plan_name, 
+                "credits.monthly_resize_used": 0,
+                "credits.monthly_resize_max": plan_credits.get("monthly_resize", 0),
+                "credits.monthly_create_used": 0,
+                "credits.monthly_create_max": plan_credits.get("monthly_create", 0),
+                "updatedAt": datetime.utcnow()
+            }
+        }
     )
     return result.modified_count > 0
 
-def update_user_plan(user_id: str, plan: str, max_units: int):
+def reset_monthly_credits(user_id: str):
+    """Resets monthly credits to plan limits (resets used to 0, sets max from plan)"""
     from bson import ObjectId
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        return False
+        
+    plan_name = user.get("plan", "")
+    if not plan_name:
+        return False
+        
+    plan = plans_collection.find_one({"name": plan_name.capitalize()})
+    if not plan:
+        return False
+    
+    plan_credits = plan.get("credits", {})
+    
     result = users_collection.update_one(
         {"_id": ObjectId(user_id)},
-        {"$set": {"plan": plan, "maxUnits": max_units, "units": 0, "updatedAt": datetime.utcnow()}}
-    )
-    return result.modified_count > 0
-
-def reset_user_units(user_id: str):
-    from bson import ObjectId
-    result = users_collection.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": {"units": 0, "updatedAt": datetime.utcnow()}}
+        {
+            "$set": {
+                "credits.monthly_resize_used": 0,
+                "credits.monthly_resize_max": plan_credits.get("monthly_resize", 0),
+                "credits.monthly_create_used": 0,
+                "credits.monthly_create_max": plan_credits.get("monthly_create", 0),
+                "updatedAt": datetime.utcnow()
+            }
+        }
     )
     return result.modified_count > 0
 
@@ -208,6 +298,75 @@ def reset_password_by_token(token: str, new_password: str):
     
     password_resets_collection.delete_one({"token": token})
     return True
+
+
+# ------------------------
+# API Key helpers
+# ------------------------
+
+def _hash_api_key(api_key: str) -> str:
+    """Return HMAC-SHA256 hex digest of the provided API key using server secret."""
+    # Using HMAC with server-side secret prevents simple rainbow-table attacks
+    digest = hmac.new(API_KEY_SECRET.encode('utf-8'), api_key.encode('utf-8'), hashlib.sha256).hexdigest()
+    return digest
+
+
+def generate_api_key_for_user(user_id: str, key_type: str) -> str:
+    """Generate a new API key for the given user and type (resize/create). Returns raw key."""
+    if key_type not in ['resize', 'create']:
+        return None
+        
+    from bson import ObjectId
+    raw_key = secrets.token_urlsafe(32)
+    hashed = _hash_api_key(raw_key)
+    
+    field_name = f"api_keys.{key_type}_hash"
+    
+    result = users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {field_name: hashed, "updatedAt": datetime.utcnow()}}
+    )
+    if result.modified_count:
+        return raw_key
+    # If update did not modify (e.g., user not found or same hash), allow return if matched
+    # But usually creating new key changes hash.
+    # Check if user exists just in case
+    if users_collection.find_one({"_id": ObjectId(user_id)}):
+         return raw_key
+    return None
+
+
+def verify_api_key(raw_key: str):
+    """Verify raw API key and return (user, key_type) tuple if valid."""
+    hashed = _hash_api_key(raw_key)
+    
+    # Check resize hash
+    user = users_collection.find_one({"api_keys.resize_hash": hashed})
+    if user:
+        return user, "resize"
+        
+    # Check create hash
+    user = users_collection.find_one({"api_keys.create_hash": hashed})
+    if user:
+        return user, "create"
+        
+    return None, None
+
+
+def delete_api_key(user_id: str, key_type: str):
+    """Delete the stored API key for a user and type."""
+    if key_type not in ['resize', 'create']:
+        return False
+        
+    from bson import ObjectId
+    field_name = f"api_keys.{key_type}_hash"
+    
+    result = users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {field_name: None, "updatedAt": datetime.utcnow()}}
+    )
+    return result.modified_count > 0
+
 
 def send_password_reset_email(email: str, reset_token: str):
     """Send password reset email - returns token for development mode"""
@@ -258,14 +417,23 @@ def send_password_reset_email(email: str, reset_token: str):
 
 def user_doc_to_response(user_doc):
     """Convert MongoDB user document to response format"""
+    # Ensure credits structure exists for response
+    credits = user_doc.get("credits", {})
     return {
         "id": str(user_doc["_id"]),
         "email": user_doc["email"],
         "fullName": user_doc.get("fullName", ""),
-        "avatar": user_doc.get("avatar"),
         "plan": user_doc.get("plan", ""),
-        "units": user_doc.get("units", 0),
-        "maxUnits": user_doc.get("maxUnits", 0),
+        "credits": {
+            "monthly_resize_used": credits.get("monthly_resize_used", 0),
+            "monthly_resize_max": credits.get("monthly_resize_max", 0),
+            "addon_resize_used": credits.get("addon_resize_used", 0),
+            "addon_resize_max": credits.get("addon_resize_max", 0),
+            "monthly_create_used": credits.get("monthly_create_used", 0),
+            "monthly_create_max": credits.get("monthly_create_max", 0),
+            "addon_create_used": credits.get("addon_create_used", 0),
+            "addon_create_max": credits.get("addon_create_max", 0),
+        },
         "createdAt": user_doc.get("createdAt"),
     }
 
@@ -289,7 +457,9 @@ def get_user_usage_stats(user_id: str):
     if not user:
         return None
     
-    # Get current billing period usage
+    credits = user.get("credits", {})
+    
+    # Get current billing period usage count from logs
     current_month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     usage_count = usage_logs_collection.count_documents({
         "userId": user_id,
@@ -300,19 +470,22 @@ def get_user_usage_stats(user_id: str):
     return {
         "userId": user_id,
         "plan": user.get("plan") or "free tier",
-        "unitsUsed": user.get("units", 0),
-        "maxUnits": user.get("maxUnits", 0),
-        "remainingUnits": user.get("maxUnits", 0) - user.get("units", 0),
-        "overageUnits": max(0, user.get("units", 0) - user.get("maxUnits", 0)),
+        "credits": {
+            "monthly_resize_used": credits.get("monthly_resize_used", 0),
+            "monthly_resize_max": credits.get("monthly_resize_max", 0),
+            "addon_resize_used": credits.get("addon_resize_used", 0),
+            "addon_resize_max": credits.get("addon_resize_max", 0),
+            "monthly_create_used": credits.get("monthly_create_used", 0),
+            "monthly_create_max": credits.get("monthly_create_max", 0),
+            "addon_create_used": credits.get("addon_create_used", 0),
+            "addon_create_max": credits.get("addon_create_max", 0),
+        },
         "currentMonthOperations": usage_count
     }
 
 def calculate_overage_charge(units_used: int, max_units: int, overage_rate: float = 0.19):
-    """Calculate overage charges"""
-    if units_used <= max_units:
-        return 0.0
-    overage_units = units_used - max_units
-    return round(overage_units * overage_rate, 2)
+    """Legacy overage calculation - deprecated in new credit system"""
+    return 0.0
 
 def generate_monthly_bill(user_id: str):
     """Generate a monthly bill for a user"""
@@ -339,13 +512,11 @@ def generate_monthly_bill(user_id: str):
     else:
         period_end = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
     
-    units_used = user.get("units", 0)
-    max_units = user.get("maxUnits", 0)
-    overage_units = max(0, units_used - max_units)
-    overage_charge = calculate_overage_charge(units_used, max_units)
+    # New billing logic: Flat rate for plan (pre-paid credits)
+    # Add-ons are billed separately (not implemented here yet)
     
     base_price = plan["price"]
-    total_amount = base_price + overage_charge
+    total_amount = base_price
     
     bill_doc = {
         "userId": user_id,
@@ -353,10 +524,6 @@ def generate_monthly_bill(user_id: str):
         "billingPeriodEnd": period_end,
         "plan": plan_name,
         "basePrice": base_price,
-        "includedUnits": max_units,
-        "unitsUsed": units_used,
-        "overageUnits": overage_units,
-        "overageCharge": overage_charge,
         "totalAmount": total_amount,
         "generatedAt": datetime.utcnow(),
         "status": "pending"

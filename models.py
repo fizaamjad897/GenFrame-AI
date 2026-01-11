@@ -20,13 +20,27 @@ class ResetPasswordRequest(BaseModel):
     token: str
     newPassword: str
 
+class Credits(BaseModel):
+    monthly_resize_used: int = 0
+    monthly_resize_max: int = 0
+    addon_resize_used: int = 0
+    addon_resize_max: int = 0
+    monthly_create_used: int = 0
+    monthly_create_max: int = 0
+    addon_create_used: int = 0
+    addon_create_max: int = 0
+
+class ApiKeys(BaseModel):
+    resize_hash: Optional[str] = None
+    create_hash: Optional[str] = None
+
 class User(BaseModel):
     id: Optional[str] = None
     email: str
     fullName: Optional[str] = None
     plan: str = ""  # Default is no plan
-    units: int = 0
-    maxUnits: int = 0  # Default: No free credits
+    credits: Credits = Credits()
+    api_keys: ApiKeys = ApiKeys()
     createdAt: datetime = None
     updatedAt: datetime = None
 
@@ -35,8 +49,7 @@ class UserResponse(BaseModel):
     email: str
     fullName: Optional[str] = None
     plan: str
-    units: int
-    maxUnits: int
+    credits: Credits
     createdAt: datetime
 
 class TokenResponse(BaseModel):

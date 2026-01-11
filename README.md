@@ -128,6 +128,17 @@ with open('image.jpg', 'rb') as f:
 - If no `prompt` is provided, the system uses a default prompt that focuses on intelligent resizing while preserving image content
 - Processing time depends on image size and complexity (typically 10-30 seconds)
 
+---
+
+### API Keys
+
+- Users can create a single active API key via `POST /api/users/api-key` (must be authenticated).
+- The generated raw key is returned once; the server stores only a hashed value (HMAC-SHA256).
+- To delete an existing key, call `DELETE /api/users/api-key` (must be authenticated).
+- To authenticate API requests with a key, include it in the header `X-API-KEY: <your_api_key>`; the server will verify the key before processing the request.
+
+> Security note: Store the raw API key securely (client-side secrets manager). If the key is lost, delete it and create a new one; the server will not reveal the old key.
+
 ## Tech Stack
 
 - **Backend**: FastAPI, Google GenAI SDK (`google-genai`)

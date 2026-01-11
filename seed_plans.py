@@ -10,7 +10,7 @@ from datetime import datetime
 load_dotenv()
 
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017").strip("'\" ")
-DB_NAME = os.getenv("DB_NAME", "visual_engine").strip("'\" ")
+DB_NAME = os.getenv("DB_NAME", "visual_engine_secure").strip("'\" ")
 
 def seed_plans():
     """Seed the plans collection with pricing data"""
@@ -28,11 +28,15 @@ def seed_plans():
             {
                 "name": "Starter",
                 "price": 159.0,
-                "includedUnits": 1000,
+                "credits": {
+                    "monthly_resize": 1000,
+                    "monthly_create": 500
+                },
                 "costPerUnit": 0.795,
                 "bestFor": "Startups & Initial Testing",
                 "features": [
-                    "1,000 Image Units",
+                    "1,000 Resize Credits",
+                    "500 Create Credits",
                     "ADA Compliance Layer",
                     "Visual Accessibility Scan",
                     "Standard AI Resizing",
@@ -46,11 +50,15 @@ def seed_plans():
             {
                 "name": "Growth",
                 "price": 429.0,
-                "includedUnits": 3000,
+                "credits": {
+                    "monthly_resize": 3000,
+                    "monthly_create": 1500
+                },
                 "costPerUnit": 0.143,
                 "bestFor": "Active Marketing Agencies",
                 "features": [
-                    "3,000 Image Units",
+                    "3,000 Resize Credits",
+                    "1,500 Create Credits",
                     "All Starter Features",
                     "Priority API Access",
                     "Intelligent Element Spacing",
@@ -64,11 +72,15 @@ def seed_plans():
             {
                 "name": "Scale",
                 "price": 649.0,
-                "includedUnits": 5000,
+                "credits": {
+                    "monthly_resize": 5000,
+                    "monthly_create": 2500
+                },
                 "costPerUnit": 0.130,
                 "bestFor": "Global Signage Networks",
                 "features": [
-                    "5,000 Image Units",
+                    "5,000 Resize Credits",
+                    "2,500 Create Credits",
                     "All Growth Features",
                     "Dedicated Infrastructure",
                     "Custom AI Model Tuning",

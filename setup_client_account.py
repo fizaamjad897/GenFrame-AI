@@ -7,9 +7,8 @@ import bcrypt
 
 # Load environment variables
 load_dotenv()
-
 MONGODB_URL = os.getenv("MONGODB_URL")
-DB_NAME = os.getenv("DB_NAME", "visual_engine")
+DB_NAME = os.getenv("DB_NAME", "visual_engine_secure")
 
 def setup_client_account():
     client = MongoClient(MONGODB_URL)
