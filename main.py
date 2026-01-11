@@ -39,7 +39,19 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["Authorization", "Content-Type", "X-API-KEY"],  # Specific headers for security
 )
-
+@app.get("/api/")
+async def api_health():
+    return {
+        "status": "online",
+        "service": "Visual Engine API",
+        "version": "1.0.0"
+    }
+# Digital Ocean Spaces Configuration (matching NestJS env variable names)
+# We use specific DO_ prefixes to avoid shadowing conflicts in .env
+DO_SPACES_ACCESS_KEY = (os.getenv("DO_ACCESS_KEY_ID") or os.getenv("ACCESS_KEY_ID", "")).strip("'\" ")
+DO_SPACES_SECRET_KEY = (os.getenv("DO_SECRET_KEY") or os.getenv("SECRET_KEY", "")).strip("'\" ")
+DO_SPACES_ENDPOINT = os.getenv("ENDPOINT", "").strip("'\" ")
+DO_SPACES_BUCKET_NAME = os.getenv("SPACENAME", "").strip("'\" ")
 
 
 # Dependency for JWT auth (user management endpoints)
@@ -140,7 +152,7 @@ async def reset_password(request: ResetPasswordRequest):
     return {"message": "Password reset successfully"}
 
 @app.get("/api/users/me", response_model=UserResponse)
-async def get_current_user_info(current_user = Depends(get_current_user_jwt)):
+async def get_current_user_info(current_user = Depends(get_current_user)):
     """Get current user info"""
     return user_doc_to_response(current_user)
 
