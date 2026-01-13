@@ -59,6 +59,7 @@ def get_db_client(url, max_retries=3):
                 raise
 
 try:
+    print(f"DEBUG: Connecting to MongoDB at {MONGODB_URL} (DB: {DB_NAME})...")
     client = get_db_client(MONGODB_URL)
     db = client[DB_NAME]
     users_collection = db["users"]
@@ -66,10 +67,9 @@ try:
     plans_collection = db["plans"]
     usage_logs_collection = db["usage_logs"]
     billing_records_collection = db["billing_records"]
-    print("Connected to MongoDB successfully")
+    print(f"Connected to MongoDB successfully. Database: {DB_NAME}")
 except Exception as e:
-    # If the ping fails, we still might want to proceed if it's a transient DNS issue 
-    # but the MongoClient object itself is likely broken for SRV records if it failed here.
+    print(f"CRITICAL ERROR: Failed to connect to MongoDB: {e}")
     raise
 
 # Create indexes
@@ -125,11 +125,16 @@ def get_user_by_id(user_id: str):
 
 def create_user(user_data: UserRegister):
     from bson import ObjectId
+    print(f"DEBUG: Attempting to create user: {user_data.email}")
     
     # Check if user already exists
+    print(f"DEBUG: Checking if user exists: {user_data.email}")
     existing_user = get_user_by_email(user_data.email)
     if existing_user:
+        print(f"DEBUG: User already exists: {user_data.email}")
         return None
+    
+    print(f"DEBUG: Hashing password for {user_data.email}...")
     
     user_doc = {
         "email": user_data.email,
@@ -138,15 +143,13 @@ def create_user(user_data: UserRegister):
         "fingerprint": user_data.fingerprint,
         "presentationId": user_data.presentationId,
         "plan": "",
+        "engineType": "transformation",
         "credits": {
-            "monthly_resize_used": 0,
-            "monthly_resize_max": 0,
-            "addon_resize_used": 0,
-            "addon_resize_max": 0,
-            "monthly_create_used": 0,
-            "monthly_create_max": 0,
-            "addon_create_used": 0,
-            "addon_create_max": 0
+            "monthly_units_used": 0.0,
+            "monthly_units_max": 0.0,
+            "addon_units_used": 0.0,
+            "addon_units_max": 0.0,
+            "remaining_units": 0.0
         },
         "api_keys": {
             "resize_hash": None,
@@ -170,11 +173,11 @@ def verify_user_credentials(email: str, password: str):
     
     return user
 
-def check_and_deduct_credits(user_id: str, credit_type: str):
+def check_and_deduct_credits(user_id: str, amount: float):
     """
-    Deduct credit for specific operation type ('resize' or 'create').
-    Priority: Monthly credits -> Addon credits.
-    Returns True if successful, False if insufficient credits.
+    Deduct specific amount of tokens.
+    Priority: Monthly units -> Addon units.
+    Returns True if successful, False if insufficient units.
     """
     from bson import ObjectId
     user = users_collection.find_one({"_id": ObjectId(user_id)})
@@ -183,28 +186,34 @@ def check_and_deduct_credits(user_id: str, credit_type: str):
         
     credits = user.get("credits", {})
     
-    monthly_used_key = f"monthly_{credit_type}_used"
-    monthly_max_key = f"monthly_{credit_type}_max"
-    addon_used_key = f"addon_{credit_type}_used"
-    addon_max_key = f"addon_{credit_type}_max"
+    monthly_used = credits.get("monthly_units_used", 0.0)
+    monthly_max = credits.get("monthly_units_max", 0.0)
+    addon_used = credits.get("addon_units_used", 0.0)
+    addon_max = credits.get("addon_units_max", 0.0)
     
-    # Check monthly first (used < max)
-    if credits.get(monthly_used_key, 0) < credits.get(monthly_max_key, 0):
+    # Check monthly first
+    if monthly_used + amount <= monthly_max:
         result = users_collection.update_one(
             {"_id": ObjectId(user_id)},
             {
-                "$inc": {f"credits.{monthly_used_key}": 1}, 
+                "$inc": {
+                    "credits.monthly_units_used": amount,
+                    "credits.remaining_units": -amount
+                }, 
                 "$set": {"updatedAt": datetime.utcnow()}
             }
         )
         return result.modified_count > 0
         
-    # Check addon second (used < max)
-    if credits.get(addon_used_key, 0) < credits.get(addon_max_key, 0):
+    # Check addon second
+    if addon_used + amount <= addon_max:
         result = users_collection.update_one(
             {"_id": ObjectId(user_id)},
             {
-                "$inc": {f"credits.{addon_used_key}": 1}, 
+                "$inc": {
+                    "credits.addon_units_used": amount,
+                    "credits.remaining_units": -amount
+                }, 
                 "$set": {"updatedAt": datetime.utcnow()}
             }
         )
@@ -221,15 +230,17 @@ def update_user_plan(user_id: str, plan_name: str):
         
     plan_credits = plan.get("credits", {})
     
+    new_max = plan.get("includedUnits", 0.0)
+    addon_balance = user.get("credits", {}).get("addon_units_max", 0.0) - user.get("credits", {}).get("addon_units_used", 0.0)
+    
     result = users_collection.update_one(
         {"_id": ObjectId(user_id)},
         {
             "$set": {
                 "plan": plan_name, 
-                "credits.monthly_resize_used": 0,
-                "credits.monthly_resize_max": plan_credits.get("monthly_resize", 0),
-                "credits.monthly_create_used": 0,
-                "credits.monthly_create_max": plan_credits.get("monthly_create", 0),
+                "credits.monthly_units_used": 0.0,
+                "credits.monthly_units_max": new_max,
+                "credits.remaining_units": new_max + addon_balance,
                 "updatedAt": datetime.utcnow()
             }
         }
@@ -253,14 +264,52 @@ def reset_monthly_credits(user_id: str):
     
     plan_credits = plan.get("credits", {})
     
+    new_max = plan.get("includedUnits", 0.0)
+    addon_balance = user.get("credits", {}).get("addon_units_max", 0.0) - user.get("credits", {}).get("addon_units_used", 0.0)
+    
     result = users_collection.update_one(
         {"_id": ObjectId(user_id)},
         {
             "$set": {
-                "credits.monthly_resize_used": 0,
-                "credits.monthly_resize_max": plan_credits.get("monthly_resize", 0),
-                "credits.monthly_create_used": 0,
-                "credits.monthly_create_max": plan_credits.get("monthly_create", 0),
+                "credits.monthly_units_used": 0.0,
+                "credits.monthly_units_max": new_max,
+                "credits.remaining_units": new_max + addon_balance,
+                "updatedAt": datetime.utcnow()
+            }
+        }
+    )
+    return result.modified_count > 0
+
+def add_addon_credits(user_id: str, amount: float):
+    """
+    Add addon units to user's balance.
+    """
+    from bson import ObjectId
+    result = users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {
+            "$inc": {
+                "credits.addon_units_max": amount,
+                "credits.remaining_units": amount
+            },
+            "$set": {"updatedAt": datetime.utcnow()}
+        }
+    )
+    return result.modified_count > 0
+
+def update_user_engine(user_id: str, engine_type: str):
+    """
+    Update user's active engine type.
+    """
+    from bson import ObjectId
+    if engine_type not in ["transformation", "creation"]:
+        return False
+        
+    result = users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {
+            "$set": {
+                "engineType": engine_type,
                 "updatedAt": datetime.utcnow()
             }
         }
@@ -424,20 +473,20 @@ def user_doc_to_response(user_doc):
         "email": user_doc["email"],
         "fullName": user_doc.get("fullName", ""),
         "plan": user_doc.get("plan", ""),
+        "engineType": user_doc.get("engineType", "transformation"),
         "credits": {
-            "monthly_resize_used": credits.get("monthly_resize_used", 0),
-            "monthly_resize_max": credits.get("monthly_resize_max", 0),
-            "addon_resize_used": credits.get("addon_resize_used", 0),
-            "addon_resize_max": credits.get("addon_resize_max", 0),
-            "monthly_create_used": credits.get("monthly_create_used", 0),
-            "monthly_create_max": credits.get("monthly_create_max", 0),
-            "addon_create_used": credits.get("addon_create_used", 0),
-            "addon_create_max": credits.get("addon_create_max", 0),
+            "monthly_units_used": credits.get("monthly_units_used", 0.0),
+            "monthly_units_max": credits.get("monthly_units_max", 0.0),
+            "addon_units_used": credits.get("addon_units_used", 0.0),
+            "addon_units_max": credits.get("addon_units_max", 0.0),
+            "remaining_units": credits.get("remaining_units", 0.0),
         },
+        "stripeCustomerId": user_doc.get("stripeCustomerId"),
+        "stripeSubscriptionId": user_doc.get("stripeSubscriptionId"),
         "createdAt": user_doc.get("createdAt"),
     }
 
-def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, image_url: str = None):
+def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, isLargeImage: bool = False, image_url: str = None):
     """Log a usage operation for billing purposes"""
     usage_doc = {
         "userId": user_id,
@@ -445,6 +494,7 @@ def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, im
         "aspectRatio": aspect_ratio,
         "timestamp": datetime.utcnow(),
         "success": success,
+        "isLargeImage": isLargeImage,
         "imageUrl": image_url
     }
     usage_logs_collection.insert_one(usage_doc)
@@ -470,15 +520,13 @@ def get_user_usage_stats(user_id: str):
     return {
         "userId": user_id,
         "plan": user.get("plan") or "free tier",
+        "engineType": user.get("engineType", "transformation"),
         "credits": {
-            "monthly_resize_used": credits.get("monthly_resize_used", 0),
-            "monthly_resize_max": credits.get("monthly_resize_max", 0),
-            "addon_resize_used": credits.get("addon_resize_used", 0),
-            "addon_resize_max": credits.get("addon_resize_max", 0),
-            "monthly_create_used": credits.get("monthly_create_used", 0),
-            "monthly_create_max": credits.get("monthly_create_max", 0),
-            "addon_create_used": credits.get("addon_create_used", 0),
-            "addon_create_max": credits.get("addon_create_max", 0),
+            "monthly_units_used": credits.get("monthly_units_used", 0.0),
+            "monthly_units_max": credits.get("monthly_units_max", 0.0),
+            "addon_units_used": credits.get("addon_units_used", 0.0),
+            "addon_units_max": credits.get("addon_units_max", 0.0),
+            "remaining_units": credits.get("remaining_units", 0.0),
         },
         "currentMonthOperations": usage_count
     }

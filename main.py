@@ -18,6 +18,7 @@ from auth import (
     generate_monthly_bill, log_usage
 )
 import auth as auth_module
+import stripe_manager
 from middleware import SecurityMiddleware
 from validators import (
     validate_image_upload, validate_aspect_ratio, validate_prompt,
@@ -97,6 +98,7 @@ else:
 @app.post("/api/users/register", response_model=TokenResponse)
 async def register(user_data: UserRegister):
     """Register a new user"""
+    print(f"DEBUG: Received registration request for {user_data.email}")
     new_user = create_user(user_data)
     if not new_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -226,6 +228,58 @@ async def generate_bill(current_user = Depends(get_current_user_jwt)):
     bill["_id"] = str(bill["_id"])
     return bill
 
+@app.post("/api/users/engine-type")
+async def update_engine_type(
+    engine_type: str = Query(..., regex="^(transformation|creation)$"),
+    current_user = Depends(get_current_user_jwt)
+):
+    """Update user's active engine type"""
+    success = auth_module.update_user_engine(str(current_user["_id"]), engine_type)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to update engine type")
+    return {"message": f"Engine type updated to {engine_type}", "engineType": engine_type}
+
+@app.post("/api/users/add-addon")
+async def add_addon_endpoint(current_user = Depends(get_current_user_jwt)):
+    """Simulate buying 50 addon units"""
+    success = auth_module.add_addon_credits(str(current_user["_id"]), 50.0)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to add addon units")
+    
+    # Reload user to return updated info
+    updated_user = get_user_by_id(str(current_user["_id"]))
+    return {
+        "message": "Successfully added 50 addon units",
+        "user": user_doc_to_response(updated_user)
+    }
+
+@app.post("/api/stripe/create-checkout")
+async def create_stripe_checkout(
+    plan_key: str = Query(..., regex="^(M_Starter|M_Growth|M_Scale|T_Starter|T_Growth|T_Scale)$"),
+    current_user = Depends(get_current_user_jwt)
+):
+    """Create Stripe checkout session for a selected plan"""
+    checkout_url = stripe_manager.create_checkout_session(str(current_user["_id"]), plan_key)
+    if not checkout_url:
+        raise HTTPException(status_code=500, detail="Failed to create checkout session")
+    return {"url": checkout_url}
+
+@app.post("/api/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhooks"""
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing stripe-signature")
+        
+    success = stripe_manager.handle_webhook_event(payload, sig_header)
+    if not success:
+        raise HTTPException(status_code=400, detail="Webhook handling failed")
+        
+    return {"status": "success"}
+
+
 
 @app.post("/api/resize")
 async def resize_image(
@@ -240,17 +294,43 @@ async def resize_image(
     Deducts 1 'resize' credit.
     Returns image bytes directly.
     """
+    global client
     # 1. Scope Enforcement
     key_type = getattr(request.state, "key_type", None)
     if key_type != "resize":
          raise HTTPException(status_code=403, detail="Invalid API Key type for this endpoint. Use a 'resize' key.")
 
-    global client
-    
-    # 2. Credit Check & Deduction
-    user_id = str(current_user["_id"])
-    if not auth_module.check_and_deduct_credits(user_id, "resize"):
-        raise HTTPException(status_code=402, detail="Insufficient resize credits (monthly or addon).")
+    # 2. Process Image & Calculate Deduction
+    try:
+        # Validate and process image
+        try:
+            image_bytes = await validate_image_upload(file)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        pil_image = Image.open(io.BytesIO(image_bytes))
+        width, height = pil_image.size
+        pixels = width * height
+        
+        # Deduction rules: 1.0 token (≤1024px), 2.5 tokens (>1024px)
+        # However user said: "if the image pixels are > 1000 pixels, the token deduction in tranformation will be 2.5 tokens"
+        # And image says: Transformation API (≤ 1024px) -> 1.0 Token, (> 1024px & ≤ 2k) -> 2.5 Tokens
+        # I will follow the image which is more specific.
+        deduction = 1.0
+        is_large = False
+        if width > 1024 or height > 1024:
+            deduction = 2.5
+            is_large = True
+
+        # Credit Check & Deduction
+        user_id = str(current_user["_id"])
+        if not auth_module.check_and_deduct_credits(user_id, deduction):
+            raise HTTPException(status_code=402, detail=f"Insufficient units. This operation requires {deduction} tokens.")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Image processing failed: {str(e)}")
 
     # 3. Initialize Gemini
     if not client:
@@ -259,20 +339,13 @@ async def resize_image(
         if GOOGLE_API_KEY_LATEST:
             client = genai.Client(api_key=GOOGLE_API_KEY_LATEST)
         else:
-            raise HTTPException(status_code=500, detail="Server Configuration Error: API Key missing")
+            raise HTTPException(status_code=500, detail=f"Server Configuration Error: API Key missing")
 
     try:
-        # 2. Validate aspect ratio
+        # Validate aspect ratio
         if not validate_aspect_ratio(aspect_ratio):
             raise HTTPException(status_code=400, detail="Invalid aspect ratio format")
-        
-        # 3. Validate and process image
-        try:
-            image_bytes = await validate_image_upload(file)
-        except ValidationError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        
-        pil_image = Image.open(io.BytesIO(image_bytes))
+
         
         use_prompt = f"recreate this image in {aspect_ratio} ratio format and keep all the information intact."
         
@@ -306,11 +379,16 @@ async def resize_image(
             operation="resize",
             aspect_ratio=aspect_ratio,
             success=True,
+            isLargeImage=is_large,
             image_url="direct_download" 
         )
         
-        # 6. Return Image Directly
-        return Response(content=image_data, media_type="image/png")
+        # 6. Return Image Directly with Metadata Header
+        return Response(
+            content=image_data, 
+            media_type="image/png",
+            headers={"X-Is-Large-Image": "true" if is_large else "false"}
+        )
                 
     except HTTPException:
         raise
@@ -341,13 +419,7 @@ async def create_image(
          raise HTTPException(status_code=403, detail="Invalid API Key type for this endpoint. Use a 'create' key.")
 
     global client
-    
-    # 2. Credit Check & Deduction
-    user_id = str(current_user["_id"])
-    if not auth_module.check_and_deduct_credits(user_id, "create"):
-        raise HTTPException(status_code=402, detail="Insufficient create credits (monthly or addon).")
-
-    # 3. Initialize Gemini
+    # 2. Process Inputs & Gemini Init
     if not client:
         load_dotenv()
         GOOGLE_API_KEY_LATEST = os.getenv("GOOGLE_API_KEY")
@@ -357,26 +429,39 @@ async def create_image(
             raise HTTPException(status_code=500, detail="Server Configuration Error: API Key missing")
 
     try:
-        # 2. Validate prompt
+        # Validate prompt
         try:
             validated_prompt = validate_prompt(prompt)
         except ValidationError as e:
             raise HTTPException(status_code=400, detail=str(e))
         
-        # 3. Validate aspect ratio
+        # Validate aspect ratio
         if not validate_aspect_ratio(aspect_ratio):
             raise HTTPException(status_code=400, detail="Invalid aspect ratio format")
-        
-        # 4. Prepare Contents
+
+        # 4. Prepare Contents & Determine Deduction
         contents = [validated_prompt]
+        deduction = 2.5 # Default for Creation API (≤ 1024px)
+        
         if file:
             try:
                 image_bytes = await validate_image_upload(file)
             except ValidationError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             pil_image = Image.open(io.BytesIO(image_bytes))
+            width, height = pil_image.size
+            is_large = (width > 1024 or height > 1024)
+            if is_large:
+                deduction = 4.5
             contents.append(pil_image)
+        else:
+            is_large = False # Default for text-only create
         
+        # Credit Check & Deduction
+        user_id = str(current_user["_id"])
+        if not auth_module.check_and_deduct_credits(user_id, deduction):
+            raise HTTPException(status_code=402, detail=f"Insufficient units. This operation requires {deduction} tokens.")
+
         model_name = "gemini-3-pro-image-preview" 
 
         response = client.models.generate_content(
@@ -407,11 +492,16 @@ async def create_image(
             operation="create",
             aspect_ratio=aspect_ratio,
             success=True,
+            isLargeImage=is_large,
             image_url="direct_download"
         )
         
-        # 6. Return Image Directly
-        return Response(content=image_data, media_type="image/png")
+        # 6. Return Image Directly with Metadata Header
+        return Response(
+            content=image_data, 
+            media_type="image/png",
+            headers={"X-Is-Large-Image": "true" if is_large else "false"}
+        )
                 
     except HTTPException:
         raise

@@ -1,56 +1,83 @@
 import os
-from pymongo import MongoClient
-from bson import ObjectId
+import sys
 from datetime import datetime
 from dotenv import load_dotenv
-import bcrypt
 
-# Load environment variables
+# Ensure we can import from the current directory
+sys.path.append(os.getcwd())
+
+from auth import (
+    users_collection, 
+    hash_password, 
+    generate_api_key_for_user,
+    get_user_by_email
+)
+from models import UserRegister
+from bson import ObjectId
+
 load_dotenv()
-MONGODB_URL = os.getenv("MONGODB_URL")
-DB_NAME = os.getenv("DB_NAME", "visual_engine_secure")
 
-def setup_client_account():
-    client = MongoClient(MONGODB_URL)
-    db = client[DB_NAME]
-    users_collection = db["users"]
-
+def setup_client():
     email = "glenn@fmctv.co.nz"
-    full_name = "Glenn Tong"
-    # Secure random password if needed, but here we set a specific one for testing
     password = "VisualEngine2026!"
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-    client_data = {
-        "email": email,
-        "fullName": full_name,
-        "password": hashed_password,
-        "plan": "Free Tier",
-        "units": 0,
-        "maxUnits": 50,
-        "updatedAt": datetime.utcnow()
-    }
-
-    # Check if user exists
-    existing_user = users_collection.find_one({"email": email})
     
-    if existing_user:
-        # Update existing user
-        users_collection.update_one(
-            {"email": email},
-            {"$set": client_data}
-        )
-        print(f"✅ Updated existing client account: {email}")
+    print(f"🚀 Setting up client account for: {email}...")
+    
+    # 1. Check if user exists, or create
+    user = get_user_by_email(email)
+    if not user:
+        user_doc = {
+            "email": email,
+            "password": hash_password(password),
+            "fullName": "Glenn FMCTV",
+            "plan": "Trial",
+            "engineType": "transformation",
+            "credits": {
+                "monthly_units_used": 0.0,
+                "monthly_units_max": 50.0,
+                "addon_units_used": 0.0,
+                "addon_units_max": 0.0,
+                "remaining_units": 50.0
+            },
+            "api_keys": {
+                "resize_hash": None,
+                "create_hash": None
+            },
+            "createdAt": datetime.utcnow(),
+            "updatedAt": datetime.utcnow(),
+        }
+        result = users_collection.insert_one(user_doc)
+        user_id = str(result.inserted_id)
+        print("✅ User created successfully.")
     else:
-        # Create new user
-        client_data["createdAt"] = datetime.utcnow()
-        users_collection.insert_one(client_data)
-        print(f"✅ Created new client account: {email}")
+        user_id = str(user["_id"])
+        # Reset credits for testing
+        users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {
+                "credits.monthly_units_max": 50.0,
+                "credits.monthly_units_used": 0.0,
+                "credits.remaining_units": 50.0,
+                "plan": "Trial"
+            }}
+        )
+        print("✅ User existing, credits reset to 50.0.")
 
-    print(f"\nCredentials for {full_name}:")
-    print(f"Email: {email}")
+    # 2. Generate API Keys
+    transformation_key = generate_api_key_for_user(user_id, "resize")
+    creation_key = generate_api_key_for_user(user_id, "create")
+    
+    print("\n" + "="*50)
+    print("🔑 CLIENT API CREDENTIALS")
+    print("="*50)
+    print(f"Email:    {email}")
     print(f"Password: {password}")
-    print(f"Credits: 50")
+    print(f"\nTransformation Engine Key (Resize):")
+    print(f"👉 {transformation_key}")
+    print(f"\nCreation Engine Key (Prompt + Resize):")
+    print(f"👉 {creation_key}")
+    print("="*50)
+    print("\n⚠️ IMPORTANT: Copy these keys now! For security, the raw keys are NOT stored in the database.")
 
 if __name__ == "__main__":
-    setup_client_account()
+    setup_client()

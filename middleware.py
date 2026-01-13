@@ -40,6 +40,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next):
         client_ip = self.get_client_ip(request)
+        print(f"🔥 [REQUEST] {request.method} {request.url.path} from {client_ip}")
         
         try:
             # 1. Check if IP is blocked

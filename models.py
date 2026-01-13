@@ -21,14 +21,11 @@ class ResetPasswordRequest(BaseModel):
     newPassword: str
 
 class Credits(BaseModel):
-    monthly_resize_used: int = 0
-    monthly_resize_max: int = 0
-    addon_resize_used: int = 0
-    addon_resize_max: int = 0
-    monthly_create_used: int = 0
-    monthly_create_max: int = 0
-    addon_create_used: int = 0
-    addon_create_max: int = 0
+    monthly_units_used: float = 0.0
+    monthly_units_max: float = 0.0
+    addon_units_used: float = 0.0
+    addon_units_max: float = 0.0
+    remaining_units: float = 0.0
 
 class ApiKeys(BaseModel):
     resize_hash: Optional[str] = None
@@ -39,8 +36,11 @@ class User(BaseModel):
     email: str
     fullName: Optional[str] = None
     plan: str = ""  # Default is no plan
+    engineType: str = "transformation"  # "transformation" or "creation"
     credits: Credits = Credits()
     api_keys: ApiKeys = ApiKeys()
+    stripeCustomerId: Optional[str] = None
+    stripeSubscriptionId: Optional[str] = None
     createdAt: datetime = None
     updatedAt: datetime = None
 
@@ -49,7 +49,10 @@ class UserResponse(BaseModel):
     email: str
     fullName: Optional[str] = None
     plan: str
+    engineType: str
     credits: Credits
+    stripeCustomerId: Optional[str] = None
+    stripeSubscriptionId: Optional[str] = None
     createdAt: datetime
 
 class TokenResponse(BaseModel):
@@ -78,6 +81,7 @@ class UsageLog(BaseModel):
     aspectRatio: str
     timestamp: datetime
     success: bool
+    isLargeImage: bool = False
     imageUrl: Optional[str] = None
 
 class BillingRecord(BaseModel):
