@@ -27,7 +27,11 @@ from validators import (
 
 load_dotenv()
 
-app = FastAPI(title="Visual Engine (Gemini Powered)")
+app = FastAPI(
+    title="Visual Engine API",
+    root_path="/secure"
+)
+
 
 # Add Security Middleware (MUST be first)
 app.add_middleware(SecurityMiddleware)
