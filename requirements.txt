@@ -12,3 +12,4 @@ python-jose[cryptography]
 passlib[bcrypt]
 email-validator
 python-magic-bin
+stripe

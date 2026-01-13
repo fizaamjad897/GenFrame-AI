@@ -25,6 +25,7 @@ class Credits(BaseModel):
     monthly_units_max: float = 0.0
     addon_units_used: float = 0.0
     addon_units_max: float = 0.0
+    remaining_units: float = 0.0
 
 class ApiKeys(BaseModel):
     resize_hash: Optional[str] = None
@@ -38,6 +39,8 @@ class User(BaseModel):
     engineType: str = "transformation"  # "transformation" or "creation"
     credits: Credits = Credits()
     api_keys: ApiKeys = ApiKeys()
+    stripeCustomerId: Optional[str] = None
+    stripeSubscriptionId: Optional[str] = None
     createdAt: datetime = None
     updatedAt: datetime = None
 
@@ -48,6 +51,8 @@ class UserResponse(BaseModel):
     plan: str
     engineType: str
     credits: Credits
+    stripeCustomerId: Optional[str] = None
+    stripeSubscriptionId: Optional[str] = None
     createdAt: datetime
 
 class TokenResponse(BaseModel):

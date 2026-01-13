@@ -18,6 +18,7 @@ from auth import (
     generate_monthly_bill, log_usage
 )
 import auth as auth_module
+import stripe_manager
 from middleware import SecurityMiddleware
 from validators import (
     validate_image_upload, validate_aspect_ratio, validate_prompt,
@@ -97,6 +98,7 @@ else:
 @app.post("/api/users/register", response_model=TokenResponse)
 async def register(user_data: UserRegister):
     """Register a new user"""
+    print(f"DEBUG: Received registration request for {user_data.email}")
     new_user = create_user(user_data)
     if not new_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -251,6 +253,33 @@ async def add_addon_endpoint(current_user = Depends(get_current_user_jwt)):
         "user": user_doc_to_response(updated_user)
     }
 
+@app.post("/api/stripe/create-checkout")
+async def create_stripe_checkout(
+    plan_key: str = Query(..., regex="^(M_Starter|M_Growth|M_Scale|T_Starter|T_Growth|T_Scale)$"),
+    current_user = Depends(get_current_user_jwt)
+):
+    """Create Stripe checkout session for a selected plan"""
+    checkout_url = stripe_manager.create_checkout_session(str(current_user["_id"]), plan_key)
+    if not checkout_url:
+        raise HTTPException(status_code=500, detail="Failed to create checkout session")
+    return {"url": checkout_url}
+
+@app.post("/api/stripe/webhook")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhooks"""
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing stripe-signature")
+        
+    success = stripe_manager.handle_webhook_event(payload, sig_header)
+    if not success:
+        raise HTTPException(status_code=400, detail="Webhook handling failed")
+        
+    return {"status": "success"}
+
+
 
 @app.post("/api/resize")
 async def resize_image(
@@ -265,6 +294,7 @@ async def resize_image(
     Deducts 1 'resize' credit.
     Returns image bytes directly.
     """
+    global client
     # 1. Scope Enforcement
     key_type = getattr(request.state, "key_type", None)
     if key_type != "resize":
