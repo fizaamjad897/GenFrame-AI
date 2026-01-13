@@ -84,13 +84,14 @@ curl -X POST "http://127.0.0.1:8000/api/resize" \
 | :--- | :--- |
 | **Email** | `glenn@fmctv.co.nz` |
 | **Password** | `VisualEngine2026!` |
-| **Test Balance** | 50.0 Tokens |
+| **Base URL** | `https://recreative.slidexy.ai/secure` |
+| **Test Balance** | 20.0 Tokens |
 
 ### 2. Active Engine Keys
 | Engine | Required Header | Key Value |
 | :--- | :--- | :--- |
-| **Transformation** | `X-API-KEY` | `PX-dFN_Ap7Z8PNnbSY6HIuHltuNtt6NGM1lExaBK-b4` |
-| **Creation** | `X-API-KEY` | `SQG9Wr3gebI2Os_mXWBEDrjsPCEkxr3AKInMxqdSPJI` |
+| **Transformation** | `X-API-KEY` | `Xzrqta1_HAHZNMfSiGzbe9ITWkW7rUnlZ0beYYtxtA4` |
+| **Creation** | `X-API-KEY` | `IsXnUbY1MVNWHWrPRLARf0hQmjByhIspH49v_RtO_a8` |
 
 ### 3. Token Billing Rules
 The system automatically selects the billing tier based on image resolution.
