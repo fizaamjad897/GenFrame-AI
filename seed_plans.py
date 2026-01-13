@@ -28,15 +28,11 @@ def seed_plans():
             {
                 "name": "Starter",
                 "price": 159.0,
-                "credits": {
-                    "monthly_resize": 1000,
-                    "monthly_create": 500
-                },
-                "costPerUnit": 0.795,
+                "includedUnits": 1000,
+                "costPerUnit": 0.159,
                 "bestFor": "Startups & Initial Testing",
                 "features": [
-                    "1,000 Resize Credits",
-                    "500 Create Credits",
+                    "1,000 Unified Tokens",
                     "ADA Compliance Layer",
                     "Visual Accessibility Scan",
                     "Standard AI Resizing",
@@ -49,16 +45,12 @@ def seed_plans():
             },
             {
                 "name": "Growth",
-                "price": 429.0,
-                "credits": {
-                    "monthly_resize": 3000,
-                    "monthly_create": 1500
-                },
-                "costPerUnit": 0.143,
+                "price": 477.0,
+                "includedUnits": 3000,
+                "costPerUnit": 0.159,
                 "bestFor": "Active Marketing Agencies",
                 "features": [
-                    "3,000 Resize Credits",
-                    "1,500 Create Credits",
+                    "3,000 Unified Tokens",
                     "All Starter Features",
                     "Priority API Access",
                     "Intelligent Element Spacing",
@@ -71,16 +63,12 @@ def seed_plans():
             },
             {
                 "name": "Scale",
-                "price": 649.0,
-                "credits": {
-                    "monthly_resize": 5000,
-                    "monthly_create": 2500
-                },
-                "costPerUnit": 0.130,
+                "price": 795.0,
+                "includedUnits": 5000,
+                "costPerUnit": 0.159,
                 "bestFor": "Global Signage Networks",
                 "features": [
-                    "5,000 Resize Credits",
-                    "2,500 Create Credits",
+                    "5,000 Unified Tokens",
                     "All Growth Features",
                     "Dedicated Infrastructure",
                     "Custom AI Model Tuning",
