@@ -30,6 +30,7 @@ def seed_plans():
                 "price": 159.0,
                 "includedUnits": 1000,
                 "costPerUnit": 0.159,
+                "overageRate": 0.19,
                 "bestFor": "Startups & Initial Testing",
                 "features": [
                     "1,000 Unified Tokens",
@@ -48,6 +49,7 @@ def seed_plans():
                 "price": 477.0,
                 "includedUnits": 3000,
                 "costPerUnit": 0.159,
+                "overageRate": 0.15,
                 "bestFor": "Active Marketing Agencies",
                 "features": [
                     "3,000 Unified Tokens",
@@ -66,6 +68,7 @@ def seed_plans():
                 "price": 795.0,
                 "includedUnits": 5000,
                 "costPerUnit": 0.159,
+                "overageRate": 0.12,
                 "bestFor": "Global Signage Networks",
                 "features": [
                     "5,000 Unified Tokens",

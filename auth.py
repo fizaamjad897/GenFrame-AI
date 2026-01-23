@@ -6,6 +6,7 @@ import uuid
 import secrets
 import hmac
 import hashlib
+import sys
 from models import User, UserRegister, UserLogin, ForgotPasswordRequest, ResetPasswordRequest
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -23,14 +24,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Use JWT_SECRET to avoid conflict with Digital Ocean SECRET_KEY
 JWT_SECRET = os.getenv("JWT_SECRET") or os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
 SECRET_KEY = JWT_SECRET.strip("'\" ")
-# HMAC secret for API keys (fallback to SECRET_KEY if not provided)
-API_KEY_SECRET = os.getenv("API_KEY_SECRET", SECRET_KEY).strip("'\" ")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # Extend to 1 week for better UX during development
 
 # MongoDB
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-DB_NAME = os.getenv("DB_NAME", "visual_engine_secure")
+DB_NAME = os.getenv("DB_NAME", "visual_engine")
 
 # Email configuration
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
@@ -40,7 +39,7 @@ SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "your-app-password")
 
 # Initialize MongoDB
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017").strip("'\" ")
-DB_NAME = os.getenv("DB_NAME", "visual_engine_secure").strip("'\" ")
+DB_NAME = os.getenv("DB_NAME", "visual_engine").strip("'\" ")
 
 def get_db_client(url, max_retries=3):
     import time
@@ -58,8 +57,10 @@ def get_db_client(url, max_retries=3):
                 print(f"Failed to connect to MongoDB after {max_retries} attempts: {e}")
                 raise
 
+REQUIRE_MONGO = os.getenv("REQUIRE_MONGO", "true").lower() in ("1", "true", "yes", "on")
+_is_pytest = ("pytest" in sys.modules) or bool(os.getenv("PYTEST_CURRENT_TEST"))
+
 try:
-    print(f"DEBUG: Connecting to MongoDB at {MONGODB_URL} (DB: {DB_NAME})...")
     client = get_db_client(MONGODB_URL)
     db = client[DB_NAME]
     users_collection = db["users"]
@@ -67,18 +68,35 @@ try:
     plans_collection = db["plans"]
     usage_logs_collection = db["usage_logs"]
     billing_records_collection = db["billing_records"]
-    print(f"Connected to MongoDB successfully. Database: {DB_NAME}")
-except Exception as e:
-    print(f"CRITICAL ERROR: Failed to connect to MongoDB: {e}")
-    raise
+    stripe_events_collection = db["stripe_events"]
+    print("Connected to MongoDB successfully")
 
-# Create indexes
-users_collection.create_index("email", unique=True)
-password_resets_collection.create_index("createdAt", expireAfterSeconds=3600)  # Expire after 1 hour
-usage_logs_collection.create_index("userId")
-usage_logs_collection.create_index("timestamp")
-billing_records_collection.create_index("userId")
-billing_records_collection.create_index("billingPeriodStart")
+    # Create indexes
+    users_collection.create_index("email", unique=True)
+    password_resets_collection.create_index("createdAt", expireAfterSeconds=3600)  # Expire after 1 hour
+    usage_logs_collection.create_index("userId")
+    usage_logs_collection.create_index("timestamp")
+    billing_records_collection.create_index("userId")
+    billing_records_collection.create_index("billingPeriodStart")
+    stripe_events_collection.create_index("event_id", unique=True)
+except Exception as e:
+    # Allow import in unit tests / dev without hard failing, unless explicitly required.
+    client = None
+    db = None
+    users_collection = None
+    password_resets_collection = None
+    plans_collection = None
+    usage_logs_collection = None
+    billing_records_collection = None
+    stripe_events_collection = None
+    print(f"Warning: MongoDB unavailable during import ({e}).")
+    if REQUIRE_MONGO and not _is_pytest:
+        raise
+
+# API key hashing secret (prefer explicit API_KEY_SECRET; fallback to JWT secret)
+API_KEY_SECRET = (os.getenv("API_KEY_SECRET") or SECRET_KEY).encode("utf-8")
+
+DEFAULT_SIGNUP_CREDITS = float(os.getenv("DEFAULT_SIGNUP_CREDITS", "0"))
 
 # Utility functions
 def hash_password(password: str) -> str:
@@ -125,16 +143,11 @@ def get_user_by_id(user_id: str):
 
 def create_user(user_data: UserRegister):
     from bson import ObjectId
-    print(f"DEBUG: Attempting to create user: {user_data.email}")
     
     # Check if user already exists
-    print(f"DEBUG: Checking if user exists: {user_data.email}")
     existing_user = get_user_by_email(user_data.email)
     if existing_user:
-        print(f"DEBUG: User already exists: {user_data.email}")
         return None
-    
-    print(f"DEBUG: Hashing password for {user_data.email}...")
     
     user_doc = {
         "email": user_data.email,
@@ -144,13 +157,18 @@ def create_user(user_data: UserRegister):
         "presentationId": user_data.presentationId,
         "plan": "",
         "engineType": "transformation",
+        # Legacy counters (kept for backward compatibility; prefer credits.*)
+        "units": 0,
+        "maxUnits": int(DEFAULT_SIGNUP_CREDITS),
+        # Unified credits ledger (monthly resets; addon persists)
         "credits": {
             "monthly_units_used": 0.0,
-            "monthly_units_max": 0.0,
+            "monthly_units_max": float(DEFAULT_SIGNUP_CREDITS),
             "addon_units_used": 0.0,
             "addon_units_max": 0.0,
-            "remaining_units": 0.0
+            "remaining_units": float(DEFAULT_SIGNUP_CREDITS),
         },
+        # Scoped API keys (HMAC hashes only)
         "api_keys": {
             "resize_hash": None,
             "create_hash": None
@@ -173,146 +191,479 @@ def verify_user_credentials(email: str, password: str):
     
     return user
 
-def check_and_deduct_credits(user_id: str, amount: float):
-    """
-    Deduct specific amount of tokens.
-    Priority: Monthly units -> Addon units.
-    Returns True if successful, False if insufficient units.
-    """
+def increment_user_units(user_id: str):
     from bson import ObjectId
-    user = users_collection.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        return False
-        
-    credits = user.get("credits", {})
-    
-    monthly_used = credits.get("monthly_units_used", 0.0)
-    monthly_max = credits.get("monthly_units_max", 0.0)
-    addon_used = credits.get("addon_units_used", 0.0)
-    addon_max = credits.get("addon_units_max", 0.0)
-    
-    # Check monthly first
-    if monthly_used + amount <= monthly_max:
-        result = users_collection.update_one(
-            {"_id": ObjectId(user_id)},
-            {
-                "$inc": {
-                    "credits.monthly_units_used": amount,
-                    "credits.remaining_units": -amount
-                }, 
-                "$set": {"updatedAt": datetime.utcnow()}
-            }
-        )
-        return result.modified_count > 0
-        
-    # Check addon second
-    if addon_used + amount <= addon_max:
-        result = users_collection.update_one(
-            {"_id": ObjectId(user_id)},
-            {
-                "$inc": {
-                    "credits.addon_units_used": amount,
-                    "credits.remaining_units": -amount
-                }, 
-                "$set": {"updatedAt": datetime.utcnow()}
-            }
-        )
-        return result.modified_count > 0
-        
-    return False
-
-def update_user_plan(user_id: str, plan_name: str):
-    from bson import ObjectId
-    # Fetch plan details to get credit limits
-    plan = plans_collection.find_one({"name": plan_name.capitalize()})
-    if not plan:
-        return False
-        
-    plan_credits = plan.get("credits", {})
-    
-    new_max = plan.get("includedUnits", 0.0)
-    addon_balance = user.get("credits", {}).get("addon_units_max", 0.0) - user.get("credits", {}).get("addon_units_used", 0.0)
-    
     result = users_collection.update_one(
         {"_id": ObjectId(user_id)},
-        {
-            "$set": {
-                "plan": plan_name, 
-                "credits.monthly_units_used": 0.0,
-                "credits.monthly_units_max": new_max,
-                "credits.remaining_units": new_max + addon_balance,
-                "updatedAt": datetime.utcnow()
-            }
-        }
+        {"$inc": {"units": 1}, "$set": {"updatedAt": datetime.utcnow()}}
     )
     return result.modified_count > 0
+
+def _recompute_remaining_units(credits: dict) -> float:
+    """Compute remaining units from monthly/addon max/used."""
+    monthly_remaining = max(0.0, float(credits.get("monthly_units_max", 0.0)) - float(credits.get("monthly_units_used", 0.0)))
+    addon_remaining = max(0.0, float(credits.get("addon_units_max", 0.0)) - float(credits.get("addon_units_used", 0.0)))
+    return float(monthly_remaining + addon_remaining)
+
+
+def update_user_plan(user_id: str, plan_code: str, engine_type: str = "transformation", subscription_id: str = None):
+    """
+    Update a specific engine subscription and keep its credit pool ISOLATED.
+    """
+    from bson import ObjectId
+    plan_doc = plans_collection.find_one({"name": (plan_code or "").capitalize()})
+    included_units = float(plan_doc["includedUnits"]) if plan_doc and "includedUnits" in plan_doc else 0.0
+    
+    user = users_collection.find_one({"_id": ObjectId(user_id)}) or {}
+    engine_data = user.get("engine_data", {}) or {}
+    
+    # Get current engine state or default
+    current_engine = engine_data.get(engine_type, {}) or {}
+    credits_per_engine = current_engine.get("credits", {}) or {}
+    
+    addon_used = float(credits_per_engine.get("addon_units_used", 0.0))
+    addon_max = float(credits_per_engine.get("addon_units_max", 0.0))
+    
+    # Preserve existing usage if engine already has a plan
+    current_used = float(credits_per_engine.get("monthly_units_used", 0.0))
+    # Reset usage to 0 ONLY if this is a brand new subscription (or if legacy units were 0)
+    # If we are resuming or syncing an existing sub, we keep the usage.
+    monthly_used = current_used
+    
+    new_engine_credits = {
+        "monthly_units_used": monthly_used,
+        "monthly_units_max": included_units,
+        "addon_units_used": addon_used,
+        "addon_units_max": addon_max,
+    }
+    new_engine_credits["remaining_units"] = _recompute_remaining_units(new_engine_credits)
+    
+    # Update this specific engine's data
+    engine_data[engine_type] = {
+        "plan": (plan_code or ""),
+        "credits": new_engine_credits,
+        "is_pending_cancellation": False,
+        "stripeSubscriptionId": subscription_id,
+        "updatedAt": datetime.utcnow()
+    }
+    
+    # Also update legacy/top-level fields (matches this engine as the active context)
+    result = users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {
+            "plan": (plan_code or ""),
+            "engineType": engine_type,
+            "credits": new_engine_credits, # Sync top-level for FE convenience
+            "is_pending_cancellation": False,
+            "engine_data": engine_data, 
+            "maxUnits": int(included_units),
+            "units": 0,
+            "stripeSubscriptionId": subscription_id, # Most recent sub ID
+            "updatedAt": datetime.utcnow()
+        }}
+    )
+    return result.modified_count > 0
+
+def cancel_user_plan(user_id: str, engine_type: str = None, is_pending: bool = False):
+    """
+    Revert user to free tier for specific engine (no monthly credits). 
+    Addon credits remain.
+    If engine_type is None, clears the top-level plan (legacy behavior).
+    If is_pending=True, we keep the plan name but reset credits (shows Cancelling in UI).
+    """
+    from bson import ObjectId
+    user = users_collection.find_one({"_id": ObjectId(user_id)}) or {}
+    credits = user.get("credits", {}) or {}
+    engine_data = user.get("engine_data", {}) or {}
+    
+    new_credits = {
+        "monthly_units_used": 0.0,
+        "monthly_units_max": 0.0,
+        "addon_units_used": float(credits.get("addon_units_used", 0.0)),
+        "addon_units_max": float(credits.get("addon_units_max", 0.0)),
+        "is_pending_cancellation": is_pending
+    }
+    new_credits["remaining_units"] = _recompute_remaining_units(new_credits)
+    
+    # If engine_type specified, only cancel that engine's subscription
+    if engine_type:
+        if engine_type in engine_data:
+            # Clear this engine's plan (unless pending) and reset its credits
+            prev_plan = engine_data[engine_type].get("plan", "")
+            prev_sub_id = engine_data[engine_type].get("stripeSubscriptionId", "")
+            engine_data[engine_type] = {
+                "plan": prev_plan if is_pending else "",
+                "credits": {
+                    "monthly_units_used": 0.0,
+                    "monthly_units_max": 0.0,
+                    "addon_units_used": float(engine_data[engine_type].get("credits", {}).get("addon_units_used", 0.0)),
+                    "addon_units_max": float(engine_data[engine_type].get("credits", {}).get("addon_units_max", 0.0)),
+                    "is_pending_cancellation": is_pending
+                },
+                "is_pending_cancellation": is_pending,
+                "stripeSubscriptionId": prev_sub_id if is_pending else "",
+                "updatedAt": datetime.utcnow()
+            }
+            engine_data[engine_type]["credits"]["remaining_units"] = _recompute_remaining_units(engine_data[engine_type]["credits"])
+        
+        # Decide if we should unset the top-level stripeSubscriptionId
+        # We only unset it if NO OTHER ENGINE has a subscription ID left
+        remaining_subs = [
+            info.get("stripeSubscriptionId") 
+            for info in engine_data.values() 
+            if info and info.get("stripeSubscriptionId")
+        ]
+        
+        update_doc = {
+            "engine_data": engine_data,
+            "updatedAt": datetime.utcnow()
+        }
+        
+        # If this was the active engine, clear top-level plan/credits too
+        # CRITICAL FIX: Only update top-level if this specific engine is the active one
+        user_engine_type = user.get("engineType", "transformation")
+        if user_engine_type == engine_type:
+             prev_top_plan = user.get("plan", "")
+             prev_top_sub_id = user.get("stripeSubscriptionId", "")
+             update_doc.update({
+                "plan": prev_top_plan if is_pending else "",
+                "credits": new_credits,
+                "is_pending_cancellation": is_pending,
+                "maxUnits": 0,
+                "units": 0,
+             })
+             # Only set/update stripeSubscriptionId if we are in pending mode
+             # If not pending, we will either unset it (if no other engines have it) or update it to another engine's ID
+             if is_pending:
+                update_doc["stripeSubscriptionId"] = prev_top_sub_id
+             else:
+                # If not pending, and this was our active sub, we should clear it top-level
+                # BUT if we are about to unset it globally, we don't need to set it to "" here.
+                # We'll handle top-level sub ID consolidation below.
+                pass
+
+        # Consolidate top-level stripeSubscriptionId
+        unset_doc = {}
+        if is_pending:
+            # For pending, keep the current sub ID top-level if we are resetting the active engine
+            if user_engine_type == engine_type or not engine_type:
+                update_doc["stripeSubscriptionId"] = user.get("stripeSubscriptionId")
+        else:
+            if remaining_subs:
+                # Pick any remaining active sub ID for the top-level
+                update_doc["stripeSubscriptionId"] = remaining_subs[0]
+            else:
+                # No subs left anywhere, unset globally
+                unset_doc["stripeSubscriptionId"] = ""
+
+        # Perform the update
+        if unset_doc:
+            result = users_collection.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": update_doc, "$unset": unset_doc}
+            )
+        else:
+            result = users_collection.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": update_doc}
+            )
+    else:
+        # Legacy: cancel all engines' plans
+        for engine in list(engine_data.keys()):
+            if engine_data[engine]:
+                engine_data[engine]["plan"] = ""
+                # Keep addon credits
+                addon_used = float(engine_data[engine].get("credits", {}).get("addon_units_used", 0.0))
+                addon_max = float(engine_data[engine].get("credits", {}).get("addon_units_max", 0.0))
+                engine_data[engine]["credits"] = {
+                    "monthly_units_used": 0.0,
+                    "monthly_units_max": 0.0,
+                    "addon_units_used": addon_used,
+                    "addon_units_max": addon_max,
+                }
+                engine_data[engine]["credits"]["remaining_units"] = _recompute_remaining_units(engine_data[engine]["credits"])
+                engine_data[engine]["updatedAt"] = datetime.utcnow()
+        
+        result = users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {
+                "plan": "",
+                "credits": new_credits,
+                "maxUnits": 0,
+                "units": 0,
+                "engine_data": engine_data,
+                "updatedAt": datetime.utcnow()
+            }, "$unset": {"stripeSubscriptionId": ""}}
+        )
+    return result.modified_count > 0
+
 
 def reset_monthly_credits(user_id: str):
-    """Resets monthly credits to plan limits (resets used to 0, sets max from plan)"""
+    """Reset monthly usage to 0 for all engines with active plans."""
     from bson import ObjectId
-    user = users_collection.find_one({"_id": ObjectId(user_id)})
-    if not user:
-        return False
+    user = users_collection.find_one({"_id": ObjectId(user_id)}) or {}
+    engine_data = user.get("engine_data", {}) or {}
+    
+    updated_any = False
+    for engine_type, engine_info in engine_data.items():
+        plan_name = (engine_info.get("plan") or "").capitalize()
+        if plan_name:
+            plan_doc = plans_collection.find_one({"name": plan_name})
+            included_units = float(plan_doc["includedUnits"]) if plan_doc and "includedUnits" in plan_doc else 0.0
+            
+            credits = engine_info.get("credits", {}) or {}
+            new_credits = {
+                "monthly_units_used": 0.0,
+                "monthly_units_max": included_units,
+                "addon_units_used": float(credits.get("addon_units_used", 0.0)),
+                "addon_units_max": float(credits.get("addon_units_max", 0.0)),
+            }
+            new_credits["remaining_units"] = _recompute_remaining_units(new_credits)
+            
+            engine_data[engine_type]["credits"] = new_credits
+            engine_data[engine_type]["updatedAt"] = datetime.utcnow()
+            updated_any = True
+    
+    if updated_any:
+        # Also sync top-level if the active engine was reset
+        active_engine = user.get("engineType", "transformation")
+        top_credits = engine_data.get(active_engine, {}).get("credits", user.get("credits", {}))
         
-    plan_name = user.get("plan", "")
-    if not plan_name:
-        return False
-        
-    plan = plans_collection.find_one({"name": plan_name.capitalize()})
-    if not plan:
-        return False
+        users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {
+                "engine_data": engine_data,
+                "credits": top_credits,
+                "maxUnits": int(top_credits.get("monthly_units_max", 0)),
+                "units": 0,
+                "updatedAt": datetime.utcnow()
+            }}
+        )
+        return True
     
-    plan_credits = plan.get("credits", {})
+    # Fallback legacy behavior
+    plan_name = (user.get("plan") or "").capitalize()
+    plan_doc = plans_collection.find_one({"name": plan_name}) if plan_name else None
+    included_units = float(plan_doc["includedUnits"]) if plan_doc and "includedUnits" in plan_doc else 0.0
+    credits = user.get("credits", {}) or {}
+    new_credits = {
+        "monthly_units_used": 0.0,
+        "monthly_units_max": included_units,
+        "addon_units_used": float(credits.get("addon_units_used", 0.0)),
+        "addon_units_max": float(credits.get("addon_units_max", 0.0)),
+    }
+    new_credits["remaining_units"] = _recompute_remaining_units(new_credits)
+    users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"credits": new_credits, "maxUnits": int(included_units), "units": 0, "updatedAt": datetime.utcnow()}}
+    )
+    return True
+
+
+def add_addon_credits(user_id: str, amount: float, engine_type: str = "transformation"):
+    """Add one-time addon units (persist across billing cycles)."""
+    from bson import ObjectId
+    user = users_collection.find_one({"_id": ObjectId(user_id)}) or {}
+    engine_data = user.get("engine_data", {}) or {}
     
-    new_max = plan.get("includedUnits", 0.0)
-    addon_balance = user.get("credits", {}).get("addon_units_max", 0.0) - user.get("credits", {}).get("addon_units_used", 0.0)
+    # Update engine-specific credits
+    current_engine = engine_data.get(engine_type, {}) or {}
+    credits = current_engine.get("credits", {}) or {}
     
+    # If no engine credits yet, fallback to top-level or default
+    if not credits:
+        credits = user.get("credits", {}) or {}
+
+    addon_max = float(credits.get("addon_units_max", 0.0)) + float(amount)
+    new_engine_credits = {
+        "monthly_units_used": float(credits.get("monthly_units_used", 0.0)),
+        "monthly_units_max": float(credits.get("monthly_units_max", 0.0)),
+        "addon_units_used": float(credits.get("addon_units_used", 0.0)),
+        "addon_units_max": addon_max,
+    }
+    new_engine_credits["remaining_units"] = _recompute_remaining_units(new_engine_credits)
+    
+    # Update engine_data entry
+    if engine_type not in engine_data:
+        engine_data[engine_type] = {
+            "plan": user.get("plan", ""),
+            "credits": new_engine_credits,
+            "updatedAt": datetime.utcnow()
+        }
+    else:
+        engine_data[engine_type]["credits"] = new_engine_credits
+        engine_data[engine_type]["updatedAt"] = datetime.utcnow()
+
+    # Also sync top-level if the active engine was updated
+    active_engine = user.get("engineType", "transformation")
+    top_update = {
+        "engine_data": engine_data,
+        "updatedAt": datetime.utcnow()
+    }
+    
+    if active_engine == engine_type:
+        top_update["credits"] = new_engine_credits
+        # Keep legacy maxUnits roughly in sync
+        top_update["maxUnits"] = int(new_engine_credits["monthly_units_max"] + new_engine_credits["addon_units_max"])
+
     result = users_collection.update_one(
         {"_id": ObjectId(user_id)},
-        {
-            "$set": {
-                "credits.monthly_units_used": 0.0,
-                "credits.monthly_units_max": new_max,
-                "credits.remaining_units": new_max + addon_balance,
-                "updatedAt": datetime.utcnow()
-            }
-        }
+        {"$set": top_update}
     )
     return result.modified_count > 0
 
-def add_addon_credits(user_id: str, amount: float):
+
+def consume_units(user_id: str, amount: float = 1.0, engine_type: str = "transformation") -> bool:
     """
-    Add addon units to user's balance.
+    Deduct units from a specific engine pool using priority monthly -> addon.
     """
     from bson import ObjectId
+    user = users_collection.find_one({"_id": ObjectId(user_id)}) or {}
+    engine_data = user.get("engine_data", {}) or {}
+    
+    # Get credits for the specific engine
+    credits = (engine_data.get(engine_type) or {}).get("credits", {})
+    if not credits:
+        # Fallback to top-level if engine_data is missing (unlikely now)
+        credits = user.get("credits", {}) or {}
+
+    monthly_used = float(credits.get("monthly_units_used", 0.0))
+    monthly_max = float(credits.get("monthly_units_max", 0.0))
+    addon_used = float(credits.get("addon_units_used", 0.0))
+    addon_max = float(credits.get("addon_units_max", 0.0))
+
+    monthly_remaining = max(0.0, monthly_max - monthly_used)
+    addon_remaining = max(0.0, addon_max - addon_used)
+
+    if monthly_remaining + addon_remaining < float(amount):
+        return False
+
+    remaining_to_deduct = float(amount)
+    if monthly_remaining > 0:
+        take = min(monthly_remaining, remaining_to_deduct)
+        monthly_used += take
+        remaining_to_deduct -= take
+
+    if remaining_to_deduct > 0:
+        addon_used += remaining_to_deduct
+
+    new_engine_credits = {
+        "monthly_units_used": monthly_used,
+        "monthly_units_max": monthly_max,
+        "addon_units_used": addon_used,
+        "addon_units_max": addon_max,
+    }
+    new_engine_credits["remaining_units"] = _recompute_remaining_units(new_engine_credits)
+
+    # Update engine_data
+    if engine_type not in engine_data:
+        engine_data[engine_type] = {"plan": user.get("plan", ""), "credits": new_engine_credits}
+    else:
+        engine_data[engine_type]["credits"] = new_engine_credits
+
+    update_payload = {
+        "engine_data": engine_data,
+        "updatedAt": datetime.utcnow()
+    }
+
+    # If this is the engine currently displayed at top-level, sync it
+    if user.get("engineType") == engine_type:
+        update_payload["credits"] = new_engine_credits
+        update_payload["units"] = int(monthly_used)
+
     result = users_collection.update_one(
         {"_id": ObjectId(user_id)},
-        {
-            "$inc": {
-                "credits.addon_units_max": amount,
-                "credits.remaining_units": amount
-            },
-            "$set": {"updatedAt": datetime.utcnow()}
-        }
+        {"$set": update_payload}
     )
     return result.modified_count > 0
+
 
 def update_user_engine(user_id: str, engine_type: str):
-    """
-    Update user's active engine type.
-    """
     from bson import ObjectId
-    if engine_type not in ["transformation", "creation"]:
-        return False
-        
     result = users_collection.update_one(
         {"_id": ObjectId(user_id)},
-        {
-            "$set": {
-                "engineType": engine_type,
-                "updatedAt": datetime.utcnow()
-            }
-        }
+        {"$set": {"engineType": engine_type, "updatedAt": datetime.utcnow()}}
+    )
+    return result.modified_count > 0
+
+
+def _hash_api_key(raw_api_key: str) -> str:
+    digest = hmac.new(API_KEY_SECRET, raw_api_key.encode("utf-8"), hashlib.sha256).hexdigest()
+    return digest
+
+
+def generate_api_key_for_user(user_id: str, key_type: str = None) -> str:
+    """
+    Generate a new raw API key (returned once) and store only its HMAC hash.
+    If key_type is provided ("resize" or "create"), store under `api_keys.{type}_hash`.
+    Otherwise store under legacy `apiKeyHash`.
+    """
+    from bson import ObjectId
+    raw = secrets.token_urlsafe(32)
+    hashed = _hash_api_key(raw)
+
+    user = users_collection.find_one({"_id": ObjectId(user_id)}) or {}
+    if key_type in ("resize", "create"):
+        field = f"api_keys.{key_type}_hash"
+        if user.get("api_keys", {}).get(f"{key_type}_hash"):
+            raise ValueError("API key already exists for this type")
+        users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {field: hashed, "updatedAt": datetime.utcnow()}})
+    else:
+        if user.get("apiKeyHash"):
+            raise ValueError("API key already exists")
+        users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {"apiKeyHash": hashed, "updatedAt": datetime.utcnow()}})
+
+    return raw
+
+
+def verify_api_key(raw_api_key: str):
+    """Verify an API key against stored HMAC hashes (scoped or legacy)."""
+    hashed = _hash_api_key(raw_api_key)
+    user = users_collection.find_one({
+        "$or": [
+            {"apiKeyHash": hashed},
+            {"api_keys.resize_hash": hashed},
+            {"api_keys.create_hash": hashed},
+        ]
+    })
+    return user
+
+
+def get_api_key_type(user_doc: dict, raw_api_key: str) -> str | None:
+    """Return key scope ('resize'|'create'|None) for a given authenticated raw key."""
+    if not user_doc:
+        return None
+    hashed = _hash_api_key(raw_api_key)
+    api_keys = user_doc.get("api_keys", {}) or {}
+    if api_keys.get("resize_hash") == hashed:
+        return "resize"
+    if api_keys.get("create_hash") == hashed:
+        return "create"
+    return None
+
+
+def delete_api_key(user_id: str, key_type: str = None) -> bool:
+    """Delete stored API key hash (scoped or legacy)."""
+    from bson import ObjectId
+    if key_type in ("resize", "create"):
+        field = f"api_keys.{key_type}_hash"
+        result = users_collection.update_one(
+            {"_id": ObjectId(user_id), field: {"$ne": None}},
+            {"$set": {field: None, "updatedAt": datetime.utcnow()}}
+        )
+        return result.modified_count > 0
+
+    result = users_collection.update_one(
+        {"_id": ObjectId(user_id), "apiKeyHash": {"$exists": True}},
+        {"$unset": {"apiKeyHash": ""}, "$set": {"updatedAt": datetime.utcnow()}}
+    )
+    return result.modified_count > 0
+
+def reset_user_units(user_id: str):
+    from bson import ObjectId
+    result = users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"units": 0, "updatedAt": datetime.utcnow()}}
     )
     return result.modified_count > 0
 
@@ -347,75 +698,6 @@ def reset_password_by_token(token: str, new_password: str):
     
     password_resets_collection.delete_one({"token": token})
     return True
-
-
-# ------------------------
-# API Key helpers
-# ------------------------
-
-def _hash_api_key(api_key: str) -> str:
-    """Return HMAC-SHA256 hex digest of the provided API key using server secret."""
-    # Using HMAC with server-side secret prevents simple rainbow-table attacks
-    digest = hmac.new(API_KEY_SECRET.encode('utf-8'), api_key.encode('utf-8'), hashlib.sha256).hexdigest()
-    return digest
-
-
-def generate_api_key_for_user(user_id: str, key_type: str) -> str:
-    """Generate a new API key for the given user and type (resize/create). Returns raw key."""
-    if key_type not in ['resize', 'create']:
-        return None
-        
-    from bson import ObjectId
-    raw_key = secrets.token_urlsafe(32)
-    hashed = _hash_api_key(raw_key)
-    
-    field_name = f"api_keys.{key_type}_hash"
-    
-    result = users_collection.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": {field_name: hashed, "updatedAt": datetime.utcnow()}}
-    )
-    if result.modified_count:
-        return raw_key
-    # If update did not modify (e.g., user not found or same hash), allow return if matched
-    # But usually creating new key changes hash.
-    # Check if user exists just in case
-    if users_collection.find_one({"_id": ObjectId(user_id)}):
-         return raw_key
-    return None
-
-
-def verify_api_key(raw_key: str):
-    """Verify raw API key and return (user, key_type) tuple if valid."""
-    hashed = _hash_api_key(raw_key)
-    
-    # Check resize hash
-    user = users_collection.find_one({"api_keys.resize_hash": hashed})
-    if user:
-        return user, "resize"
-        
-    # Check create hash
-    user = users_collection.find_one({"api_keys.create_hash": hashed})
-    if user:
-        return user, "create"
-        
-    return None, None
-
-
-def delete_api_key(user_id: str, key_type: str):
-    """Delete the stored API key for a user and type."""
-    if key_type not in ['resize', 'create']:
-        return False
-        
-    from bson import ObjectId
-    field_name = f"api_keys.{key_type}_hash"
-    
-    result = users_collection.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": {field_name: None, "updatedAt": datetime.utcnow()}}
-    )
-    return result.modified_count > 0
-
 
 def send_password_reset_email(email: str, reset_token: str):
     """Send password reset email - returns token for development mode"""
@@ -466,27 +748,34 @@ def send_password_reset_email(email: str, reset_token: str):
 
 def user_doc_to_response(user_doc):
     """Convert MongoDB user document to response format"""
-    # Ensure credits structure exists for response
-    credits = user_doc.get("credits", {})
+    # Use the credits object (which is the current active engine's context)
+    credits = user_doc.get("credits", {}) or {}
+    remaining = float(credits.get("remaining_units", 0.0))
+    
+    # Fallback for old documents
+    if not credits and "maxUnits" in user_doc:
+        remaining = float(user_doc.get("maxUnits", 0) - user_doc.get("units", 0))
+
+    engine_data = user_doc.get("engine_data", {}) or {}
+    
     return {
         "id": str(user_doc["_id"]),
         "email": user_doc["email"],
         "fullName": user_doc.get("fullName", ""),
+        "avatar": user_doc.get("avatar"),
         "plan": user_doc.get("plan", ""),
         "engineType": user_doc.get("engineType", "transformation"),
-        "credits": {
-            "monthly_units_used": credits.get("monthly_units_used", 0.0),
-            "monthly_units_max": credits.get("monthly_units_max", 0.0),
-            "addon_units_used": credits.get("addon_units_used", 0.0),
-            "addon_units_max": credits.get("addon_units_max", 0.0),
-            "remaining_units": credits.get("remaining_units", 0.0),
-        },
+        "units": user_doc.get("units", 0),
+        "maxUnits": user_doc.get("maxUnits", 0),
+        "remainingUnits": remaining,
+        "credits": credits,
+        "engine_data": engine_data,
         "stripeCustomerId": user_doc.get("stripeCustomerId"),
         "stripeSubscriptionId": user_doc.get("stripeSubscriptionId"),
         "createdAt": user_doc.get("createdAt"),
     }
 
-def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, isLargeImage: bool = False, image_url: str = None):
+def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, image_url: str = None):
     """Log a usage operation for billing purposes"""
     usage_doc = {
         "userId": user_id,
@@ -494,22 +783,37 @@ def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, is
         "aspectRatio": aspect_ratio,
         "timestamp": datetime.utcnow(),
         "success": success,
-        "isLargeImage": isLargeImage,
         "imageUrl": image_url
     }
     usage_logs_collection.insert_one(usage_doc)
     return True
 
-def get_user_usage_stats(user_id: str):
-    """Get usage statistics for a user"""
+def get_user_usage_stats(user_id: str, engine_type: str = None):
+    """Get usage statistics for a user, optionally for a specific engine."""
     from bson import ObjectId
     user = get_user_by_id(user_id)
     if not user:
         return None
     
-    credits = user.get("credits", {})
-    
-    # Get current billing period usage count from logs
+    # If engine_type is specified, use engine-specific data
+    if engine_type:
+        engine_data = user.get("engine_data", {})
+        engine_info = engine_data.get(engine_type)
+        if engine_info:
+            credits = engine_info.get("credits", {})
+            return {
+                "userId": user_id,
+                "engineType": engine_type,
+                "plan": engine_info.get("plan") or "free tier",
+                "unitsUsed": credits.get("monthly_units_used", 0) + credits.get("addon_units_used", 0),
+                "maxUnits": credits.get("monthly_units_max", 0) + credits.get("addon_units_max", 0),
+                "remaining_units": credits.get("remaining_units", 0),
+                "monthlyRemaining": max(0, credits.get("monthly_units_max", 0) - credits.get("monthly_units_used", 0)),
+                "addonRemaining": max(0, credits.get("addon_units_max", 0) - credits.get("addon_units_used", 0))
+            }
+
+    # Fallback to legacy/top-level behavior
+    # Get current billing period usage
     current_month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     usage_count = usage_logs_collection.count_documents({
         "userId": user_id,
@@ -517,23 +821,24 @@ def get_user_usage_stats(user_id: str):
         "success": True
     })
     
+    credits = user.get("credits", {})
     return {
         "userId": user_id,
         "plan": user.get("plan") or "free tier",
-        "engineType": user.get("engineType", "transformation"),
-        "credits": {
-            "monthly_units_used": credits.get("monthly_units_used", 0.0),
-            "monthly_units_max": credits.get("monthly_units_max", 0.0),
-            "addon_units_used": credits.get("addon_units_used", 0.0),
-            "addon_units_max": credits.get("addon_units_max", 0.0),
-            "remaining_units": credits.get("remaining_units", 0.0),
-        },
+        "unitsUsed": user.get("units", 0),
+        "maxUnits": user.get("maxUnits", 200),
+        "remainingUnits": user.get("maxUnits", 200) - user.get("units", 0),
+        "remaining_units": credits.get("remaining_units", user.get("maxUnits", 200) - user.get("units", 0)),
+        "overageUnits": max(0, user.get("units", 0) - user.get("maxUnits", 200)),
         "currentMonthOperations": usage_count
     }
 
 def calculate_overage_charge(units_used: int, max_units: int, overage_rate: float = 0.19):
-    """Legacy overage calculation - deprecated in new credit system"""
-    return 0.0
+    """Calculate overage charges"""
+    if units_used <= max_units:
+        return 0.0
+    overage_units = units_used - max_units
+    return round(overage_units * overage_rate, 2)
 
 def generate_monthly_bill(user_id: str):
     """Generate a monthly bill for a user"""
@@ -560,11 +865,13 @@ def generate_monthly_bill(user_id: str):
     else:
         period_end = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
     
-    # New billing logic: Flat rate for plan (pre-paid credits)
-    # Add-ons are billed separately (not implemented here yet)
+    units_used = user.get("units", 0)
+    max_units = user.get("maxUnits", 200)
+    overage_units = max(0, units_used - max_units)
+    overage_charge = calculate_overage_charge(units_used, max_units)
     
     base_price = plan["price"]
-    total_amount = base_price
+    total_amount = base_price + overage_charge
     
     bill_doc = {
         "userId": user_id,
@@ -572,6 +879,10 @@ def generate_monthly_bill(user_id: str):
         "billingPeriodEnd": period_end,
         "plan": plan_name,
         "basePrice": base_price,
+        "includedUnits": max_units,
+        "unitsUsed": units_used,
+        "overageUnits": overage_units,
+        "overageCharge": overage_charge,
         "totalAmount": total_amount,
         "generatedAt": datetime.utcnow(),
         "status": "pending"

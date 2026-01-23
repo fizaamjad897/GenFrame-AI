@@ -1,125 +1,136 @@
-# Visual Engine: AI-Powered Image Processing Backend
+# Visual Engine Backend - Authentication & Image Processing API
 
-Visual Engine is a high-performance FastAPI backend that leverages Gemini's vision models for intelligent image transformation and creative generation. It features a specialized **Pixel-Aware Token System** and seamless **Stripe Integration** for subscription management.
+This is the backend service for Visual Engine, a FastAPI-based application with JWT authentication, image processing via Google Gemini AI, and usage tracking with MongoDB.
 
----
+## Features
 
-## 🚀 Quick Start (Local Setup)
+- **User Authentication**: JWT-based auth with registration, login, and password reset
+- **Image Processing**: AI-powered image resizing using Google Gemini 3 Pro
+- **Usage Tracking**: Track user API hits with plan-based limits (Starter: 50 demo hits, then 1,000 monthly)
+- **MongoDB Integration**: Persistent user data and usage tracking
+- **CORS Support**: Built-in CORS middleware for frontend integration
+- **Email Password Reset**: Automated password reset emails with secure tokens
+- **Cloud Storage**: Automatically uploads processed images to Digital Ocean Spaces.
 
-### 1. Prerequisites
+## Prerequisites
+
 - Python 3.9+
-- MongoDB (Local or Atlas)
-- Google Gemini API Key
-- Stripe Account (for payment testing)
+- A Google Cloud API Key with access to Generative AI (Gemini).
+- Digital Ocean Spaces account for image storage.
 
-### 2. Installation
-```powershell
-# Clone the repository and navigate to the folder
-cd Visual-Engine-BE
+## Setup
 
-# Create and activate virtual environment
-python -m venv venv
-.\venv\Scripts\activate
+1.  **Clone the repository** (if applicable) or navigate to the project folder.
 
-# Install dependencies
-pip install -r requirements.txt
-```
+2.  **Create a Virtual Environment**:
+    ```bash
+    python -m venv venv
+    # Windows
+    venv\Scripts\activate
+    # Mac/Linux
+    source venv/bin/activate
+    ```
 
-### 3. Environment Configuration
-Create a `.env` file in the root directory:
-```env
-# Core API Keys
-GOOGLE_API_KEY=your_gemini_key
-MONGODB_URL=your_mongodb_connection_string
-DB_NAME=visual_engine_secure
-JWT_SECRET=your_jwt_secret
+3.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-# Stripe Configuration
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PRICE_M_STARTER=price_...
-# (Include all M_ and T_ price IDs)
+4.  **Configure Environment**:
+    - Create a `.env` file in the root directory.
+    - Add your API keys and configuration:
+      ```env
+      GOOGLE_API_KEY=your_actual_google_api_key_here
+      ACCESS_KEY_ID=your_digital_ocean_access_key
+      SECRET_KEY=your_digital_ocean_secret_key
+      ENDPOINT=https://your-region.digitaloceanspaces.com
+      SPACENAME=your_space_name
+      ```
 
-# Storage (Digital Ocean)
-DO_ACCESS_KEY_ID=...
-DO_SECRET_KEY=...
-ENDPOINT=...
-SPACENAME=...
-```
+## Running the App
 
----
-
-## 🛠️ Local Testing Guide (Postman/CURL)
-
-### 1. Start the Server
-```powershell
-uvicorn main:app --reload
-```
-Server runs at: `http://127.0.0.1:8000`
-
-### 2. Base Authentication
-| Task | Method | Endpoint | Body (JSON) |
-| :--- | :--- | :--- | :--- |
-| **Register** | POST | `/api/users/register` | `{"email": "...", "password": "..."}` |
-| **Login** | POST | `/api/users/login` | `{"email": "...", "password": "..."}` |
-| **Get Usage** | GET | `/api/users/usage` | Requires JWT Bearer Token |
-
-### 3. Engine Processing (API Key Auth)
-For these tests, use the header: `X-API-KEY: <YOUR_KEY>`
+Start the server using Uvicorn:
 
 ```bash
-# Example: Transformation Engine (Resize)
-curl -X POST "http://127.0.0.1:8000/api/resize" \
-     -H "X-API-KEY: YOUR_RESIZE_KEY" \
-     -F "file=@image.jpg" \
-     -F "aspect_ratio=16:9"
+uvicorn main:app --reload
 ```
 
----
+The application will be available at: **http://localhost:8000**
 
-## 🤝 Client Handover (Glenn FMCTV)
+## Usage
 
-### 1. Access Credentials
-| Credential | Value |
-| :--- | :--- |
-| **Email** | `glenn@fmctv.co.nz` |
-| **Password** | `VisualEngine2026!` |
-| **Base URL** | `https://recreative.slidexy.ai/secure` |
-| **Test Balance** | 20.0 Tokens |
+1.  Open the web interface in your browser.
+2.  Drag and drop an image.
+3.  Select a target aspect ratio (e.g., 16:9, 9:16) or enter a custom one.
+4.  **Optional**: Enter a custom prompt for advanced editing (e.g., "make it black and white", "add cartoon effects").
+5.  Click **Process Image**.
+6.  Wait for the AI to process and download the result.
 
-### 2. Active Engine Keys
-| Engine | Required Header | Key Value |
-| :--- | :--- | :--- |
-| **Transformation** | `X-API-KEY` | `Xzrqta1_HAHZNMfSiGzbe9ITWkW7rUnlZ0beYYtxtA4` |
-| **Creation** | `X-API-KEY` | `IsXnUbY1MVNWHWrPRLARf0hQmjByhIspH49v_RtO_a8` |
+## API Documentation
 
-### 3. Token Billing Rules
-The system automatically selects the billing tier based on image resolution.
+### Endpoint: `POST /resize`
 
-| Operation Tier | Transformation | Creation |
-| :--- | :--- | :--- |
-| **Standard** (≤ 1024px) | 1.0 Units | 2.5 Units |
-| **Premium** (> 1024px) | 2.5 Units | 4.5 Units |
+Processes an image using Gemini AI for resizing and/or custom editing.
 
-**Detection Header**: Every response contains `X-Is-Large-Image: true/false`.
+#### Request Body (Form Data)
 
----
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | File | Yes | Image file to process (supported formats: PNG, JPG, JPEG, etc.) |
+| `aspect_ratio` | String | Yes | Target aspect ratio (e.g., "16:9", "1:1", "4:3") |
+| `prompt` | String | No | Custom prompt for image editing. If not provided, uses default resizing prompt |
 
-## 📖 API Documentation Summary
+#### Response
 
-| Endpoint | Method | Auth | Description |
-| :--- | :--- | :--- | :--- |
-| `/api/resize` | POST | API Key | Structural image resizing. |
-| `/api/create` | POST | API Key | AI-powered creative generation. |
-| `/api/users/usage` | GET | JWT | Live token balance monitoring. |
-| `/api/users/engine-type` | POST | JWT | Switch between Transformation/Creation mode. |
-| `/api/stripe/create-checkout`| POST | JWT | Initialize subscription payment. |
-| `/api/users/api-key` | POST | JWT | Generate new scoped API keys. |
+**Success (200):**
+```json
+{
+  "url": "https://your-space.region.digitaloceanspaces.com/resized_images/20260101_120000_abc123.png",
+  "name": "20260101_120000_abc123.png"
+}
+```
 
----
+**Error (500):**
+```json
+{
+  "detail": "Error message describing what went wrong"
+}
+```
 
-## 🛡️ Security Features
-- **Stateless API Keys**: Independent of user sessions for faster processing.
-- **HMAC Hashing**: API keys are hashed in the database; original keys are never stored.
-- **Rate Limiting**: Built-in protection against brute-force and DDoS attempts in `middleware.py`.
-- **Pixel-Aware Logic**: Server-side resolution validation prevents token manipulation.
+#### Example Usage
+
+**Using curl:**
+```bash
+curl -X POST "http://localhost:8000/resize" \
+  -F "file=@image.jpg" \
+  -F "aspect_ratio=16:9" \
+  -F "prompt=make this image look like a painting"
+```
+
+**Using Python:**
+```python
+import requests
+
+with open('image.jpg', 'rb') as f:
+    files = {'file': f}
+    data = {
+        'aspect_ratio': '16:9',
+        'prompt': 'add a sunset background'  # optional
+    }
+    response = requests.post('http://localhost:8000/resize', files=files, data=data)
+    print(response.json())
+```
+
+#### Notes
+
+- Images are automatically uploaded to Digital Ocean Spaces and publicly accessible via the returned URL
+- The `prompt` field allows for flexible image editing beyond just resizing
+- If no `prompt` is provided, the system uses a default prompt that focuses on intelligent resizing while preserving image content
+- Processing time depends on image size and complexity (typically 10-30 seconds)
+
+## Tech Stack
+
+- **Backend**: FastAPI, Google GenAI SDK (`google-genai`)
+- **Frontend**: HTML5, CSS3, JavaScript (Vanilla)
+- **Storage**: Digital Ocean Spaces (S3-compatible)
+- **AI Model**: Google Gemini 3 Pro (`gemini-3-pro-image-preview`)
