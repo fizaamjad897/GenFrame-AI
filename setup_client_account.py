@@ -34,10 +34,10 @@ def setup_client():
             "engineType": "transformation",
             "credits": {
                 "monthly_units_used": 0.0,
-                "monthly_units_max": 50.0,
+                "monthly_units_max": 20.0,
                 "addon_units_used": 0.0,
                 "addon_units_max": 0.0,
-                "remaining_units": 50.0
+                "remaining_units": 20.0
             },
             "api_keys": {
                 "resize_hash": None,
@@ -55,13 +55,13 @@ def setup_client():
         users_collection.update_one(
             {"_id": ObjectId(user_id)},
             {"$set": {
-                "credits.monthly_units_max": 50.0,
+                "credits.monthly_units_max": 20.0,
                 "credits.monthly_units_used": 0.0,
-                "credits.remaining_units": 50.0,
+                "credits.remaining_units": 20.0,
                 "plan": "Trial"
             }}
         )
-        print("✅ User existing, credits reset to 50.0.")
+        print("✅ User existing, credits reset to 20.0.")
 
     # 2. Generate API Keys
     transformation_key = generate_api_key_for_user(user_id, "resize")

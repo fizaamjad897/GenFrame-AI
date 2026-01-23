@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, Any, Dict
 from datetime import datetime
 
 class UserRegister(BaseModel):
@@ -20,27 +20,16 @@ class ResetPasswordRequest(BaseModel):
     token: str
     newPassword: str
 
-class Credits(BaseModel):
-    monthly_units_used: float = 0.0
-    monthly_units_max: float = 0.0
-    addon_units_used: float = 0.0
-    addon_units_max: float = 0.0
-    remaining_units: float = 0.0
-
-class ApiKeys(BaseModel):
-    resize_hash: Optional[str] = None
-    create_hash: Optional[str] = None
-
 class User(BaseModel):
     id: Optional[str] = None
     email: str
     fullName: Optional[str] = None
     plan: str = ""  # Default is no plan
-    engineType: str = "transformation"  # "transformation" or "creation"
-    credits: Credits = Credits()
-    api_keys: ApiKeys = ApiKeys()
-    stripeCustomerId: Optional[str] = None
-    stripeSubscriptionId: Optional[str] = None
+    engineType: Optional[str] = None
+    units: int = 0
+    maxUnits: int = 200  # Default for free allotment
+    credits: Optional[Dict[str, Any]] = None
+    apiKeyHash: Optional[str] = None
     createdAt: datetime = None
     updatedAt: datetime = None
 
@@ -49,8 +38,12 @@ class UserResponse(BaseModel):
     email: str
     fullName: Optional[str] = None
     plan: str
-    engineType: str
-    credits: Credits
+    engineType: Optional[str] = None
+    units: int
+    maxUnits: int
+    remainingUnits: Optional[float] = None
+    credits: Optional[Dict[str, Any]] = None
+    engine_data: Optional[Dict[str, Any]] = None
     stripeCustomerId: Optional[str] = None
     stripeSubscriptionId: Optional[str] = None
     createdAt: datetime
@@ -69,6 +62,7 @@ class Plan(BaseModel):
     price: float
     includedUnits: int
     costPerUnit: float
+    overageRate: float
     bestFor: str
     features: list[str]
     isActive: bool = True
@@ -81,7 +75,6 @@ class UsageLog(BaseModel):
     aspectRatio: str
     timestamp: datetime
     success: bool
-    isLargeImage: bool = False
     imageUrl: Optional[str] = None
 
 class BillingRecord(BaseModel):

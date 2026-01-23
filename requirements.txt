@@ -5,11 +5,11 @@ httpx
 python-dotenv
 google-genai
 pillow
+boto3
 pymongo
 pydantic
 pydantic-settings
 python-jose[cryptography]
 passlib[bcrypt]
+python-multipart
 email-validator
-python-magic-bin
-stripe
