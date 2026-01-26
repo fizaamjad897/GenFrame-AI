@@ -92,3 +92,8 @@ class BillingRecord(BaseModel):
     totalAmount: float
     generatedAt: datetime
     status: str  # "pending", "paid", "overdue"
+
+class CheckoutRequest(BaseModel):
+    plan_code: str
+    engine_type: str = "transformation"
+    order_type: str = "subscription"
