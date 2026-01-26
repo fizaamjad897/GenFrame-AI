@@ -13,7 +13,7 @@ import boto3
 import stripe
 from bson import ObjectId
 from botocore.config import Config
-from models import UserRegister, UserLogin, ForgotPasswordRequest, ResetPasswordRequest, TokenResponse, UserResponse, PlanUpgradeRequest
+from models import UserRegister, UserLogin, ForgotPasswordRequest, ResetPasswordRequest, TokenResponse, UserResponse, PlanUpgradeRequest, CheckoutRequest
 from auth import (
     create_user, verify_user_credentials, create_access_token, 
     verify_token, get_user_by_id, increment_user_units, 
@@ -55,6 +55,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from fastapi.exceptions import RequestValidationError
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    import json
+    body = await request.body()
+    print(f"[VALIDATION ERROR] Path: {request.url.path}")
+    print(f"Details: {exc.errors()}")
+    print(f"Body received: {body.decode('utf-8', errors='ignore')}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body_preview": body.decode('utf-8', errors='ignore')[:100]}
+    )
 
 # Digital Ocean Spaces Configuration (matching NestJS env variable names)
 # We use specific DO_ prefixes to avoid shadowing conflicts in .env
@@ -144,7 +157,18 @@ async def register(user_data: UserRegister):
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user_doc_to_response(new_user)
+        "user": auth_module.user_doc_to_response(new_user)
+    }
+
+@app.get("/api/status")
+async def get_status():
+    """Health check and version verification"""
+    return {
+        "status": "online",
+        "version": "1.1.2",
+        "timestamp": datetime.utcnow().isoformat(),
+        "stripe_configured": bool(os.getenv("STRIPE_SECRET_KEY")),
+        "db_connected": auth_module.client is not None
     }
 
 @app.post("/api/users/login", response_model=TokenResponse)
@@ -233,33 +257,34 @@ async def remove_api_key(type: str | None = None, current_user = Depends(get_cur
 
 
 @app.post("/api/stripe/create-checkout")
+@app.post("/stripe/create-checkout")
 async def stripe_create_checkout(
     request: Request,
-    body: auth_module.models.CheckoutRequest = Body(...), 
+    body: dict = Body(...), 
     current_user = Depends(get_current_user)
 ):
     """
     Create a Stripe checkout session.
-    Body:
-      - plan_code: "Starter"|"Growth"|"Scale" or "ADDON_100"
-      - engine_type: "creation"|"transformation"
-      - order_type: "subscription"|"addon"
+    Supports both snake_case and camelCase for better client compatibility.
     """
-    plan_code = body.plan_code
-    engine_type = body.engine_type
-    order_type = body.order_type
+    plan_code = body.get("plan_code") or body.get("planCode")
+    engine_type = body.get("engine_type") or body.get("engineType") or "transformation"
+    order_type = body.get("order_type") or body.get("orderType") or "subscription"
     
-    print(f"💳 [STRIPE] Checkout attempt: User={current_user.get('email')}, Plan={plan_code}, Engine={engine_type}, Type={order_type}")
+    user_email = current_user.get("email")
+    print(f"💳 [STRIPE] Checkout Attempt: User={user_email}, Body={body}")
     
     if not plan_code:
-        raise HTTPException(status_code=400, detail="plan_code is required")
+        print(f"❌ [STRIPE] Missing plan_code in body: {body}")
+        raise HTTPException(status_code=400, detail="plan_code is required (snake_case or camelCase)")
 
     url = create_checkout_session(str(current_user["_id"]), plan_code=plan_code, engine_type=engine_type, order_type=order_type)
+    
     if not url:
-        print(f"❌ [STRIPE] Failed to create checkout session for {current_user.get('email')}")
-        raise HTTPException(status_code=500, detail="Failed to create Stripe checkout session")
+        print(f"❌ [STRIPE] create_checkout_session returned None for {user_email}")
+        raise HTTPException(status_code=500, detail="Failed to create Stripe checkout session. Check server logs.")
         
-    print(f"✅ [STRIPE] Checkout session created: {url}")
+    print(f"✅ [STRIPE] Success: {url}")
     return {"url": url}
 
 
