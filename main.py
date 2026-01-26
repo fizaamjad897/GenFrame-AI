@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header, Request, Body
 from fastapi.responses import Response, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -44,7 +44,7 @@ app = FastAPI(
 # CORS: allow explicit origins (Starlette blocks "*" when allow_credentials=True)
 ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in (os.getenv("CORS_ORIGINS") or "http://localhost:3000,http://127.0.0.1:3000").split(",")
+    for origin in (os.getenv("CORS_ORIGINS") or "http://localhost:3000,http://127.0.0.1:3000,https://transformation.slidexy.ai,https://recreative.slidexy.ai").split(",")
     if origin.strip()
 ]
 
@@ -233,7 +233,11 @@ async def remove_api_key(type: str | None = None, current_user = Depends(get_cur
 
 
 @app.post("/api/stripe/create-checkout")
-async def stripe_create_checkout(body: dict, current_user = Depends(get_current_user)):
+async def stripe_create_checkout(
+    request: Request,
+    body: auth_module.models.CheckoutRequest = Body(...), 
+    current_user = Depends(get_current_user)
+):
     """
     Create a Stripe checkout session.
     Body:
@@ -241,15 +245,21 @@ async def stripe_create_checkout(body: dict, current_user = Depends(get_current_
       - engine_type: "creation"|"transformation"
       - order_type: "subscription"|"addon"
     """
-    plan_code = body.get("plan_code")
-    engine_type = body.get("engine_type", "transformation")
-    order_type = body.get("order_type", "subscription")
+    plan_code = body.plan_code
+    engine_type = body.engine_type
+    order_type = body.order_type
+    
+    print(f"💳 [STRIPE] Checkout attempt: User={current_user.get('email')}, Plan={plan_code}, Engine={engine_type}, Type={order_type}")
+    
     if not plan_code:
         raise HTTPException(status_code=400, detail="plan_code is required")
 
     url = create_checkout_session(str(current_user["_id"]), plan_code=plan_code, engine_type=engine_type, order_type=order_type)
     if not url:
+        print(f"❌ [STRIPE] Failed to create checkout session for {current_user.get('email')}")
         raise HTTPException(status_code=500, detail="Failed to create Stripe checkout session")
+        
+    print(f"✅ [STRIPE] Checkout session created: {url}")
     return {"url": url}
 
 
