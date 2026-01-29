@@ -309,8 +309,9 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None, 
 
 # Alternative webhook route without /api prefix for deployment flexibility
 @app.post("/stripe/webhook")
+@app.post("/secure/api/stripe/webhook")
 async def stripe_webhook_alt(request: Request, stripe_signature: str = Header(None, alias="Stripe-Signature")):
-    """Alternative webhook endpoint for deployments where /api prefix is handled by reverse proxy"""
+    """Alternative webhook endpoint for deployments where /api prefix is handled by reverse proxy or deep paths"""
     payload = await request.body()
     ok = handle_webhook_event(payload, stripe_signature)
     if not ok:
