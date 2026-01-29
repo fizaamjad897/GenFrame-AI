@@ -167,6 +167,7 @@ def create_user(user_data: UserRegister):
             "addon_units_used": 0.0,
             "addon_units_max": 0.0,
             "remaining_units": float(DEFAULT_SIGNUP_CREDITS),
+            "overageRate": 0.19,
         },
         # Scoped API keys (HMAC hashes only)
         "api_keys": {
@@ -235,6 +236,7 @@ def update_user_plan(user_id: str, plan_code: str, engine_type: str = "transform
         "monthly_units_max": included_units,
         "addon_units_used": addon_used,
         "addon_units_max": addon_max,
+        "overageRate": float(plan_doc.get("overageRate", 0.19)) if plan_doc else 0.19,
     }
     new_engine_credits["remaining_units"] = _recompute_remaining_units(new_engine_credits)
     
@@ -281,6 +283,7 @@ def cancel_user_plan(user_id: str, engine_type: str = None, is_pending: bool = F
         "monthly_units_max": 0.0,
         "addon_units_used": float(credits.get("addon_units_used", 0.0)),
         "addon_units_max": float(credits.get("addon_units_max", 0.0)),
+        "overageRate": float(credits.get("overageRate", 0.19)),
         "is_pending_cancellation": is_pending
     }
     new_credits["remaining_units"] = _recompute_remaining_units(new_credits)
@@ -298,6 +301,7 @@ def cancel_user_plan(user_id: str, engine_type: str = None, is_pending: bool = F
                     "monthly_units_max": 0.0,
                     "addon_units_used": float(engine_data[engine_type].get("credits", {}).get("addon_units_used", 0.0)),
                     "addon_units_max": float(engine_data[engine_type].get("credits", {}).get("addon_units_max", 0.0)),
+                    "overageRate": float(engine_data[engine_type].get("credits", {}).get("overageRate", 0.19)),
                     "is_pending_cancellation": is_pending
                 },
                 "is_pending_cancellation": is_pending,
@@ -417,6 +421,7 @@ def reset_monthly_credits(user_id: str):
                 "monthly_units_max": included_units,
                 "addon_units_used": float(credits.get("addon_units_used", 0.0)),
                 "addon_units_max": float(credits.get("addon_units_max", 0.0)),
+                "overageRate": float(plan_doc.get("overageRate", 0.19)) if plan_doc else 0.19,
             }
             new_credits["remaining_units"] = _recompute_remaining_units(new_credits)
             
@@ -480,6 +485,7 @@ def add_addon_credits(user_id: str, amount: float, engine_type: str = "transform
         "monthly_units_max": float(credits.get("monthly_units_max", 0.0)),
         "addon_units_used": float(credits.get("addon_units_used", 0.0)),
         "addon_units_max": addon_max,
+        "overageRate": float(credits.get("overageRate", 0.19)),
     }
     new_engine_credits["remaining_units"] = _recompute_remaining_units(new_engine_credits)
     
@@ -552,6 +558,7 @@ def consume_units(user_id: str, amount: float = 1.0, engine_type: str = "transfo
         "monthly_units_max": monthly_max,
         "addon_units_used": addon_used,
         "addon_units_max": addon_max,
+        "overageRate": float(credits.get("overageRate", 0.19)),
     }
     new_engine_credits["remaining_units"] = _recompute_remaining_units(new_engine_credits)
 
@@ -808,6 +815,7 @@ def get_user_usage_stats(user_id: str, engine_type: str = None):
                 "unitsUsed": credits.get("monthly_units_used", 0) + credits.get("addon_units_used", 0),
                 "maxUnits": credits.get("monthly_units_max", 0) + credits.get("addon_units_max", 0),
                 "remaining_units": credits.get("remaining_units", 0),
+                "overageRate": credits.get("overageRate", 0.19),
                 "monthlyRemaining": max(0, credits.get("monthly_units_max", 0) - credits.get("monthly_units_used", 0)),
                 "addonRemaining": max(0, credits.get("addon_units_max", 0) - credits.get("addon_units_used", 0))
             }
@@ -830,6 +838,7 @@ def get_user_usage_stats(user_id: str, engine_type: str = None):
         "remainingUnits": user.get("maxUnits", 200) - user.get("units", 0),
         "remaining_units": credits.get("remaining_units", user.get("maxUnits", 200) - user.get("units", 0)),
         "overageUnits": max(0, user.get("units", 0) - user.get("maxUnits", 200)),
+        "overageRate": credits.get("overageRate", 0.19),
         "currentMonthOperations": usage_count
     }
 
@@ -868,7 +877,10 @@ def generate_monthly_bill(user_id: str):
     units_used = user.get("units", 0)
     max_units = user.get("maxUnits", 200)
     overage_units = max(0, units_used - max_units)
-    overage_charge = calculate_overage_charge(units_used, max_units)
+    
+    # Use plan's overageRate if available
+    overage_rate = plan.get("overageRate", 0.19)
+    overage_charge = calculate_overage_charge(units_used, max_units, overage_rate=overage_rate)
     
     base_price = plan["price"]
     total_amount = base_price + overage_charge
