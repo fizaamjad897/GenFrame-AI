@@ -44,7 +44,7 @@ app = FastAPI(
 # CORS: allow explicit origins (Starlette blocks "*" when allow_credentials=True)
 ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in (os.getenv("CORS_ORIGINS") or "http://localhost:3000,http://127.0.0.1:3000,https://transformation.slidexy.ai,https://recreative.slidexy.ai").split(",")
+    for origin in (os.getenv("CORS_ORIGINS") or "http://localhost:3000,http://127.0.0.1:3000,https://transformation.slidexy.ai,https://recreative.slidexy.ai,https://transformation.signagexai.com").split(",")
     if origin.strip()
 ]
 
