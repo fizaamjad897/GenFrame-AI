@@ -254,6 +254,7 @@ async def remove_api_key(type: str | None = None, current_user = Depends(get_cur
 
 @app.post("/api/stripe/create-checkout")
 @app.post("/stripe/create-checkout")
+@app.post("/create-checkout")  # Highly robust alias
 async def stripe_create_checkout(
     request: Request,
     body: dict = Body(...), 
@@ -261,30 +262,34 @@ async def stripe_create_checkout(
 ):
     """
     Create a Stripe checkout session.
-    Supports both snake_case and camelCase for better client compatibility.
     """
+    user_email = current_user.get("email")
+    print(f"💳 [STRIPE] Checkout Attempt: User={user_email}, Path={request.url.path}")
+    
     plan_code = body.get("plan_code") or body.get("planCode")
     engine_type = body.get("engine_type") or body.get("engineType") or "transformation"
     order_type = body.get("order_type") or body.get("orderType") or "subscription"
     
-    user_email = current_user.get("email")
-    print(f"💳 [STRIPE] Checkout Attempt: User={user_email}, Body={body}")
-    
     if not plan_code:
         print(f"❌ [STRIPE] Missing plan_code in body: {body}")
-        raise HTTPException(status_code=400, detail="plan_code is required (snake_case or camelCase)")
+        raise HTTPException(status_code=400, detail="plan_code is required")
 
-    url = create_checkout_session(str(current_user["_id"]), plan_code=plan_code, engine_type=engine_type, order_type=order_type)
-    
-    if not url:
-        print(f"❌ [STRIPE] create_checkout_session returned None for {user_email}")
-        raise HTTPException(status_code=500, detail="Failed to create Stripe checkout session. Check server logs.")
-        
-    print(f"✅ [STRIPE] Success: {url}")
-    return {"url": url}
+    try:
+        url = create_checkout_session(str(current_user["_id"]), plan_code=plan_code, engine_type=engine_type, order_type=order_type)
+        if not url:
+            print(f"❌ [STRIPE] create_checkout_session returned None for {user_email}")
+            raise HTTPException(status_code=500, detail="Failed to create Stripe checkout session.")
+            
+        print(f"✅ [STRIPE] Success: {url}")
+        return {"url": url}
+    except Exception as e:
+        print(f"❌ [STRIPE] Unexpected Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/stripe/create-portal")
+@app.post("/stripe/create-portal")
+@app.post("/create-portal")
 async def stripe_create_portal(current_user = Depends(get_current_user)):
     customer_id = current_user.get("stripeCustomerId")
     if not customer_id:
@@ -777,32 +782,69 @@ async def generate_bill(current_user = Depends(get_current_user)):
 
 @app.post("/api/resize", response_class=JSONResponse)
 async def resize_image(
-    file: UploadFile = File(...),
-    aspect_ratio: str = Form(..., description="Target aspect ratio, e.g., '16:9', '1:1', '4:3'"),
-    prompt: str = Form(None, description="Optional custom prompt for image editing. If not provided, uses default resizing prompt."),
+    aspect_ratio: str = Form("1:1", description="Target aspect ratio, e.g., '16:9', '1:1', '4:3'"),
     engine_type: str = Form("transformation", description="Engine type: 'transformation' or 'creation'"),
+    file: UploadFile = File(None),  # Optional for creation engine
+    prompt: str = Form(None, description="Custom prompt for image editing/generation. Required for creation engine."),
     current_user = Depends(get_current_user)
 ):
     """
     Endpoint to resize or edit an image intelligently using Gemini 3 Pro (Nano Banana Pro).
-    If a custom prompt is provided, it will be used for editing; otherwise, defaults to resizing with the specified aspect ratio.
+    
+    Transformation Engine:
+    - Requires image upload
+    - No custom prompt (uses default aspect ratio transformation)
+    - Purpose: Pure image resizing/transformation
+    
+    Creation Engine:
+    - Requires custom prompt
+    - Image upload is optional
+    - Can generate from prompt alone OR transform image with custom prompt
     """
     global client
     
-    # 1. Read the image and get dimensions for credit calculation
-    image_bytes = await file.read()
-    print(f"📥 [DEBUG] Received file: {file.filename}, length: {len(image_bytes)} bytes")
+    # Engine-specific validation
+    if engine_type == "transformation":
+        # Transformation requires image, no custom prompt
+        if not file:
+            raise HTTPException(
+                status_code=400, 
+                detail="Transformation engine requires an image upload. Please upload an image to transform."
+            )
+        # Force default prompt for transformation (ignore any user-provided prompt)
+        prompt = None
+        print(f"🔄 [TRANSFORMATION] Image-only transformation mode")
+        
+    elif engine_type == "creation":
+        # Creation requires prompt, image is optional
+        if not prompt or not prompt.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Creation engine requires a prompt. Please provide a description of what you want to create."
+            )
+        print(f"🎨 [CREATION] Prompt-based {'generation' if not file else 'transformation'} mode")
     
-    if len(image_bytes) == 0:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    # 1. Read the image and get dimensions for credit calculation (if image provided)
+    pil_image = None
+    max_dim = 1024  # Default for prompt-only generation
+    
+    if file:
+        image_bytes = await file.read()
+        print(f"📥 [DEBUG] Received file: {file.filename}, length: {len(image_bytes)} bytes")
+        
+        if len(image_bytes) == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    try:
-        pil_image = Image.open(io.BytesIO(image_bytes))
-        width, height = pil_image.size
-        max_dim = max(width, height)
-    except Exception as e:
-        print(f"❌ [DEBUG] PIL Error: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid image format: {str(e)}")
+        try:
+            pil_image = Image.open(io.BytesIO(image_bytes))
+            width, height = pil_image.size
+            max_dim = max(width, height)
+        except Exception as e:
+            print(f"❌ [DEBUG] PIL Error: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid image format: {str(e)}")
+    else:
+        # Creation engine with prompt only - no image
+        print(f"🎨 [CREATION] Generating image from prompt only (no input image)")
     
     # Calculate token cost based on user requirements:
     # Creation Engine: <= 1024: 2.0, > 1024: 4.4
@@ -813,7 +855,11 @@ async def resize_image(
     else:
         tokens_to_deduct = 1.0 if max_dim <= 1024 else 2.5
 
-    print(f"🖼️ [RESIZE] Image: {width}x{height} ({max_dim}px). Engine: {engine_type}. Cost: {tokens_to_deduct} tokens.")
+    if pil_image:
+        width, height = pil_image.size
+        print(f"🖼️ [RESIZE] Image: {width}x{height} ({max_dim}px). Engine: {engine_type}. Cost: {tokens_to_deduct} tokens.")
+    else:
+        print(f"🎨 [GENERATE] Prompt-only generation ({max_dim}px default). Engine: {engine_type}. Cost: {tokens_to_deduct} tokens.")
 
     # Check user's credits
     user_id = str(current_user["_id"])
@@ -836,6 +882,43 @@ async def resize_image(
             detail=f"Insufficient credits for {engine_type}. Required: {tokens_to_deduct}, Available: {remaining}. Please upgrade your {engine_type} plan."
         )
     
+    # 2. Aspect Ratio Sanitization
+    SUPPORTED_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']
+    
+    # Save the original requested ratio for post-processing
+    original_aspect_ratio = aspect_ratio
+    
+    # Normalize input aspect_ratio (handle both '16:9' and '16x9' or '1120:360')
+    input_ratio = aspect_ratio.replace('x', ':')
+    
+    # If not directly supported, find the closest one to prevent API crash
+    gemini_aspect_ratio = input_ratio  # This will be sent to Gemini
+    if input_ratio not in SUPPORTED_RATIOS:
+        try:
+            w_in, h_in = map(int, input_ratio.split(':'))
+            ratio_val = w_in / h_in
+            
+            # Find closest supported ratio based on decimal value
+            ratio_map = {
+                '1:1': 1.0,
+                '2:3': 0.66,
+                '3:2': 1.5,
+                '3:4': 0.75,
+                '4:3': 1.33,
+                '4:5': 0.8,
+                '5:4': 1.25,
+                '9:16': 0.56,
+                '16:9': 1.77,
+                '21:9': 2.33
+            }
+            
+            closest_ratio = min(ratio_map.keys(), key=lambda k: abs(ratio_map[k] - ratio_val))
+            print(f"⚠️ [RESIZE] Unsupported ratio {input_ratio} ({ratio_val:.2f}). Mapping to closest supported: {closest_ratio}")
+            gemini_aspect_ratio = closest_ratio
+        except Exception as e:
+            print(f"❌ [RESIZE] Aspect ratio parsing error: {e}. Defaulting to 1:1")
+            gemini_aspect_ratio = '1:1'
+    
     if not client:
         # Try reloading env if key was added later
         load_dotenv()
@@ -851,7 +934,7 @@ async def resize_image(
             use_prompt = prompt
         else:
             use_prompt = (
-                f"recreate this image in {aspect_ratio} ratio format and keep all the the information of image intact . "
+                f"recreate this image in {gemini_aspect_ratio} ratio format and keep all the the information of image intact . "
                 "you can rearrange the elements to ensure it is perfect."
             )
         
@@ -860,13 +943,21 @@ async def resize_image(
         model_name = "gemini-3-pro-image-preview" 
         print(f"🤖 [DEBUG] Calling {model_name} with prompt: '{use_prompt[:50]}...'")
 
+        # Build contents based on whether we have an image
+        if pil_image:
+            # Image transformation or image+prompt creation
+            contents = [use_prompt, pil_image]
+        else:
+            # Prompt-only creation (no input image)
+            contents = [use_prompt]
+
         response = client.models.generate_content(
             model=model_name,
-            contents=[use_prompt, pil_image],
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
                 image_config=types.ImageConfig(
-                    aspect_ratio=aspect_ratio
+                    aspect_ratio=gemini_aspect_ratio
                 )
             )
         )
@@ -885,7 +976,70 @@ async def resize_image(
             print(f"❌ [DEBUG] No image data in response parts. Full Response: {response}")
             raise HTTPException(status_code=500, detail="No image content returned from API.")
         
-        # 5. Upload to Digital Ocean Spaces (matching NestJS implementation exactly)
+        # 5. Post-process: Resize to exact requested dimensions
+        # Parse the original aspect_ratio request to get target dimensions
+        try:
+            # original_aspect_ratio comes in as "WIDTHxHEIGHT" or "WIDTH:HEIGHT"
+            original_ratio_str = original_aspect_ratio.replace(':', 'x')
+            if 'x' in original_ratio_str:
+                w_val, h_val = map(int, original_ratio_str.split('x'))
+                # Threshold: If dimensions are very small (e.g., < 100), it's likely just a ratio (like 16:9)
+                # We only want to post-process if we have actual target PIXELS (like 288x608)
+                if w_val >= 100 and h_val >= 100:
+                    target_width, target_height = w_val, h_val
+                    print(f"🎯 [RESIZE] Detected exact target dimensions: {target_width}x{target_height}. Proceeding to post-process.")
+                else:
+                    target_width = target_height = None
+                    print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' looks like a ratio, not dimensions. Skipping post-processing.")
+            else:
+                target_width = target_height = None
+                print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' doesn't specify exact dimensions. Skipping post-processing.")
+        except Exception as parse_err:
+            print(f"⚠️ [RESIZE] Could not parse dimensions from '{original_aspect_ratio}': {parse_err}. Skipping post-processing.")
+            target_width = target_height = None
+        
+        # Only post-process if we have exact target dimensions
+        if target_width and target_height:
+            try:
+                # Load the generated image
+                generated_image = Image.open(io.BytesIO(image_data))
+                orig_w, orig_h = generated_image.size
+                print(f"📐 [RESIZE] Generated image size: {orig_w}x{orig_h}, Target: {target_width}x{target_height}")
+                
+                # Calculate the aspect ratios
+                gen_ratio = orig_w / orig_h
+                target_ratio = target_width / target_height
+                
+                # Strategy: Center crop to exact ratio, then resize to exact dimensions
+                if abs(gen_ratio - target_ratio) > 0.01:  # Ratios differ
+                    print(f"✂️ [RESIZE] Cropping to match target ratio {target_ratio:.2f}")
+                    if gen_ratio > target_ratio:
+                        # Generated image is wider, crop width
+                        new_width = int(orig_h * target_ratio)
+                        left = (orig_w - new_width) // 2
+                        generated_image = generated_image.crop((left, 0, left + new_width, orig_h))
+                    else:
+                        # Generated image is taller, crop height
+                        new_height = int(orig_w / target_ratio)
+                        top = (orig_h - new_height) // 2
+                        generated_image = generated_image.crop((0, top, orig_w, top + new_height))
+                
+                # Resize to exact target dimensions
+                if generated_image.size != (target_width, target_height):
+                    print(f"🔄 [RESIZE] Resizing from {generated_image.size} to {target_width}x{target_height}")
+                    generated_image = generated_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                
+                # Convert back to bytes
+                output_buffer = io.BytesIO()
+                generated_image.save(output_buffer, format='PNG')
+                image_data = output_buffer.getvalue()
+                print(f"✅ [RESIZE] Post-processed to exact dimensions: {target_width}x{target_height}")
+                
+            except Exception as resize_err:
+                print(f"⚠️ [RESIZE] Post-processing failed: {resize_err}. Using original generated image.")
+                # Continue with original image_data if post-processing fails
+        
+        # 6. Upload to Digital Ocean Spaces (matching NestJS implementation exactly)
         uploaded_url = None
         image_name = None
         

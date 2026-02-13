@@ -169,6 +169,37 @@ def create_user(user_data: UserRegister):
             "remaining_units": float(DEFAULT_SIGNUP_CREDITS),
             "overageRate": 0.19,
         },
+        # Engine-specific isolated data
+        "engine_data": {
+            "transformation": {
+                "plan": "",
+                "credits": {
+                    "monthly_units_used": 0.0,
+                    "monthly_units_max": float(DEFAULT_SIGNUP_CREDITS),
+                    "addon_units_used": 0.0,
+                    "addon_units_max": 0.0,
+                    "remaining_units": float(DEFAULT_SIGNUP_CREDITS),
+                    "overageRate": 0.19,
+                },
+                "is_pending_cancellation": False,
+                "stripeSubscriptionId": None,
+                "updatedAt": datetime.utcnow()
+            },
+            "creation": {
+                "plan": "",
+                "credits": {
+                    "monthly_units_used": 0.0,
+                    "monthly_units_max": 0.0,
+                    "addon_units_used": 0.0,
+                    "addon_units_max": 0.0,
+                    "remaining_units": 0.0,
+                    "overageRate": 0.19,
+                },
+                "is_pending_cancellation": False,
+                "stripeSubscriptionId": None,
+                "updatedAt": datetime.utcnow()
+            }
+        },
         # Scoped API keys (HMAC hashes only)
         "api_keys": {
             "resize_hash": None,
@@ -757,14 +788,40 @@ def user_doc_to_response(user_doc):
     """Convert MongoDB user document to response format"""
     # Use the credits object (which is the current active engine's context)
     credits = user_doc.get("credits", {}) or {}
-    remaining = float(credits.get("remaining_units", 0.0))
     
-    # Fallback for old documents
-    if not credits and "maxUnits" in user_doc:
+    # Robust remaining units calculation
+    # 1. Try explicit remaining_units in the active credits pool
+    remaining = credits.get("remaining_units")
+    
+    # 2. If not found or None (often the case in manual DB edits), calculate from max-used
+    if remaining is None:
         remaining = float(user_doc.get("maxUnits", 0) - user_doc.get("units", 0))
+    else:
+        remaining = float(remaining)
 
     engine_data = user_doc.get("engine_data", {}) or {}
     
+    # Lazy migration: ensure both engines are present in the response
+    for etype in ["transformation", "creation"]:
+        if etype not in engine_data:
+            # If missing, use top-level credits if this was once the only engine
+            # or default to empty
+            source_credits = credits if user_doc.get("engineType") == etype else {
+                "monthly_units_used": 0.0,
+                "monthly_units_max": 0.0,
+                "addon_units_used": 0.0,
+                "addon_units_max": 0.0,
+                "remaining_units": 0.0,
+                "overageRate": 0.19
+            }
+            engine_data[etype] = {
+                "plan": user_doc.get("plan", "") if user_doc.get("engineType") == etype else "",
+                "credits": source_credits,
+                "is_pending_cancellation": user_doc.get("is_pending_cancellation", False) if user_doc.get("engineType") == etype else False,
+                "stripeSubscriptionId": user_doc.get("stripeSubscriptionId") if user_doc.get("engineType") == etype else None,
+                "updatedAt": user_doc.get("updatedAt", datetime.utcnow())
+            }
+
     return {
         "id": str(user_doc["_id"]),
         "email": user_doc["email"],

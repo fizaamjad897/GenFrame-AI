@@ -1,0 +1,200 @@
+[
+    {
+        "resolution": "1120x360",
+        "aspect_ratio": "1120:360",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "1152x288",
+        "aspect_ratio": "1152:288",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "1152x384",
+        "aspect_ratio": "1152:384",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "1188x288",
+        "aspect_ratio": "1188:288",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "1368x324",
+        "aspect_ratio": "1368:324",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "1376x288",
+        "aspect_ratio": "1376:288",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "1764x468",
+        "aspect_ratio": "1764:468",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "288x608",
+        "aspect_ratio": "288:608",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "288x648",
+        "aspect_ratio": "288:648",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "324x828",
+        "aspect_ratio": "324:828",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "396x576",
+        "aspect_ratio": "396:576",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "416x480",
+        "aspect_ratio": "416:480",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "416x576",
+        "aspect_ratio": "416:576",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "416x800",
+        "aspect_ratio": "416:800",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "432x864",
+        "aspect_ratio": "432:864",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "468x756",
+        "aspect_ratio": "468:756",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "504x864",
+        "aspect_ratio": "504:864",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "512x1280",
+        "aspect_ratio": "512:1280",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "570x600",
+        "aspect_ratio": "570:600",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "576x396",
+        "aspect_ratio": "576:396",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "608x288",
+        "aspect_ratio": "608:288",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "624x336",
+        "aspect_ratio": "624:336",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "794x396",
+        "aspect_ratio": "794:396",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "800x416",
+        "aspect_ratio": "800:416",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "864x432",
+        "aspect_ratio": "864:432",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "900x288",
+        "aspect_ratio": "900:288",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "928x288",
+        "aspect_ratio": "928:288",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "288x608",
+        "aspect_ratio": "288:608",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "324x828",
+        "aspect_ratio": "324:828",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "432x864",
+        "aspect_ratio": "432:864",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "396x576",
+        "aspect_ratio": "396:576",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "576x396",
+        "aspect_ratio": "576:396",
+        "status": "SUCCESS",
+        "message": "Working"
+    },
+    {
+        "resolution": "624x336",
+        "aspect_ratio": "624:336",
+        "status": "SUCCESS",
+        "message": "Working"
+    }
+]

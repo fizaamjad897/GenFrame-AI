@@ -1,0 +1,137 @@
+﻿[
+  {
+    "res": "1120x360",
+    "ratio": 3.11,
+    "category": "Panoramic/Banner"
+  },
+  {
+    "res": "1152x288",
+    "ratio": 4.0,
+    "category": "Panoramic/Banner"
+  },
+  {
+    "res": "1152x384",
+    "ratio": 3.0,
+    "category": "Panoramic/Banner"
+  },
+  {
+    "res": "1188x288",
+    "ratio": 4.12,
+    "category": "Panoramic/Banner"
+  },
+  {
+    "res": "1368x324",
+    "ratio": 4.22,
+    "category": "Panoramic/Banner"
+  },
+  {
+    "res": "1376x288",
+    "ratio": 4.78,
+    "category": "Panoramic/Banner"
+  },
+  {
+    "res": "1764x468",
+    "ratio": 3.77,
+    "category": "Panoramic/Banner"
+  },
+  {
+    "res": "288x608",
+    "ratio": 0.47,
+    "category": "Story/Reel (9:16)"
+  },
+  {
+    "res": "288x648",
+    "ratio": 0.44,
+    "category": "Custom/Extreme"
+  },
+  {
+    "res": "324x828",
+    "ratio": 0.39,
+    "category": "Skyline/Extreme Tall"
+  },
+  {
+    "res": "396x576",
+    "ratio": 0.69,
+    "category": "Portrait (3:4)"
+  },
+  {
+    "res": "416x480",
+    "ratio": 0.87,
+    "category": "Custom/Extreme"
+  },
+  {
+    "res": "416x576",
+    "ratio": 0.72,
+    "category": "Portrait (3:4)"
+  },
+  {
+    "res": "416x800",
+    "ratio": 0.52,
+    "category": "Story/Reel (9:16)"
+  },
+  {
+    "res": "432x864",
+    "ratio": 0.5,
+    "category": "Story/Reel (9:16)"
+  },
+  {
+    "res": "468x756",
+    "ratio": 0.62,
+    "category": "Story/Reel (9:16)"
+  },
+  {
+    "res": "504x864",
+    "ratio": 0.58,
+    "category": "Story/Reel (9:16)"
+  },
+  {
+    "res": "512x1280",
+    "ratio": 0.4,
+    "category": "Custom/Extreme"
+  },
+  {
+    "res": "570x600",
+    "ratio": 0.95,
+    "category": "Square (1:1)"
+  },
+  {
+    "res": "576x396",
+    "ratio": 1.45,
+    "category": "Custom/Extreme"
+  },
+  {
+    "res": "608x288",
+    "ratio": 2.11,
+    "category": "Custom/Extreme"
+  },
+  {
+    "res": "624x336",
+    "ratio": 1.86,
+    "category": "Landscape (16:9)"
+  },
+  {
+    "res": "794x396",
+    "ratio": 2.01,
+    "category": "Custom/Extreme"
+  },
+  {
+    "res": "800x416",
+    "ratio": 1.92,
+    "category": "Custom/Extreme"
+  },
+  {
+    "res": "864x432",
+    "ratio": 2.0,
+    "category": "Custom/Extreme"
+  },
+  {
+    "res": "900x288",
+    "ratio": 3.12,
+    "category": "Panoramic/Banner"
+  },
+  {
+    "res": "928x288",
+    "ratio": 3.22,
+    "category": "Panoramic/Banner"
+  }
+]
