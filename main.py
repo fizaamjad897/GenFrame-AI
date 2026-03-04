@@ -331,6 +331,16 @@ async def stripe_create_test_checkout(current_user = Depends(get_current_user)):
         )
 
     try:
+        # Detect if the price is recurring or one-time so we use the correct mode
+        try:
+            price_obj = stripe.Price.retrieve(price_id)
+            is_recurring = price_obj.type == "recurring"
+            print(f"[TEST CHECKOUT] Price {price_id} is {'RECURRING' if is_recurring else 'ONE-TIME'}")
+        except Exception as e:
+            print(f"[TEST CHECKOUT] Failed to retrieve price {price_id}: {e}")
+            # Fallback: assume recurring since your tester product is per-day
+            is_recurring = True
+
         session = stripe.checkout.Session.create(
             customer=customer_id,
             payment_method_types=["card"],
@@ -338,8 +348,7 @@ async def stripe_create_test_checkout(current_user = Depends(get_current_user)):
                 "price": price_id,
                 "quantity": 1,
             }],
-            # Use one-time payment mode so this does not affect normal subscription logic
-            mode="payment",
+            mode="subscription" if is_recurring else "payment",
             success_url=os.getenv("FRONTEND_URL") + "/billing/success?session_id={CHECKOUT_SESSION_ID}",
             cancel_url=os.getenv("FRONTEND_URL") + "/billing/cancel",
             metadata={
