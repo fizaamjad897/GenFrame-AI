@@ -300,6 +300,57 @@ async def stripe_create_portal(current_user = Depends(get_current_user)):
     return {"url": url}
 
 
+@app.post("/api/stripe/create-test-checkout")
+async def stripe_create_test_checkout(current_user = Depends(get_current_user)):
+    """
+    Create a simple $1 test checkout session for the current user.
+    Intended for manual verification that Stripe is wired correctly.
+    """
+    price_id = os.getenv("STRIPE_PRICE_TEST_DAILY")
+    if not price_id:
+        raise HTTPException(status_code=500, detail="Test price ID is not configured")
+
+    user_id = str(current_user["_id"])
+    user_email = current_user.get("email")
+
+    # Ensure Stripe customer exists
+    customer_id = current_user.get("stripeCustomerId")
+    if not customer_id:
+        customer = stripe.Customer.create(
+            email=user_email,
+            metadata={"user_id": user_id}
+        )
+        customer_id = customer.id
+        auth_module.users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"stripeCustomerId": customer_id}}
+        )
+
+    try:
+        session = stripe.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            line_items=[{
+                "price": price_id,
+                "quantity": 1,
+            }],
+            # Use one-time payment mode so this does not affect normal subscription logic
+            mode="payment",
+            success_url=os.getenv("FRONTEND_URL") + "/billing/success?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url=os.getenv("FRONTEND_URL") + "/billing/cancel",
+            metadata={
+                "user_id": user_id,
+                "engine_type": "transformation",
+                "order_type": "test",
+                "plan_code": "daily_tester",
+            }
+        )
+        return {"url": session.url}
+    except Exception as e:
+        print(f"Stripe Test Checkout Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create test checkout session")
+
+
 @app.post("/api/stripe/webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None, alias="Stripe-Signature")):
     payload = await request.body()
