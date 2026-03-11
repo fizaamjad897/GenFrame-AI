@@ -1218,25 +1218,43 @@ async def resize_image(
                 )
 
         # 5. Post-process: Resize to exact requested dimensions
-        # Parse the original aspect_ratio request to get target dimensions
+        # Standard ratio → pixel mapping for consistent output
+        RATIO_TO_PIXELS = {
+            '16:9':  (1920, 1080),
+            '9:16':  (1080, 1920),
+            '1:1':   (1080, 1080),
+            '3:4':   (1080, 1440),
+            '4:3':   (1440, 1080),
+            '21:9':  (2520, 1080),
+            '2:3':   (1080, 1620),
+            '3:2':   (1620, 1080),
+            '4:5':   (1080, 1350),
+            '5:4':   (1350, 1080),
+        }
+        
+        target_width = target_height = None
         try:
-            # original_aspect_ratio comes in as "WIDTHxHEIGHT" or "WIDTH:HEIGHT"
-            original_ratio_str = original_aspect_ratio.replace(':', 'x')
-            if 'x' in original_ratio_str:
-                w_val, h_val = map(int, original_ratio_str.split('x'))
-                # Threshold: If dimensions are very small (e.g., < 100), it's likely just a ratio (like 16:9)
-                # We only want to post-process if we have actual target PIXELS (like 288x608)
-                if w_val >= 100 and h_val >= 100:
-                    target_width, target_height = w_val, h_val
-                    print(f"🎯 [RESIZE] Detected exact target dimensions: {target_width}x{target_height}. Proceeding to post-process.")
-                else:
-                    target_width = target_height = None
-                    print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' looks like a ratio, not dimensions. Skipping post-processing.")
+            # First check if it's a known ratio
+            if original_aspect_ratio in RATIO_TO_PIXELS:
+                target_width, target_height = RATIO_TO_PIXELS[original_aspect_ratio]
+                print(f"🎯 [RESIZE] Mapped ratio '{original_aspect_ratio}' to {target_width}x{target_height}")
             else:
-                target_width = target_height = None
-                print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' doesn't specify exact dimensions. Skipping post-processing.")
+                # Try parsing as exact pixel dimensions (e.g., "1920x1080" or "1920:1080")
+                original_ratio_str = original_aspect_ratio.replace(':', 'x')
+                if 'x' in original_ratio_str:
+                    w_val, h_val = map(int, original_ratio_str.split('x'))
+                    if w_val >= 100 and h_val >= 100:
+                        target_width, target_height = w_val, h_val
+                        print(f"🎯 [RESIZE] Detected exact target dimensions: {target_width}x{target_height}")
+                    else:
+                        print(f"ℹ️ [RESIZE] Ratio '{original_aspect_ratio}' has small values. Using default mapping.")
+                        # Try as ratio lookup with normalized format
+                        normalized = f"{w_val}:{h_val}"
+                        if normalized in RATIO_TO_PIXELS:
+                            target_width, target_height = RATIO_TO_PIXELS[normalized]
+                            print(f"🎯 [RESIZE] Mapped normalized ratio '{normalized}' to {target_width}x{target_height}")
         except Exception as parse_err:
-            print(f"⚠️ [RESIZE] Could not parse dimensions from '{original_aspect_ratio}': {parse_err}. Skipping post-processing.")
+            print(f"⚠️ [RESIZE] Could not parse dimensions from '{original_aspect_ratio}': {parse_err}")
             target_width = target_height = None
         
         # Only post-process if we have exact target dimensions
@@ -1337,13 +1355,15 @@ async def resize_image(
         # Keep legacy counter best-effort (do NOT enforce off this)
         increment_user_units(user_id)
 
-        # Log usage
+        # Log usage (include prompt and target dims for archive)
         log_usage(
             user_id=user_id,
             operation="resize",
             aspect_ratio=aspect_ratio,
             success=True,
-            image_url=uploaded_url
+            image_url=uploaded_url,
+            prompt=use_prompt if 'use_prompt' in dir() else prompt,
+            target_dims=[target_width, target_height] if target_width and target_height else None
         )
 
         return JSONResponse(content=response_data, status_code=200)
@@ -1363,7 +1383,8 @@ async def resize_image(
                 operation="resize",
                 aspect_ratio=aspect_ratio,
                 success=False,
-                image_url=None
+                image_url=None,
+                prompt=use_prompt if 'use_prompt' in dir() else (prompt if 'prompt' in locals() else None)
             )
         except:
             pass
@@ -1372,6 +1393,40 @@ async def resize_image(
             status_code=500,
             detail=f"Internal Server Error during image processing: {str(e)}"
         )
+
+@app.get("/api/history")
+async def get_history(current_user = Depends(get_current_user)):
+    """Return the user's past successful image generations for the archive page."""
+    try:
+        user_id = str(current_user["_id"])
+        
+        # Query usage_logs for successful operations with an image URL
+        cursor = auth_module.usage_logs_collection.find(
+            {
+                "userId": user_id,
+                "success": True,
+                "imageUrl": {"$ne": None}
+            },
+            sort=[("timestamp", -1)],
+            limit=100
+        )
+        
+        history = []
+        for doc in cursor:
+            history.append({
+                "id": str(doc["_id"]),
+                "url": doc.get("imageUrl", ""),
+                "prompt": doc.get("prompt", ""),
+                "aspectRatio": doc.get("aspectRatio", "1:1"),
+                "targetDims": doc.get("targetDims", None),
+                "timestamp": doc.get("timestamp", "").isoformat() if doc.get("timestamp") else "",
+                "operation": doc.get("operation", "resize"),
+            })
+        
+        return JSONResponse(content={"history": history}, status_code=200)
+    except Exception as e:
+        print(f"❌ [HISTORY] Error fetching history: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
 
 @app.get("/")
 async def read_root():

@@ -839,7 +839,7 @@ def user_doc_to_response(user_doc):
         "createdAt": user_doc.get("createdAt"),
     }
 
-def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, image_url: str = None):
+def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, image_url: str = None, prompt: str = None, target_dims: list = None):
     """Log a usage operation for billing purposes"""
     usage_doc = {
         "userId": user_id,
@@ -849,6 +849,10 @@ def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, im
         "success": success,
         "imageUrl": image_url
     }
+    if prompt:
+        usage_doc["prompt"] = prompt
+    if target_dims:
+        usage_doc["targetDims"] = target_dims
     usage_logs_collection.insert_one(usage_doc)
     return True
 
