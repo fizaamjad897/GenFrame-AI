@@ -138,6 +138,12 @@ except Exception as _vertex_load_err:
 VERTEX_PROJECT_ID = _vertex_project_id_env or _vertex_project_id_file
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
 
+# Ensure Vertex AI SDK can authenticate via the service-account JSON
+_vertex_sa_path_resolved = os.getenv("VERTEX_SA_PATH", os.path.join(os.path.dirname(__file__), "vertex.json"))
+if os.path.exists(_vertex_sa_path_resolved) and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _vertex_sa_path_resolved
+    print(f"🔑 [VERTEX] Set GOOGLE_APPLICATION_CREDENTIALS to {_vertex_sa_path_resolved}")
+
 # Fallback image generation service (Fal.ai Nano Banana Pro wrapper)
 FAL_FALLBACK_URL = os.getenv(
     "FAL_FALLBACK_URL",
@@ -1182,161 +1188,137 @@ async def resize_image(
                 status_code=500,
                 detail=f"Image generation failed (primary + Vertex + Fal.ai). Reason: {base_error}"
             )
-    
-        # 5. Post-process: Resize to exact requested dimensions
-        # Parse the original aspect_ratio request to get target dimensions
-        try:
-            # original_aspect_ratio comes in as "WIDTHxHEIGHT" or "WIDTH:HEIGHT"
-            original_ratio_str = original_aspect_ratio.replace(':', 'x')
-            if 'x' in original_ratio_str:
-                w_val, h_val = map(int, original_ratio_str.split('x'))
-                # Threshold: If dimensions are very small (e.g., < 100), it's likely just a ratio (like 16:9)
-                # We only want to post-process if we have actual target PIXELS (like 288x608)
-                if w_val >= 100 and h_val >= 100:
-                    target_width, target_height = w_val, h_val
-                    print(f"🎯 [RESIZE] Detected exact target dimensions: {target_width}x{target_height}. Proceeding to post-process.")
-                else:
-                    target_width = target_height = None
-                    print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' looks like a ratio, not dimensions. Skipping post-processing.")
+
+    # 5. Post-process: Resize to exact requested dimensions
+    # Parse the original aspect_ratio request to get target dimensions
+    try:
+        # original_aspect_ratio comes in as "WIDTHxHEIGHT" or "WIDTH:HEIGHT"
+        original_ratio_str = original_aspect_ratio.replace(':', 'x')
+        if 'x' in original_ratio_str:
+            w_val, h_val = map(int, original_ratio_str.split('x'))
+            # Threshold: If dimensions are very small (e.g., < 100), it's likely just a ratio (like 16:9)
+            # We only want to post-process if we have actual target PIXELS (like 288x608)
+            if w_val >= 100 and h_val >= 100:
+                target_width, target_height = w_val, h_val
+                print(f"🎯 [RESIZE] Detected exact target dimensions: {target_width}x{target_height}. Proceeding to post-process.")
             else:
                 target_width = target_height = None
-                print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' doesn't specify exact dimensions. Skipping post-processing.")
-        except Exception as parse_err:
-            print(f"⚠️ [RESIZE] Could not parse dimensions from '{original_aspect_ratio}': {parse_err}. Skipping post-processing.")
+                print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' looks like a ratio, not dimensions. Skipping post-processing.")
+        else:
             target_width = target_height = None
-        
-        # Only post-process if we have exact target dimensions
-        if target_width and target_height:
-            try:
-                # Load the generated image
-                generated_image = Image.open(io.BytesIO(image_data))
-                orig_w, orig_h = generated_image.size
-                print(f"📐 [RESIZE] Generated image size: {orig_w}x{orig_h}, Target: {target_width}x{target_height}")
-                
-                # Calculate the aspect ratios
-                gen_ratio = orig_w / orig_h
-                target_ratio = target_width / target_height
-                
-                # Strategy: Center crop to exact ratio, then resize to exact dimensions
-                if abs(gen_ratio - target_ratio) > 0.01:  # Ratios differ
-                    print(f"✂️ [RESIZE] Cropping to match target ratio {target_ratio:.2f}")
-                    if gen_ratio > target_ratio:
-                        # Generated image is wider, crop width
-                        new_width = int(orig_h * target_ratio)
-                        left = (orig_w - new_width) // 2
-                        generated_image = generated_image.crop((left, 0, left + new_width, orig_h))
-                    else:
-                        # Generated image is taller, crop height
-                        new_height = int(orig_w / target_ratio)
-                        top = (orig_h - new_height) // 2
-                        generated_image = generated_image.crop((0, top, orig_w, top + new_height))
-                
-                # Resize to exact target dimensions
-                if generated_image.size != (target_width, target_height):
-                    print(f"🔄 [RESIZE] Resizing from {generated_image.size} to {target_width}x{target_height}")
-                    generated_image = generated_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                
-                # Convert back to bytes
-                output_buffer = io.BytesIO()
-                generated_image.save(output_buffer, format='PNG')
-                image_data = output_buffer.getvalue()
-                print(f"✅ [RESIZE] Post-processed to exact dimensions: {target_width}x{target_height}")
-                
-            except Exception as resize_err:
-                print(f"⚠️ [RESIZE] Post-processing failed: {resize_err}. Using original generated image.")
-                # Continue with original image_data if post-processing fails
-        
-        # 6. Upload to Digital Ocean Spaces (matching NestJS implementation exactly)
-        uploaded_url = None
-        image_name = None
-        
-        # Generate a unique filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_id = str(uuid.uuid4())[:8]
-        filename = f"resized_images/{timestamp}_{unique_id}.png"
-        image_name = f"{timestamp}_{unique_id}.png"
-        
-        print(f"☁️ [DEBUG] Uploading to DO Spaces: {filename}")
-        
-        try:
-            bucket_name = DO_SPACES_BUCKET_NAME
-            
-            # Upload to Digital Ocean Spaces (matching NestJS implementation)
-            s3_client.put_object(
-                Bucket=bucket_name,
-                Key=filename,
-                Body=image_data,
-                ContentType='image/png',
-                ACL='public-read'  # Make the image publicly accessible
-            )
-            
-            # Construct the public URL (matching NestJS format: https://{bucketName}.{endpoint}/{fileName})
-            # Clean endpoint for URL construction (remove protocol if present)
-            endpoint_for_url = DO_SPACES_ENDPOINT.replace('https://', '').replace('http://', '').strip()
-            uploaded_url = f"https://{bucket_name}.{endpoint_for_url}/{filename}"
-            print(f"Image uploaded to Digital Ocean Spaces: {uploaded_url}")
-        except Exception as upload_error:
-            print(f"Error uploading to Digital Ocean Spaces: {upload_error}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Image generated but failed to upload to storage: {str(upload_error)}"
-            )
-        
-        # 6. Return JSON response with URL and name
-        if not uploaded_url or not image_name:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate upload URL or image name"
-            )
-        
-        response_data = {
-            "url": uploaded_url,
-            "name": image_name
-        }
-        print(f"Returning response: {response_data}")
-        
-        # Deduct credits ONLY on success
-        consumed = consume_units(user_id, tokens_to_deduct, engine_type=engine_type)
-        if not consumed:
-            raise HTTPException(status_code=429, detail="Insufficient credits to complete request")
-
-        # Keep legacy counter best-effort (do NOT enforce off this)
-        increment_user_units(user_id)
-
-        # Log usage
-        log_usage(
-            user_id=user_id,
-            operation="resize",
-            aspect_ratio=aspect_ratio,
-            success=True,
-            image_url=uploaded_url
-        )
-
-        return JSONResponse(content=response_data, status_code=200)
-                
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        print(f"Error processing request: {e}")
-        import traceback
-        traceback.print_exc()
-        # In production, be careful about exposing raw error details
-        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
+            print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' doesn't specify exact dimensions. Skipping post-processing.")
+    except Exception as parse_err:
+        print(f"⚠️ [RESIZE] Could not parse dimensions from '{original_aspect_ratio}': {parse_err}. Skipping post-processing.")
+        target_width = target_height = None
     
-    except Exception as e:
-        # Best-effort log failed usage without charging credits
+    # Only post-process if we have exact target dimensions
+    if target_width and target_height:
         try:
-            log_usage(
-                user_id=user_id,
-                operation="resize",
-                aspect_ratio=aspect_ratio,
-                success=False,
-                image_url=None
-            )
-        except Exception:
-            pass
-        raise
+            # Load the generated image
+            generated_image = Image.open(io.BytesIO(image_data))
+            orig_w, orig_h = generated_image.size
+            print(f"📐 [RESIZE] Generated image size: {orig_w}x{orig_h}, Target: {target_width}x{target_height}")
+            
+            # Calculate the aspect ratios
+            gen_ratio = orig_w / orig_h
+            target_ratio = target_width / target_height
+            
+            # Strategy: Center crop to exact ratio, then resize to exact dimensions
+            if abs(gen_ratio - target_ratio) > 0.01:  # Ratios differ
+                print(f"✂️ [RESIZE] Cropping to match target ratio {target_ratio:.2f}")
+                if gen_ratio > target_ratio:
+                    # Generated image is wider, crop width
+                    new_width = int(orig_h * target_ratio)
+                    left = (orig_w - new_width) // 2
+                    generated_image = generated_image.crop((left, 0, left + new_width, orig_h))
+                else:
+                    # Generated image is taller, crop height
+                    new_height = int(orig_w / target_ratio)
+                    top = (orig_h - new_height) // 2
+                    generated_image = generated_image.crop((0, top, orig_w, top + new_height))
+            
+            # Resize to exact target dimensions
+            if generated_image.size != (target_width, target_height):
+                print(f"🔄 [RESIZE] Resizing from {generated_image.size} to {target_width}x{target_height}")
+                generated_image = generated_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            
+            # Convert back to bytes
+            output_buffer = io.BytesIO()
+            generated_image.save(output_buffer, format='PNG')
+            image_data = output_buffer.getvalue()
+            print(f"✅ [RESIZE] Post-processed to exact dimensions: {target_width}x{target_height}")
+            
+        except Exception as resize_err:
+            print(f"⚠️ [RESIZE] Post-processing failed: {resize_err}. Using original generated image.")
+            # Continue with original image_data if post-processing fails
+    
+    # 6. Upload to Digital Ocean Spaces (matching NestJS implementation exactly)
+    uploaded_url = None
+    image_name = None
+    
+    # Generate a unique filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id = str(uuid.uuid4())[:8]
+    filename = f"resized_images/{timestamp}_{unique_id}.png"
+    image_name = f"{timestamp}_{unique_id}.png"
+    
+    print(f"☁️ [DEBUG] Uploading to DO Spaces: {filename}")
+    
+    try:
+        bucket_name = DO_SPACES_BUCKET_NAME
+        
+        # Upload to Digital Ocean Spaces (matching NestJS implementation)
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=filename,
+            Body=image_data,
+            ContentType='image/png',
+            ACL='public-read'  # Make the image publicly accessible
+        )
+        
+        # Construct the public URL (matching NestJS format: https://{bucketName}.{endpoint}/{fileName})
+        # Clean endpoint for URL construction (remove protocol if present)
+        endpoint_for_url = DO_SPACES_ENDPOINT.replace('https://', '').replace('http://', '').strip()
+        uploaded_url = f"https://{bucket_name}.{endpoint_for_url}/{filename}"
+        print(f"Image uploaded to Digital Ocean Spaces: {uploaded_url}")
+    except Exception as upload_error:
+        print(f"Error uploading to Digital Ocean Spaces: {upload_error}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Image generated but failed to upload to storage: {str(upload_error)}"
+        )
+    
+    # 7. Return JSON response with URL and name
+    if not uploaded_url or not image_name:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate upload URL or image name"
+        )
+    
+    response_data = {
+        "url": uploaded_url,
+        "name": image_name
+    }
+    print(f"Returning response: {response_data}")
+    
+    # Deduct credits ONLY on success
+    consumed = consume_units(user_id, tokens_to_deduct, engine_type=engine_type)
+    if not consumed:
+        raise HTTPException(status_code=429, detail="Insufficient credits to complete request")
+
+    # Keep legacy counter best-effort (do NOT enforce off this)
+    increment_user_units(user_id)
+
+    # Log usage
+    log_usage(
+        user_id=user_id,
+        operation="resize",
+        aspect_ratio=aspect_ratio,
+        success=True,
+        image_url=uploaded_url
+    )
+
+    return JSONResponse(content=response_data, status_code=200)
 
 @app.get("/")
 async def read_root():
