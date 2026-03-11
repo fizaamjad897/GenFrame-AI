@@ -40,6 +40,10 @@ from auth import (
 import auth as auth_module
 from stripe_manager import create_checkout_session, create_portal_session, handle_webhook_event, cancel_subscription
 
+import warnings
+# Suppress the Google Cloud Python 3.10 deprecation warnings for cleaner logs
+warnings.filterwarnings("ignore", category=FutureWarning, module=r"google.api_core")
+
 load_dotenv()
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
@@ -137,6 +141,11 @@ except Exception as _vertex_load_err:
 
 VERTEX_PROJECT_ID = _vertex_project_id_env or _vertex_project_id_file
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
+
+if VERTEX_PROJECT_ID:
+    print(f"✅ [VERTEX] Project identified: {VERTEX_PROJECT_ID}")
+else:
+    print("⚠️  [VERTEX] No Project ID found. Vertex AI will be skipped.")
 
 # Ensure Vertex AI SDK can authenticate via the service-account JSON
 _vertex_sa_path_resolved = os.getenv("VERTEX_SA_PATH", os.path.join(os.path.dirname(__file__), "vertex.json"))
@@ -1050,49 +1059,10 @@ async def resize_image(
             "you can rearrange the elements to ensure it is perfect."
         )
 
-    # --- Primary: Gemini (google-genai SDK) ---
-    if client:
-        try:
-            model_name = "gemini-3-pro-image-preview"
-            print(f"🤖 [DEBUG] Calling {model_name} with prompt: '{use_prompt[:50]}...'")
-
-            # Build contents based on whether we have an image
-            if pil_image:
-                # Image transformation or image+prompt creation
-                contents = [use_prompt, pil_image]
-            else:
-                # Prompt-only creation (no input image)
-                contents = [use_prompt]
-
-            response = client.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE"],
-                    image_config=types.ImageConfig(
-                        aspect_ratio=gemini_aspect_ratio
-                    )
-                )
-            )
-            print(f"📡 [DEBUG] Model response received. Parts: {len(response.parts) if response.parts else 0}")
-            
-            if response.parts:
-                for part in response.parts:
-                    if getattr(part, "inline_data", None):
-                        image_data = part.inline_data.data
-                        print(f"🖼️ [DEBUG] Extracted inline image: {len(image_data)} bytes")
-                        break
-
-            if not image_data:
-                print(f"❌ [DEBUG] No image data in response parts. Full Response: {response}")
-        except Exception as e:
-            gemini_error = e
-            print(f"❌ [DEBUG] Gemini image generation failed: {e}")
-
-    # --- Second: Vertex AI Gemini ---
+    # --- Primary: Vertex AI Gemini (High Priority) ---
     if not image_data and VERTEX_PROJECT_ID and vertex_init and GenerativeModel:
         try:
-            print(f"🧭 [FALLBACK] Invoking Vertex AI Gemini (project={VERTEX_PROJECT_ID}, location={VERTEX_LOCATION})")
+            print(f"🧭 [PRIMARY] Invoking Vertex AI Gemini (project={VERTEX_PROJECT_ID}, location={VERTEX_LOCATION})")
             vertex_init(project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
 
             v_model = GenerativeModel("gemini-3-pro-image-preview")
@@ -1114,7 +1084,7 @@ async def resize_image(
                     response_mime_type="image/png",
                 ),
             )
-            print("📡 [FALLBACK] Vertex AI response received")
+            print("📡 [PRIMARY] Vertex AI response received")
 
             # Try to extract inline image bytes from Vertex response
             parts = []
@@ -1128,24 +1098,60 @@ async def resize_image(
                 inline = getattr(part, "inline_data", None)
                 if inline is not None and getattr(inline, "data", None):
                     image_data = inline.data
-                    print(f"🧭 [FALLBACK] Extracted Vertex image: {len(image_data)} bytes")
+                    print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes")
                     break
 
             if not image_data:
-                print("❌ [FALLBACK] Vertex AI Gemini did not return image bytes.")
+                print("❌ [PRIMARY] Vertex AI Gemini did not return image bytes.")
 
         except Exception as ve:
             vertex_error = ve
-            print(f"❌ [FALLBACK] Vertex AI Gemini failed: {ve}")
+            print(f"❌ [PRIMARY] Vertex AI Gemini failed: {ve}")
 
-    # --- Third: Fal.ai wrapper ---
+    # --- Second: Gemini (google-genai SDK - Fallback 1) ---
+    if not image_data and client:
+        try:
+            model_name = "gemini-3-pro-image-preview"
+            print(f"🤖 [FALLBACK] Calling {model_name} (Gemini SDK) with prompt: '{use_prompt[:50]}...'")
+
+            # Build contents based on whether we have an image
+            if pil_image:
+                contents = [use_prompt, pil_image]
+            else:
+                contents = [use_prompt]
+
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=gemini_aspect_ratio
+                    )
+                )
+            )
+            print(f"📡 [FALLBACK] Gemini SDK response received. Parts: {len(response.parts) if response.parts else 0}")
+            
+            if response.parts:
+                for part in response.parts:
+                    if getattr(part, "inline_data", None):
+                        image_data = part.inline_data.data
+                        print(f"🖼️ [FALLBACK] Extracted Gemini SDK image: {len(image_data)} bytes")
+                        break
+
+            if not image_data:
+                print(f"❌ [FALLBACK] No image data in Gemini SDK response.")
+        except Exception as ge:
+            gemini_error = ge
+            print(f"❌ [FALLBACK] Gemini SDK failed: {ge}")
+
+    # --- Third: Fal.ai wrapper (Fallback 2) ---
     if not image_data:
         try:
             print(f"🛟 [FALLBACK] Invoking Fal.ai wrapper at {FAL_FALLBACK_URL}")
             payload = {
                 "prompt": use_prompt,
                 "aspect_ratio": gemini_aspect_ratio,
-                # Force sync mode so we wait for image output
                 "sync_mode": True,
             }
 
@@ -1154,11 +1160,10 @@ async def resize_image(
             fal_response.raise_for_status()
 
             fal_json = fal_response.json()
-            print(f"🛟 [FALLBACK] Fal.ai response received: keys={list(fal_json.keys()) if isinstance(fal_json, dict) else type(fal_json)}")
+            print(f"🛟 [FALLBACK] Fal.ai response received")
 
             image_url = None
             if isinstance(fal_json, dict):
-                # Common patterns: image_urls: [url], images: [url or {url: ...}], url: "..."
                 if fal_json.get("image_urls"):
                     image_url = fal_json["image_urls"][0]
                 elif fal_json.get("images"):
@@ -1182,11 +1187,11 @@ async def resize_image(
 
         except Exception as fallback_err:
             print(f"❌ [FALLBACK] Fal.ai fallback failed: {fallback_err}")
-            # Prefer to expose the primary error if we had one
-            base_error = gemini_error or vertex_error or fallback_err
+            # Final failure: throw the best error we had
+            base_error = vertex_error or gemini_error or fallback_err
             raise HTTPException(
                 status_code=500,
-                detail=f"Image generation failed (primary + Vertex + Fal.ai). Reason: {base_error}"
+                detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
             )
 
     # 5. Post-process: Resize to exact requested dimensions
