@@ -1091,10 +1091,10 @@ async def resize_image(
                 # Build contents
                 v_contents: list = []
                 if pil_image:
-                    # Pass the PIL image object directly to Part.from_image.
-                    # Passing raw bytes can cause "'bytes' object has no attribute 'data'" errors
-                    # in newer versions of the Vertex AI SDK.
-                    v_contents = [use_prompt, Part.from_image(pil_image)]
+                    # Use Part.from_data with raw PNG bytes as recommended by
+                    # the latest Vertex AI SDK instead of passing PIL images or
+                    # plain bytes to Part.from_image (which expects a Vertex Image).
+                    v_contents = [use_prompt, Part.from_data(image_bytes, mime_type="image/png")]
                 else:
                     v_contents = [use_prompt]
 
