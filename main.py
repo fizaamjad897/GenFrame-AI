@@ -1056,6 +1056,21 @@ async def resize_image(
         gemini_error: Exception | None = None
         vertex_error: Exception | None = None
 
+        # Helper for safer extraction
+        def extract_img_bytes(obj):
+            if not obj: return None
+            # If it's already bytes, return it
+            if isinstance(obj, bytes): return obj
+            # If it's a part/blob with a 'data' attribute
+            data_attr = getattr(obj, "data", None)
+            if isinstance(data_attr, bytes): return data_attr
+            # If it has 'inline_data'
+            inline = getattr(obj, "inline_data", None)
+            if inline:
+                if isinstance(inline, bytes): return inline
+                return getattr(inline, "data", None)
+            return None
+
         # Construct the structured prompt
         if prompt:
             use_prompt = prompt
@@ -1092,20 +1107,17 @@ async def resize_image(
                 )
                 print("📡 [PRIMARY] Vertex AI response received")
 
-                # Try to extract inline image bytes from Vertex response
-                parts = []
+                # Try to extract inline image bytes safely
                 if getattr(v_response, "candidates", None):
                     for cand in v_response.candidates:
-                        c_content = getattr(cand, "content", None)
-                        if c_content is not None and getattr(c_content, "parts", None):
-                            parts.extend(c_content.parts)
-
-                for part in parts:
-                    inline = getattr(part, "inline_data", None)
-                    if inline is not None and getattr(inline, "data", None):
-                        image_data = inline.data
-                        print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes")
-                        break
+                        if cand.content and cand.content.parts:
+                            for part in cand.content.parts:
+                                extracted = extract_img_bytes(part)
+                                if extracted:
+                                    image_data = extracted
+                                    print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes")
+                                    break
+                        if image_data: break
 
                 if not image_data:
                     print("❌ [PRIMARY] Vertex AI Gemini did not return image bytes.")
@@ -1140,8 +1152,9 @@ async def resize_image(
                 
                 if response.parts:
                     for part in response.parts:
-                        if getattr(part, "inline_data", None):
-                            image_data = part.inline_data.data
+                        extracted = extract_img_bytes(part)
+                        if extracted:
+                            image_data = extracted
                             print(f"🖼️ [FALLBACK] Extracted Gemini SDK image: {len(image_data)} bytes")
                             break
 
