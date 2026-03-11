@@ -8,19 +8,6 @@ from google.genai import types
 from PIL import Image
 import io
 import httpx
-try:
-    # Vertex AI SDK (optional, used as second fallback for Gemini)
-    from vertexai import init as vertex_init
-    from vertexai.generative_models import (
-        GenerativeModel,
-        GenerationConfig,
-        Part,
-    )
-except ImportError:
-    vertex_init = None
-    GenerativeModel = None
-    GenerationConfig = None
-    Part = None
 from datetime import datetime
 import uuid
 import boto3
@@ -124,18 +111,16 @@ def get_current_user(request: Request, authorization: str = Header(None), x_api_
 # Initialize Gemini Client (lazy init or global if key is present)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Vertex AI (second fallback for Gemini)
-# 1) Prefer explicit env overrides
-# 2) Fallback to project_id from local vertex.json service account if present
+# --- Vertex AI via google-genai SDK (uses service account, separate quota) ---
+import json as _json
 _vertex_project_id_env = os.getenv("VERTEX_PROJECT_ID")
 _vertex_project_id_file = None
+_vertex_sa_path = None
 try:
-    import json as _json
     _possible_paths = [
         os.getenv("VERTEX_SA_PATH"),
         os.path.join(os.path.dirname(__file__), "vertex.json"),
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "vertex.json"),
-        "/home/lahore/visual-engine-be/vertex.json" # Fallback for known server path
     ]
     _vertex_sa_path = next((p for p in _possible_paths if p and os.path.exists(p)), None)
     if _vertex_sa_path:
@@ -153,10 +138,20 @@ except Exception as _vertex_load_err:
 VERTEX_PROJECT_ID = _vertex_project_id_env or _vertex_project_id_file
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
 
-if VERTEX_PROJECT_ID:
-    print(f"✅ [VERTEX] Project identified: {VERTEX_PROJECT_ID}")
+# Create the Vertex AI client (uses service account credentials, separate quota)
+vertex_client = None
+if VERTEX_PROJECT_ID and _vertex_sa_path:
+    try:
+        vertex_client = genai.Client(
+            vertexai=True,
+            project=VERTEX_PROJECT_ID,
+            location=VERTEX_LOCATION,
+        )
+        print(f"✅ [VERTEX] Client initialized (project={VERTEX_PROJECT_ID}, location={VERTEX_LOCATION})")
+    except Exception as vc_err:
+        print(f"⚠️  [VERTEX] Failed to create Vertex client: {vc_err}")
 else:
-    print("⚠️  [VERTEX] No Project ID found. Vertex AI will be skipped.")
+    print("⚠️  [VERTEX] No Project ID or credentials found. Vertex AI will be skipped.")
 
 # Fallback image generation service (Fal.ai Nano Banana Pro wrapper)
 FAL_FALLBACK_URL = os.getenv(
@@ -164,7 +159,7 @@ FAL_FALLBACK_URL = os.getenv(
     "https://recreative.signagexai.com/fal-ai-fallback/generate",
 )
 
-# We will init inside the function or global if key exists.
+# Gemini SDK client (uses GOOGLE_API_KEY)
 client = None
 if GOOGLE_API_KEY:
     client = genai.Client(api_key=GOOGLE_API_KEY)
@@ -1080,50 +1075,42 @@ async def resize_image(
                 "you can rearrange the elements to ensure it is perfect."
             )
 
-        # --- Primary: Vertex AI Gemini (High Priority) ---
-        if not image_data and VERTEX_PROJECT_ID and vertex_init and GenerativeModel:
+        # --- Primary: Vertex AI via google-genai SDK (High Priority) ---
+        if not image_data and vertex_client:
             try:
-                print(f"🧭 [PRIMARY] Invoking Vertex AI Gemini (project={VERTEX_PROJECT_ID}, location={VERTEX_LOCATION})")
-                vertex_init(project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
+                # Use the same model via Vertex AI backend (separate quota)
+                v_model_name = "gemini-2.0-flash-exp"
+                print(f"🧭 [PRIMARY] Invoking Vertex AI ({v_model_name}, project={VERTEX_PROJECT_ID})")
 
-                v_model = GenerativeModel("gemini-3-pro-image-preview")
-
-                # Build contents
-                v_contents: list = []
+                # Build contents just like Gemini SDK
                 if pil_image:
-                    # Use Part.from_data with raw PNG bytes as recommended by
-                    # the latest Vertex AI SDK instead of passing PIL images or
-                    # plain bytes to Part.from_image (which expects a Vertex Image).
-                    v_contents = [use_prompt, Part.from_data(image_bytes, mime_type="image/png")]
+                    v_contents = [use_prompt, pil_image]
                 else:
                     v_contents = [use_prompt]
 
-                v_response = v_model.generate_content(
-                    v_contents,
-                    generation_config=GenerationConfig(
-                        response_mime_type="image/png",
-                    ),
+                v_response = vertex_client.models.generate_content(
+                    model=v_model_name,
+                    contents=v_contents,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                    )
                 )
-                print("📡 [PRIMARY] Vertex AI response received")
+                print(f"📡 [PRIMARY] Vertex AI response received. Parts: {len(v_response.parts) if v_response.parts else 0}")
 
-                # Try to extract inline image bytes safely
-                if getattr(v_response, "candidates", None):
-                    for cand in v_response.candidates:
-                        if cand.content and cand.content.parts:
-                            for part in cand.content.parts:
-                                extracted = extract_img_bytes(part)
-                                if extracted:
-                                    image_data = extracted
-                                    print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes")
-                                    break
-                        if image_data: break
+                if v_response.parts:
+                    for part in v_response.parts:
+                        extracted = extract_img_bytes(part)
+                        if extracted:
+                            image_data = extracted
+                            print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes")
+                            break
 
                 if not image_data:
-                    print("❌ [PRIMARY] Vertex AI Gemini did not return image bytes.")
+                    print("❌ [PRIMARY] Vertex AI did not return image bytes.")
 
             except Exception as ve:
                 vertex_error = ve
-                print(f"❌ [PRIMARY] Vertex AI Gemini failed: {ve}")
+                print(f"❌ [PRIMARY] Vertex AI failed: {ve}")
 
         # --- Second: Gemini (google-genai SDK - Fallback 1) ---
         if not image_data and client:
