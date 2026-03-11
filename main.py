@@ -111,16 +111,18 @@ def get_current_user(request: Request, authorization: str = Header(None), x_api_
 # Initialize Gemini Client (lazy init or global if key is present)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# --- Vertex AI via google-genai SDK (uses service account, separate quota) ---
-import json as _json
+# Vertex AI (second fallback for Gemini)
+# 1) Prefer explicit env overrides
+# 2) Fallback to project_id from local vertex.json service account if present
 _vertex_project_id_env = os.getenv("VERTEX_PROJECT_ID")
 _vertex_project_id_file = None
-_vertex_sa_path = None
 try:
+    import json as _json
     _possible_paths = [
         os.getenv("VERTEX_SA_PATH"),
         os.path.join(os.path.dirname(__file__), "vertex.json"),
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "vertex.json"),
+        "/home/lahore/visual-engine-be/vertex.json" # Fallback for known server path
     ]
     _vertex_sa_path = next((p for p in _possible_paths if p and os.path.exists(p)), None)
     if _vertex_sa_path:
@@ -138,9 +140,14 @@ except Exception as _vertex_load_err:
 VERTEX_PROJECT_ID = _vertex_project_id_env or _vertex_project_id_file
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
 
-# Create the Vertex AI client (uses service account credentials, separate quota)
+if VERTEX_PROJECT_ID:
+    print(f"✅ [VERTEX] Project identified: {VERTEX_PROJECT_ID}")
+else:
+    print("⚠️  [VERTEX] No Project ID found. Vertex AI will be skipped.")
+
+# Create Vertex AI client using google-genai SDK (same approach as vertex-gemini-api)
 vertex_client = None
-if VERTEX_PROJECT_ID and _vertex_sa_path:
+if VERTEX_PROJECT_ID:
     try:
         vertex_client = genai.Client(
             vertexai=True,
@@ -150,8 +157,6 @@ if VERTEX_PROJECT_ID and _vertex_sa_path:
         print(f"✅ [VERTEX] Client initialized (project={VERTEX_PROJECT_ID}, location={VERTEX_LOCATION})")
     except Exception as vc_err:
         print(f"⚠️  [VERTEX] Failed to create Vertex client: {vc_err}")
-else:
-    print("⚠️  [VERTEX] No Project ID or credentials found. Vertex AI will be skipped.")
 
 # Fallback image generation service (Fal.ai Nano Banana Pro wrapper)
 FAL_FALLBACK_URL = os.getenv(
@@ -159,7 +164,7 @@ FAL_FALLBACK_URL = os.getenv(
     "https://recreative.signagexai.com/fal-ai-fallback/generate",
 )
 
-# Gemini SDK client (uses GOOGLE_API_KEY)
+# We will init inside the function or global if key exists.
 client = None
 if GOOGLE_API_KEY:
     client = genai.Client(api_key=GOOGLE_API_KEY)
@@ -1076,41 +1081,54 @@ async def resize_image(
             )
 
         # --- Primary: Vertex AI via google-genai SDK (High Priority) ---
+        # Uses genai.Client(vertexai=True) with service account credentials
+        # This has its own separate quota from the Gemini API key
         if not image_data and vertex_client:
-            try:
-                # Use the same model via Vertex AI backend (separate quota)
-                v_model_name = "gemini-2.0-flash-exp"
-                print(f"🧭 [PRIMARY] Invoking Vertex AI ({v_model_name}, project={VERTEX_PROJECT_ID})")
+            # Try multiple image-capable models in order of preference
+            VERTEX_IMAGE_MODELS = [
+                "gemini-2.0-flash-001",
+                "gemini-2.0-flash-preview-image-generation",
+                "gemini-2.5-flash-preview-image-generation",
+            ]
+            for v_model_name in VERTEX_IMAGE_MODELS:
+                try:
+                    print(f"🧭 [PRIMARY] Trying Vertex AI model: {v_model_name}")
 
-                # Build contents just like Gemini SDK
-                if pil_image:
-                    v_contents = [use_prompt, pil_image]
-                else:
-                    v_contents = [use_prompt]
+                    # Build contents just like Gemini SDK
+                    if pil_image:
+                        v_contents = [use_prompt, pil_image]
+                    else:
+                        v_contents = [use_prompt]
 
-                v_response = vertex_client.models.generate_content(
-                    model=v_model_name,
-                    contents=v_contents,
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
+                    v_response = vertex_client.models.generate_content(
+                        model=v_model_name,
+                        contents=v_contents,
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE"],
+                        )
                     )
-                )
-                print(f"📡 [PRIMARY] Vertex AI response received. Parts: {len(v_response.parts) if v_response.parts else 0}")
+                    print(f"📡 [PRIMARY] Vertex AI response received (model={v_model_name}). Parts: {len(v_response.parts) if v_response.parts else 0}")
 
-                if v_response.parts:
-                    for part in v_response.parts:
-                        extracted = extract_img_bytes(part)
-                        if extracted:
-                            image_data = extracted
-                            print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes")
-                            break
+                    if v_response.parts:
+                        for part in v_response.parts:
+                            extracted = extract_img_bytes(part)
+                            if extracted:
+                                image_data = extracted
+                                print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes (model={v_model_name})")
+                                break
 
-                if not image_data:
-                    print("❌ [PRIMARY] Vertex AI did not return image bytes.")
+                    if image_data:
+                        break  # Success! Stop trying models
+                    else:
+                        print(f"❌ [PRIMARY] {v_model_name} returned no image bytes, trying next model...")
 
-            except Exception as ve:
-                vertex_error = ve
-                print(f"❌ [PRIMARY] Vertex AI failed: {ve}")
+                except Exception as ve:
+                    vertex_error = ve
+                    print(f"❌ [PRIMARY] {v_model_name} failed: {ve}")
+                    continue  # Try next model
+
+            if not image_data and vertex_error:
+                print(f"❌ [PRIMARY] All Vertex AI models failed. Last error: {vertex_error}")
 
         # --- Second: Gemini (google-genai SDK - Fallback 1) ---
         if not image_data and client:
