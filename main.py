@@ -131,13 +131,24 @@ _vertex_project_id_env = os.getenv("VERTEX_PROJECT_ID")
 _vertex_project_id_file = None
 try:
     import json as _json
-    _vertex_sa_path = os.getenv("VERTEX_SA_PATH", os.path.join(os.path.dirname(__file__), "vertex.json"))
-    if os.path.exists(_vertex_sa_path):
+    _possible_paths = [
+        os.getenv("VERTEX_SA_PATH"),
+        os.path.join(os.path.dirname(__file__), "vertex.json"),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "vertex.json"),
+        "/home/lahore/visual-engine-be/vertex.json" # Fallback for known server path
+    ]
+    _vertex_sa_path = next((p for p in _possible_paths if p and os.path.exists(p)), None)
+    if _vertex_sa_path:
         with open(_vertex_sa_path, "r") as _vf:
             _vertex_data = _json.load(_vf)
             _vertex_project_id_file = _vertex_data.get("project_id")
+            if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _vertex_sa_path
+                print(f"🔑 [VERTEX] Set GOOGLE_APPLICATION_CREDENTIALS to {_vertex_sa_path}")
+    else:
+        print("⚠️  [VERTEX] vertex.json not found in any expected location.")
 except Exception as _vertex_load_err:
-    print(f"⚠️  [VERTEX] Failed to read vertex.json for project_id: {_vertex_load_err}")
+    print(f"⚠️  [VERTEX] Failed to initialize Vertex credentials: {_vertex_load_err}")
 
 VERTEX_PROJECT_ID = _vertex_project_id_env or _vertex_project_id_file
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
@@ -146,12 +157,6 @@ if VERTEX_PROJECT_ID:
     print(f"✅ [VERTEX] Project identified: {VERTEX_PROJECT_ID}")
 else:
     print("⚠️  [VERTEX] No Project ID found. Vertex AI will be skipped.")
-
-# Ensure Vertex AI SDK can authenticate via the service-account JSON
-_vertex_sa_path_resolved = os.getenv("VERTEX_SA_PATH", os.path.join(os.path.dirname(__file__), "vertex.json"))
-if os.path.exists(_vertex_sa_path_resolved) and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _vertex_sa_path_resolved
-    print(f"🔑 [VERTEX] Set GOOGLE_APPLICATION_CREDENTIALS to {_vertex_sa_path_resolved}")
 
 # Fallback image generation service (Fal.ai Nano Banana Pro wrapper)
 FAL_FALLBACK_URL = os.getenv(
@@ -920,410 +925,436 @@ async def resize_image(
     """
     global client
     
-    # Engine-specific validation
-    if engine_type == "transformation":
-        # Transformation requires image, no custom prompt
-        if not file:
-            raise HTTPException(
-                status_code=400, 
-                detail="Transformation engine requires an image upload. Please upload an image to transform."
-            )
-        # Force default prompt for transformation (ignore any user-provided prompt)
-        prompt = None
-        print(f"🔄 [TRANSFORMATION] Image-only transformation mode")
-        
-    elif engine_type == "creation":
-        # Creation requires prompt, image is optional
-        if not prompt or not prompt.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="Creation engine requires a prompt. Please provide a description of what you want to create."
-            )
-        print(f"🎨 [CREATION] Prompt-based {'generation' if not file else 'transformation'} mode")
-    
-    # 1. Read the image and get dimensions for credit calculation (if image provided)
-    pil_image = None
-    max_dim = 1024  # Default for prompt-only generation
-    
-    if file:
-        image_bytes = await file.read()
-        print(f"📥 [DEBUG] Received file: {file.filename}, length: {len(image_bytes)} bytes")
-        
-        if len(image_bytes) == 0:
-            raise HTTPException(status_code=400, detail="Uploaded file is empty")
-
-        try:
-            pil_image = Image.open(io.BytesIO(image_bytes))
-            width, height = pil_image.size
-            max_dim = max(width, height)
-        except Exception as e:
-            print(f"❌ [DEBUG] PIL Error: {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid image format: {str(e)}")
-    else:
-        # Creation engine with prompt only - no image
-        print(f"🎨 [CREATION] Generating image from prompt only (no input image)")
-    
-    # Calculate token cost based on user requirements:
-    # Creation Engine: <= 1024: 2.0, > 1024: 4.4
-    # Transformation Engine: <= 1024: 1.0, > 1024: 2.5
-    tokens_to_deduct = 1.0
-    if engine_type == "creation":
-        tokens_to_deduct = 2.0 if max_dim <= 1024 else 4.4
-    else:
-        tokens_to_deduct = 1.0 if max_dim <= 1024 else 2.5
-
-    if pil_image:
-        width, height = pil_image.size
-        print(f"🖼️ [RESIZE] Image: {width}x{height} ({max_dim}px). Engine: {engine_type}. Cost: {tokens_to_deduct} tokens.")
-    else:
-        print(f"🎨 [GENERATE] Prompt-only generation ({max_dim}px default). Engine: {engine_type}. Cost: {tokens_to_deduct} tokens.")
-
-    # Check user's credits
-    user_id = str(current_user["_id"])
-    
-    # Get backend session/user data refresh to ensure we have latest credits
-    # Priority: engine_data[engine_type] -> credits
-    engine_data = current_user.get("engine_data", {})
-    target_engine_info = engine_data.get(engine_type, {})
-    engine_credits = target_engine_info.get("credits", {}) if target_engine_info else {}
-    
-    # Fallback to top-level if engine matches current user's active engine
-    if not engine_credits and current_user.get("engineType") == engine_type:
-        engine_credits = current_user.get("credits", {})
-
-    remaining = float(engine_credits.get("remaining_units", 0.0))
-    
-    if remaining < tokens_to_deduct:
-        raise HTTPException(
-            status_code=429, 
-            detail=f"Insufficient credits for {engine_type}. Required: {tokens_to_deduct}, Available: {remaining}. Please upgrade your {engine_type} plan."
-        )
-    
-    # 2. Aspect Ratio Sanitization
-    SUPPORTED_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']
-    
-    # Save the original requested ratio for post-processing
-    original_aspect_ratio = aspect_ratio
-    
-    # Normalize input aspect_ratio (handle both '16:9' and '16x9' or '1120:360')
-    input_ratio = aspect_ratio.replace('x', ':')
-    
-    # If not directly supported, find the closest one to prevent API crash
-    gemini_aspect_ratio = input_ratio  # This will be sent to Gemini
-    if input_ratio not in SUPPORTED_RATIOS:
-        try:
-            w_in, h_in = map(int, input_ratio.split(':'))
-            ratio_val = w_in / h_in
-            
-            # Find closest supported ratio based on decimal value
-            ratio_map = {
-                '1:1': 1.0,
-                '2:3': 0.66,
-                '3:2': 1.5,
-                '3:4': 0.75,
-                '4:3': 1.33,
-                '4:5': 0.8,
-                '5:4': 1.25,
-                '9:16': 0.56,
-                '16:9': 1.77,
-                '21:9': 2.33
-            }
-            
-            closest_ratio = min(ratio_map.keys(), key=lambda k: abs(ratio_map[k] - ratio_val))
-            print(f"⚠️ [RESIZE] Unsupported ratio {input_ratio} ({ratio_val:.2f}). Mapping to closest supported: {closest_ratio}")
-            gemini_aspect_ratio = closest_ratio
-        except Exception as e:
-            print(f"❌ [RESIZE] Aspect ratio parsing error: {e}. Defaulting to 1:1")
-            gemini_aspect_ratio = '1:1'
-    
-    if not client:
-        # Try reloading env if key was added later
-        load_dotenv()
-        GOOGLE_API_KEY_LATEST = os.getenv("GOOGLE_API_KEY")
-        if GOOGLE_API_KEY_LATEST:
-            client = genai.Client(api_key=GOOGLE_API_KEY_LATEST)
-        else:
-            client = None
-    
-    # 3. Call the primary AI service (Gemini) with Vertex + Fal.ai fallbacks
-    image_data = None
-    gemini_error: Exception | None = None
-    vertex_error: Exception | None = None
-
-    # Construct the structured prompt
-    if prompt:
-        use_prompt = prompt
-    else:
-        use_prompt = (
-            f"recreate this image in {gemini_aspect_ratio} ratio format and keep all the the information of image intact . "
-            "you can rearrange the elements to ensure it is perfect."
-        )
-
-    # --- Primary: Vertex AI Gemini (High Priority) ---
-    if not image_data and VERTEX_PROJECT_ID and vertex_init and GenerativeModel:
-        try:
-            print(f"🧭 [PRIMARY] Invoking Vertex AI Gemini (project={VERTEX_PROJECT_ID}, location={VERTEX_LOCATION})")
-            vertex_init(project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
-
-            v_model = GenerativeModel("gemini-3-pro-image-preview")
-
-            # Build contents
-            v_contents: list = []
-            if pil_image:
-                # Serialize PIL image to bytes for Part.from_image
-                buf = io.BytesIO()
-                pil_image.save(buf, format="PNG")
-                buf.seek(0)
-                v_contents = [use_prompt, Part.from_image(buf.getvalue())]
-            else:
-                v_contents = [use_prompt]
-
-            v_response = v_model.generate_content(
-                v_contents,
-                generation_config=GenerationConfig(
-                    response_mime_type="image/png",
-                ),
-            )
-            print("📡 [PRIMARY] Vertex AI response received")
-
-            # Try to extract inline image bytes from Vertex response
-            parts = []
-            if getattr(v_response, "candidates", None):
-                for cand in v_response.candidates:
-                    c_content = getattr(cand, "content", None)
-                    if c_content is not None and getattr(c_content, "parts", None):
-                        parts.extend(c_content.parts)
-
-            for part in parts:
-                inline = getattr(part, "inline_data", None)
-                if inline is not None and getattr(inline, "data", None):
-                    image_data = inline.data
-                    print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes")
-                    break
-
-            if not image_data:
-                print("❌ [PRIMARY] Vertex AI Gemini did not return image bytes.")
-
-        except Exception as ve:
-            vertex_error = ve
-            print(f"❌ [PRIMARY] Vertex AI Gemini failed: {ve}")
-
-    # --- Second: Gemini (google-genai SDK - Fallback 1) ---
-    if not image_data and client:
-        try:
-            model_name = "gemini-3-pro-image-preview"
-            print(f"🤖 [FALLBACK] Calling {model_name} (Gemini SDK) with prompt: '{use_prompt[:50]}...'")
-
-            # Build contents based on whether we have an image
-            if pil_image:
-                contents = [use_prompt, pil_image]
-            else:
-                contents = [use_prompt]
-
-            response = client.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE"],
-                    image_config=types.ImageConfig(
-                        aspect_ratio=gemini_aspect_ratio
-                    )
+    try:
+        # Engine-specific validation
+        if engine_type == "transformation":
+            # Transformation requires image, no custom prompt
+            if not file:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Transformation engine requires an image upload. Please upload an image to transform."
                 )
-            )
-            print(f"📡 [FALLBACK] Gemini SDK response received. Parts: {len(response.parts) if response.parts else 0}")
+            # Force default prompt for transformation (ignore any user-provided prompt)
+            prompt = None
+            print(f"🔄 [TRANSFORMATION] Image-only transformation mode")
             
-            if response.parts:
-                for part in response.parts:
-                    if getattr(part, "inline_data", None):
-                        image_data = part.inline_data.data
-                        print(f"🖼️ [FALLBACK] Extracted Gemini SDK image: {len(image_data)} bytes")
+        elif engine_type == "creation":
+            # Creation requires prompt, image is optional
+            if not prompt or not prompt.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Creation engine requires a prompt. Please provide a description of what you want to create."
+                )
+            print(f"🎨 [CREATION] Prompt-based {'generation' if not file else 'transformation'} mode")
+        
+        # 1. Read the image and get dimensions for credit calculation (if image provided)
+        pil_image = None
+        max_dim = 1024  # Default for prompt-only generation
+        
+        if file:
+            image_bytes = await file.read()
+            print(f"📥 [DEBUG] Received file: {file.filename}, length: {len(image_bytes)} bytes")
+            
+            if len(image_bytes) == 0:
+                raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+            try:
+                pil_image = Image.open(io.BytesIO(image_bytes))
+                width, height = pil_image.size
+                max_dim = max(width, height)
+            except Exception as e:
+                print(f"❌ [DEBUG] PIL Error: {e}")
+                raise HTTPException(status_code=400, detail=f"Invalid image format: {str(e)}")
+        else:
+            # Creation engine with prompt only - no image
+            print(f"🎨 [CREATION] Generating image from prompt only (no input image)")
+        
+        # Calculate token cost based on user requirements:
+        # Creation Engine: <= 1024: 2.0, > 1024: 4.4
+        # Transformation Engine: <= 1024: 1.0, > 1024: 2.5
+        tokens_to_deduct = 1.0
+        if engine_type == "creation":
+            tokens_to_deduct = 2.0 if max_dim <= 1024 else 4.4
+        else:
+            tokens_to_deduct = 1.0 if max_dim <= 1024 else 2.5
+
+        if pil_image:
+            width, height = pil_image.size
+            print(f"🖼️ [RESIZE] Image: {width}x{height} ({max_dim}px). Engine: {engine_type}. Cost: {tokens_to_deduct} tokens.")
+        else:
+            print(f"🎨 [GENERATE] Prompt-only generation ({max_dim}px default). Engine: {engine_type}. Cost: {tokens_to_deduct} tokens.")
+
+        # Check user's credits
+        user_id = str(current_user["_id"])
+        
+        # Get backend session/user data refresh to ensure we have latest credits
+        # Priority: engine_data[engine_type] -> credits
+        engine_data = current_user.get("engine_data", {})
+        target_engine_info = engine_data.get(engine_type, {})
+        engine_credits = target_engine_info.get("credits", {}) if target_engine_info else {}
+        
+        # Fallback to top-level if engine matches current user's active engine
+        if not engine_credits and current_user.get("engineType") == engine_type:
+            engine_credits = current_user.get("credits", {})
+
+        remaining = float(engine_credits.get("remaining_units", 0.0))
+        
+        if remaining < tokens_to_deduct:
+            raise HTTPException(
+                status_code=429, 
+                detail=f"Insufficient credits for {engine_type}. Required: {tokens_to_deduct}, Available: {remaining}. Please upgrade your {engine_type} plan."
+            )
+        
+        # 2. Aspect Ratio Sanitization
+        SUPPORTED_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']
+        
+        # Save the original requested ratio for post-processing
+        original_aspect_ratio = aspect_ratio
+        
+        # Normalize input aspect_ratio (handle both '16:9' and '16x9' or '1120:360')
+        input_ratio = aspect_ratio.replace('x', ':')
+        
+        # If not directly supported, find the closest one to prevent API crash
+        gemini_aspect_ratio = input_ratio  # This will be sent to Gemini
+        if input_ratio not in SUPPORTED_RATIOS:
+            try:
+                w_in, h_in = map(int, input_ratio.split(':'))
+                ratio_val = w_in / h_in
+                
+                # Find closest supported ratio based on decimal value
+                ratio_map = {
+                    '1:1': 1.0,
+                    '2:3': 0.66,
+                    '3:2': 1.5,
+                    '3:4': 0.75,
+                    '4:3': 1.33,
+                    '4:5': 0.8,
+                    '5:4': 1.25,
+                    '9:16': 0.56,
+                    '16:9': 1.77,
+                    '21:9': 2.33
+                }
+                
+                closest_ratio = min(ratio_map.keys(), key=lambda k: abs(ratio_map[k] - ratio_val))
+                print(f"⚠️ [RESIZE] Unsupported ratio {input_ratio} ({ratio_val:.2f}). Mapping to closest supported: {closest_ratio}")
+                gemini_aspect_ratio = closest_ratio
+            except Exception as e:
+                print(f"❌ [RESIZE] Aspect ratio parsing error: {e}. Defaulting to 1:1")
+                gemini_aspect_ratio = '1:1'
+        
+        if not client:
+            # Try reloading env if key was added later
+            load_dotenv()
+            GOOGLE_API_KEY_LATEST = os.getenv("GOOGLE_API_KEY")
+            if GOOGLE_API_KEY_LATEST:
+                client = genai.Client(api_key=GOOGLE_API_KEY_LATEST)
+            else:
+                client = None
+        
+        # 3. Call the primary AI service (Gemini) with Vertex + Fal.ai fallbacks
+        image_data = None
+        gemini_error: Exception | None = None
+        vertex_error: Exception | None = None
+
+        # Construct the structured prompt
+        if prompt:
+            use_prompt = prompt
+        else:
+            use_prompt = (
+                f"recreate this image in {gemini_aspect_ratio} ratio format and keep all the the information of image intact . "
+                "you can rearrange the elements to ensure it is perfect."
+            )
+
+        # --- Primary: Vertex AI Gemini (High Priority) ---
+        if not image_data and VERTEX_PROJECT_ID and vertex_init and GenerativeModel:
+            try:
+                print(f"🧭 [PRIMARY] Invoking Vertex AI Gemini (project={VERTEX_PROJECT_ID}, location={VERTEX_LOCATION})")
+                vertex_init(project=VERTEX_PROJECT_ID, location=VERTEX_LOCATION)
+
+                v_model = GenerativeModel("gemini-3-pro-image-preview")
+
+                # Build contents
+                v_contents: list = []
+                if pil_image:
+                    # Serialize PIL image to bytes for Part.from_image
+                    buf = io.BytesIO()
+                    pil_image.save(buf, format="PNG")
+                    buf.seek(0)
+                    v_contents = [use_prompt, Part.from_image(buf.getvalue())]
+                else:
+                    v_contents = [use_prompt]
+
+                v_response = v_model.generate_content(
+                    v_contents,
+                    generation_config=GenerationConfig(
+                        response_mime_type="image/png",
+                    ),
+                )
+                print("📡 [PRIMARY] Vertex AI response received")
+
+                # Try to extract inline image bytes from Vertex response
+                parts = []
+                if getattr(v_response, "candidates", None):
+                    for cand in v_response.candidates:
+                        c_content = getattr(cand, "content", None)
+                        if c_content is not None and getattr(c_content, "parts", None):
+                            parts.extend(c_content.parts)
+
+                for part in parts:
+                    inline = getattr(part, "inline_data", None)
+                    if inline is not None and getattr(inline, "data", None):
+                        image_data = inline.data
+                        print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes")
                         break
 
-            if not image_data:
-                print(f"❌ [FALLBACK] No image data in Gemini SDK response.")
-        except Exception as ge:
-            gemini_error = ge
-            print(f"❌ [FALLBACK] Gemini SDK failed: {ge}")
+                if not image_data:
+                    print("❌ [PRIMARY] Vertex AI Gemini did not return image bytes.")
 
-    # --- Third: Fal.ai wrapper (Fallback 2) ---
-    if not image_data:
+            except Exception as ve:
+                vertex_error = ve
+                print(f"❌ [PRIMARY] Vertex AI Gemini failed: {ve}")
+
+        # --- Second: Gemini (google-genai SDK - Fallback 1) ---
+        if not image_data and client:
+            try:
+                model_name = "gemini-3-pro-image-preview"
+                print(f"🤖 [FALLBACK] Calling {model_name} (Gemini SDK) with prompt: '{use_prompt[:50]}...'")
+
+                # Build contents based on whether we have an image
+                if pil_image:
+                    contents = [use_prompt, pil_image]
+                else:
+                    contents = [use_prompt]
+
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                        image_config=types.ImageConfig(
+                            aspect_ratio=gemini_aspect_ratio
+                        )
+                    )
+                )
+                print(f"📡 [FALLBACK] Gemini SDK response received. Parts: {len(response.parts) if response.parts else 0}")
+                
+                if response.parts:
+                    for part in response.parts:
+                        if getattr(part, "inline_data", None):
+                            image_data = part.inline_data.data
+                            print(f"🖼️ [FALLBACK] Extracted Gemini SDK image: {len(image_data)} bytes")
+                            break
+
+                if not image_data:
+                    print(f"❌ [FALLBACK] No image data in Gemini SDK response.")
+            except Exception as ge:
+                gemini_error = ge
+                print(f"❌ [FALLBACK] Gemini SDK failed: {ge}")
+
+        # --- Third: Fal.ai wrapper (Fallback 2) ---
+        if not image_data:
+            try:
+                print(f"🛟 [FALLBACK] Invoking Fal.ai wrapper at {FAL_FALLBACK_URL}")
+                payload = {
+                    "prompt": use_prompt,
+                    "aspect_ratio": gemini_aspect_ratio,
+                    "sync_mode": True,
+                }
+
+                async with httpx.AsyncClient(timeout=60.0) as http_client:
+                    fal_response = await http_client.post(FAL_FALLBACK_URL, json=payload)
+                fal_response.raise_for_status()
+
+                fal_json = fal_response.json()
+                print(f"🛟 [FALLBACK] Fal.ai response received")
+
+                image_url = None
+                if isinstance(fal_json, dict):
+                    if fal_json.get("image_urls"):
+                        image_url = fal_json["image_urls"][0]
+                    elif fal_json.get("images"):
+                        first = fal_json["images"][0]
+                        if isinstance(first, dict):
+                            image_url = first.get("url") or first.get("image_url")
+                        else:
+                            image_url = first
+                    elif fal_json.get("url"):
+                        image_url = fal_json["url"]
+
+                if not image_url:
+                    raise RuntimeError("Fal.ai fallback did not return an image URL")
+
+                print(f"🛟 [FALLBACK] Downloading image from {image_url}")
+                async with httpx.AsyncClient(timeout=60.0) as http_client:
+                    img_resp = await http_client.get(image_url)
+                img_resp.raise_for_status()
+                image_data = img_resp.content
+                print(f"✅ [FALLBACK] Retrieved fallback image: {len(image_data)} bytes")
+
+            except Exception as fallback_err:
+                print(f"❌ [FALLBACK] Fal.ai fallback failed: {fallback_err}")
+                # Final failure: throw the best error we had
+                base_error = vertex_error or gemini_error or fallback_err
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
+                )
+
+        # 5. Post-process: Resize to exact requested dimensions
+        # Parse the original aspect_ratio request to get target dimensions
         try:
-            print(f"🛟 [FALLBACK] Invoking Fal.ai wrapper at {FAL_FALLBACK_URL}")
-            payload = {
-                "prompt": use_prompt,
-                "aspect_ratio": gemini_aspect_ratio,
-                "sync_mode": True,
-            }
-
-            async with httpx.AsyncClient(timeout=60.0) as http_client:
-                fal_response = await http_client.post(FAL_FALLBACK_URL, json=payload)
-            fal_response.raise_for_status()
-
-            fal_json = fal_response.json()
-            print(f"🛟 [FALLBACK] Fal.ai response received")
-
-            image_url = None
-            if isinstance(fal_json, dict):
-                if fal_json.get("image_urls"):
-                    image_url = fal_json["image_urls"][0]
-                elif fal_json.get("images"):
-                    first = fal_json["images"][0]
-                    if isinstance(first, dict):
-                        image_url = first.get("url") or first.get("image_url")
-                    else:
-                        image_url = first
-                elif fal_json.get("url"):
-                    image_url = fal_json["url"]
-
-            if not image_url:
-                raise RuntimeError("Fal.ai fallback did not return an image URL")
-
-            print(f"🛟 [FALLBACK] Downloading image from {image_url}")
-            async with httpx.AsyncClient(timeout=60.0) as http_client:
-                img_resp = await http_client.get(image_url)
-            img_resp.raise_for_status()
-            image_data = img_resp.content
-            print(f"✅ [FALLBACK] Retrieved fallback image: {len(image_data)} bytes")
-
-        except Exception as fallback_err:
-            print(f"❌ [FALLBACK] Fal.ai fallback failed: {fallback_err}")
-            # Final failure: throw the best error we had
-            base_error = vertex_error or gemini_error or fallback_err
-            raise HTTPException(
-                status_code=500,
-                detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
-            )
-
-    # 5. Post-process: Resize to exact requested dimensions
-    # Parse the original aspect_ratio request to get target dimensions
-    try:
-        # original_aspect_ratio comes in as "WIDTHxHEIGHT" or "WIDTH:HEIGHT"
-        original_ratio_str = original_aspect_ratio.replace(':', 'x')
-        if 'x' in original_ratio_str:
-            w_val, h_val = map(int, original_ratio_str.split('x'))
-            # Threshold: If dimensions are very small (e.g., < 100), it's likely just a ratio (like 16:9)
-            # We only want to post-process if we have actual target PIXELS (like 288x608)
-            if w_val >= 100 and h_val >= 100:
-                target_width, target_height = w_val, h_val
-                print(f"🎯 [RESIZE] Detected exact target dimensions: {target_width}x{target_height}. Proceeding to post-process.")
+            # original_aspect_ratio comes in as "WIDTHxHEIGHT" or "WIDTH:HEIGHT"
+            original_ratio_str = original_aspect_ratio.replace(':', 'x')
+            if 'x' in original_ratio_str:
+                w_val, h_val = map(int, original_ratio_str.split('x'))
+                # Threshold: If dimensions are very small (e.g., < 100), it's likely just a ratio (like 16:9)
+                # We only want to post-process if we have actual target PIXELS (like 288x608)
+                if w_val >= 100 and h_val >= 100:
+                    target_width, target_height = w_val, h_val
+                    print(f"🎯 [RESIZE] Detected exact target dimensions: {target_width}x{target_height}. Proceeding to post-process.")
+                else:
+                    target_width = target_height = None
+                    print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' looks like a ratio, not dimensions. Skipping post-processing.")
             else:
                 target_width = target_height = None
-                print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' looks like a ratio, not dimensions. Skipping post-processing.")
-        else:
+                print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' doesn't specify exact dimensions. Skipping post-processing.")
+        except Exception as parse_err:
+            print(f"⚠️ [RESIZE] Could not parse dimensions from '{original_aspect_ratio}': {parse_err}. Skipping post-processing.")
             target_width = target_height = None
-            print(f"ℹ️ [RESIZE] Aspect ratio '{original_aspect_ratio}' doesn't specify exact dimensions. Skipping post-processing.")
-    except Exception as parse_err:
-        print(f"⚠️ [RESIZE] Could not parse dimensions from '{original_aspect_ratio}': {parse_err}. Skipping post-processing.")
-        target_width = target_height = None
-    
-    # Only post-process if we have exact target dimensions
-    if target_width and target_height:
+        
+        # Only post-process if we have exact target dimensions
+        if target_width and target_height:
+            try:
+                # Load the generated image
+                generated_image = Image.open(io.BytesIO(image_data))
+                orig_w, orig_h = generated_image.size
+                print(f"📐 [RESIZE] Generated image size: {orig_w}x{orig_h}, Target: {target_width}x{target_height}")
+                
+                # Calculate the aspect ratios
+                gen_ratio = orig_w / orig_h
+                target_ratio = target_width / target_height
+                
+                # Strategy: Center crop to exact ratio, then resize to exact dimensions
+                if abs(gen_ratio - target_ratio) > 0.01:  # Ratios differ
+                    print(f"✂️ [RESIZE] Cropping to match target ratio {target_ratio:.2f}")
+                    if gen_ratio > target_ratio:
+                        # Generated image is wider, crop width
+                        new_width = int(orig_h * target_ratio)
+                        left = (orig_w - new_width) // 2
+                        generated_image = generated_image.crop((left, 0, left + new_width, orig_h))
+                    else:
+                        # Generated image is taller, crop height
+                        new_height = int(orig_w / target_ratio)
+                        top = (orig_h - new_height) // 2
+                        generated_image = generated_image.crop((0, top, orig_w, top + new_height))
+                
+                # Resize to exact target dimensions
+                if generated_image.size != (target_width, target_height):
+                    print(f"🔄 [RESIZE] Resizing from {generated_image.size} to {target_width}x{target_height}")
+                    generated_image = generated_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                
+                # Convert back to bytes
+                output_buffer = io.BytesIO()
+                generated_image.save(output_buffer, format='PNG')
+                image_data = output_buffer.getvalue()
+                print(f"✅ [RESIZE] Post-processed to exact dimensions: {target_width}x{target_height}")
+                
+            except Exception as resize_err:
+                print(f"⚠️ [RESIZE] Post-processing failed: {resize_err}. Using original generated image.")
+                # Continue with original image_data if post-processing fails
+        
+        # 6. Upload to Digital Ocean Spaces (matching NestJS implementation exactly)
+        uploaded_url = None
+        image_name = None
+        
+        # Generate a unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"resized_images/{timestamp}_{unique_id}.png"
+        image_name = f"{timestamp}_{unique_id}.png"
+        
+        print(f"☁️ [DEBUG] Uploading to DO Spaces: {filename}")
+        
         try:
-            # Load the generated image
-            generated_image = Image.open(io.BytesIO(image_data))
-            orig_w, orig_h = generated_image.size
-            print(f"📐 [RESIZE] Generated image size: {orig_w}x{orig_h}, Target: {target_width}x{target_height}")
+            bucket_name = DO_SPACES_BUCKET_NAME
             
-            # Calculate the aspect ratios
-            gen_ratio = orig_w / orig_h
-            target_ratio = target_width / target_height
+            # Upload to Digital Ocean Spaces (matching NestJS implementation)
+            s3_client.put_object(
+                Bucket=bucket_name,
+                Key=filename,
+                Body=image_data,
+                ContentType='image/png',
+                ACL='public-read'  # Make the image publicly accessible
+            )
             
-            # Strategy: Center crop to exact ratio, then resize to exact dimensions
-            if abs(gen_ratio - target_ratio) > 0.01:  # Ratios differ
-                print(f"✂️ [RESIZE] Cropping to match target ratio {target_ratio:.2f}")
-                if gen_ratio > target_ratio:
-                    # Generated image is wider, crop width
-                    new_width = int(orig_h * target_ratio)
-                    left = (orig_w - new_width) // 2
-                    generated_image = generated_image.crop((left, 0, left + new_width, orig_h))
-                else:
-                    # Generated image is taller, crop height
-                    new_height = int(orig_w / target_ratio)
-                    top = (orig_h - new_height) // 2
-                    generated_image = generated_image.crop((0, top, orig_w, top + new_height))
-            
-            # Resize to exact target dimensions
-            if generated_image.size != (target_width, target_height):
-                print(f"🔄 [RESIZE] Resizing from {generated_image.size} to {target_width}x{target_height}")
-                generated_image = generated_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
-            
-            # Convert back to bytes
-            output_buffer = io.BytesIO()
-            generated_image.save(output_buffer, format='PNG')
-            image_data = output_buffer.getvalue()
-            print(f"✅ [RESIZE] Post-processed to exact dimensions: {target_width}x{target_height}")
-            
-        except Exception as resize_err:
-            print(f"⚠️ [RESIZE] Post-processing failed: {resize_err}. Using original generated image.")
-            # Continue with original image_data if post-processing fails
-    
-    # 6. Upload to Digital Ocean Spaces (matching NestJS implementation exactly)
-    uploaded_url = None
-    image_name = None
-    
-    # Generate a unique filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    unique_id = str(uuid.uuid4())[:8]
-    filename = f"resized_images/{timestamp}_{unique_id}.png"
-    image_name = f"{timestamp}_{unique_id}.png"
-    
-    print(f"☁️ [DEBUG] Uploading to DO Spaces: {filename}")
-    
-    try:
-        bucket_name = DO_SPACES_BUCKET_NAME
+            # Construct the public URL (matching NestJS format: https://{bucketName}.{endpoint}/{fileName})
+            # Clean endpoint for URL construction (remove protocol if present)
+            endpoint_for_url = DO_SPACES_ENDPOINT.replace('https://', '').replace('http://', '').strip()
+            uploaded_url = f"https://{bucket_name}.{endpoint_for_url}/{filename}"
+            print(f"Image uploaded to Digital Ocean Spaces: {uploaded_url}")
+        except Exception as upload_error:
+            print(f"Error uploading to Digital Ocean Spaces: {upload_error}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Image generated but failed to upload to storage: {str(upload_error)}"
+            )
         
-        # Upload to Digital Ocean Spaces (matching NestJS implementation)
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=filename,
-            Body=image_data,
-            ContentType='image/png',
-            ACL='public-read'  # Make the image publicly accessible
+        # 7. Return JSON response with URL and name
+        if not uploaded_url or not image_name:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate upload URL or image name"
+            )
+        
+        response_data = {
+            "url": uploaded_url,
+            "name": image_name
+        }
+        print(f"Returning response: {response_data}")
+        
+        # Deduct credits ONLY on success
+        consumed = consume_units(user_id, tokens_to_deduct, engine_type=engine_type)
+        if not consumed:
+            raise HTTPException(status_code=429, detail="Insufficient credits to complete request")
+
+        # Keep legacy counter best-effort (do NOT enforce off this)
+        increment_user_units(user_id)
+
+        # Log usage
+        log_usage(
+            user_id=user_id,
+            operation="resize",
+            aspect_ratio=aspect_ratio,
+            success=True,
+            image_url=uploaded_url
         )
+
+        return JSONResponse(content=response_data, status_code=200)
+
+    except HTTPException as http_exc:
+        # Re-raise HTTP exceptions to keep their detail messages
+        raise http_exc
+    except Exception as e:
+        print(f"❌ [RESIZE] Unexpected Error: {e}")
+        import traceback
+        traceback.print_exc()
         
-        # Construct the public URL (matching NestJS format: https://{bucketName}.{endpoint}/{fileName})
-        # Clean endpoint for URL construction (remove protocol if present)
-        endpoint_for_url = DO_SPACES_ENDPOINT.replace('https://', '').replace('http://', '').strip()
-        uploaded_url = f"https://{bucket_name}.{endpoint_for_url}/{filename}"
-        print(f"Image uploaded to Digital Ocean Spaces: {uploaded_url}")
-    except Exception as upload_error:
-        print(f"Error uploading to Digital Ocean Spaces: {upload_error}")
+        # Best-effort log failure
+        try:
+            log_usage(
+                user_id=user_id if 'user_id' in locals() else "unknown",
+                operation="resize",
+                aspect_ratio=aspect_ratio,
+                success=False,
+                image_url=None
+            )
+        except:
+            pass
+            
         raise HTTPException(
             status_code=500,
-            detail=f"Image generated but failed to upload to storage: {str(upload_error)}"
+            detail=f"Internal Server Error during image processing: {str(e)}"
         )
-    
-    # 7. Return JSON response with URL and name
-    if not uploaded_url or not image_name:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to generate upload URL or image name"
-        )
-    
-    response_data = {
-        "url": uploaded_url,
-        "name": image_name
-    }
-    print(f"Returning response: {response_data}")
-    
-    # Deduct credits ONLY on success
-    consumed = consume_units(user_id, tokens_to_deduct, engine_type=engine_type)
-    if not consumed:
-        raise HTTPException(status_code=429, detail="Insufficient credits to complete request")
-
-    # Keep legacy counter best-effort (do NOT enforce off this)
-    increment_user_units(user_id)
-
-    # Log usage
-    log_usage(
-        user_id=user_id,
-        operation="resize",
-        aspect_ratio=aspect_ratio,
-        success=True,
-        image_url=uploaded_url
-    )
-
-    return JSONResponse(content=response_data, status_code=200)
 
 @app.get("/")
 async def read_root():
