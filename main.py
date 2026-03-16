@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 import io
 import httpx
 from datetime import datetime
@@ -14,6 +14,14 @@ import boto3
 import stripe
 from bson import ObjectId
 from botocore.config import Config
+import vertexai
+from vertexai.generative_models import (
+    GenerativeModel as VertexGenerativeModel,
+    Image as VertexImage,
+)
+import google.auth
+import base64
+import numpy as np
 from models import UserRegister, UserLogin, ForgotPasswordRequest, ResetPasswordRequest, TokenResponse, UserResponse, PlanUpgradeRequest, CheckoutRequest
 from auth import (
     create_user, verify_user_credentials, create_access_token, 
@@ -26,6 +34,442 @@ from auth import (
 )
 import auth as auth_module
 from stripe_manager import create_checkout_session, create_portal_session, handle_webhook_event, cancel_subscription
+import asyncio
+from functools import partial
+
+
+async def run_blocking(fn, *args, **kwargs):
+    """
+    Run blocking function in executor to avoid blocking event loop.
+    Critical for Gemini API calls which can take 30-120 seconds.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        partial(fn, *args, **kwargs)
+    )
+
+
+# --- Wrapper classes (from reference project) ---
+class _InlineDataWrapper:
+    def __init__(self, data: bytes, mime_type: str = "image/png"):
+        self.data = data
+        self.mime_type = mime_type
+
+class _PartWrapper:
+    def __init__(self, data: bytes, mime_type: str = "image/png"):
+        self.inline_data = _InlineDataWrapper(data, mime_type)
+
+class _GeminiLikeImageResponse:
+    """Minimal wrapper so Vertex/SeedDream image responses look like google-genai responses."""
+    def __init__(self, data: bytes, mime_type: str = "image/png"):
+        self.parts = [_PartWrapper(data, mime_type)]
+
+
+async def call_openrouter_image(contents: list) -> _GeminiLikeImageResponse:
+    """
+    Fallback: Call OpenRouter API with gemini-3-pro-image-preview.
+    OpenRouter routes through multiple providers, so it may work when direct Gemini is down.
+    """
+    openrouter_key = os.getenv("OPENROUTER_KEY")
+    if not openrouter_key:
+        raise RuntimeError("OPENROUTER_KEY not configured in .env")
+
+    message_parts = []
+    for item in contents:
+        if isinstance(item, str):
+            message_parts.append({"type": "text", "text": item})
+        elif isinstance(item, Image.Image):
+            buf = io.BytesIO()
+            item.save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+            message_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{b64}"}
+            })
+        elif isinstance(item, types.Part):
+            inline = getattr(item, "inline_data", None)
+            if inline and getattr(inline, "data", None):
+                b64 = base64.b64encode(inline.data).decode("utf-8")
+                mime = getattr(inline, "mime_type", "image/png")
+                message_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"}
+                })
+            else:
+                message_parts.append({"type": "text", "text": str(item)})
+        elif isinstance(item, (bytes, bytearray)):
+            b64 = base64.b64encode(bytes(item)).decode("utf-8")
+            message_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{b64}"}
+            })
+        else:
+            message_parts.append({"type": "text", "text": str(item)})
+
+    if all(p["type"] == "text" for p in message_parts):
+        content = " ".join(p["text"] for p in message_parts)
+    else:
+        content = message_parts
+
+    payload = {
+        "model": "google/gemini-3-pro-image-preview",
+        "messages": [{"role": "user", "content": content}],
+        "modalities": ["image", "text"],
+    }
+
+    print(f"[OpenRouter] Calling OpenRouter with gemini-3-pro-image-preview...")
+
+    async with httpx.AsyncClient(timeout=120.0) as hc:
+        resp = await hc.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {openrouter_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"OpenRouter API failed ({resp.status_code}): {resp.text}")
+
+    result = resp.json()
+    choices = result.get("choices", [])
+    if not choices:
+        raise RuntimeError(f"OpenRouter returned no choices: {result}")
+
+    message = choices[0].get("message", {})
+    images = message.get("images", [])
+
+    if not images:
+        raise RuntimeError(f"OpenRouter returned no images. Response: {message.get('content', 'No content')}")
+
+    data_url = images[0]["image_url"]["url"]
+    header, encoded = data_url.split(",", 1)
+    image_bytes = base64.b64decode(encoded)
+
+    print(f"[OpenRouter] Successfully generated image ({len(image_bytes)} bytes)")
+    return _GeminiLikeImageResponse(image_bytes)
+
+
+async def call_gemini_with_retry(model_name, contents, config=None, max_retries=3, api_client=None):
+    """
+    Call Gemini API with exponential backoff retry logic.
+    Ported from reference project.
+    """
+    def _resolve_client():
+        return api_client if api_client is not None else client
+
+    for attempt in range(max_retries):
+        try:
+            _client = _resolve_client()
+            if config:
+                response = await run_blocking(
+                    _client.models.generate_content,
+                    model=model_name,
+                    contents=contents,
+                    config=config
+                )
+            else:
+                response = await run_blocking(
+                    _client.models.generate_content,
+                    model=model_name,
+                    contents=contents
+                )
+            return response
+        except Exception as e:
+            error_str = str(e).lower()
+            full_error = str(e)
+            print(f"[Attempt {attempt + 1}/{max_retries}] Gemini API Error: {full_error}")
+            
+            is_retriable = any([
+                "503" in full_error,
+                "429" in full_error,
+                "overload" in error_str,
+                "resource_exhausted" in error_str,
+                "too_many_requests" in error_str,
+                "deadline_exceeded" in error_str
+            ])
+            
+            if is_retriable and attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                print(f"⚠️  Retriable error. Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+                continue
+            else:
+                if attempt == max_retries - 1:
+                    print(f"❌ Max retries ({max_retries}) exhausted")
+                raise
+
+
+def _init_vertex_if_configured() -> bool:
+    """
+    Initialize Vertex AI using native SDK, preferring explicit env vars
+    but falling back to the project embedded in application default credentials.
+    Ported from reference project.
+    """
+    project_id = os.getenv("VERTEX_PROJECT_ID")
+
+    if not project_id:
+        try:
+            credentials, detected_project = google.auth.default()
+            if detected_project:
+                project_id = detected_project
+                print(f"Vertex fallback: using detected project '{project_id}' from ADC")
+        except Exception as e:
+            print(f"Vertex fallback: failed to detect project from ADC: {e}")
+
+    if not project_id:
+        # Try from vertex.json
+        try:
+            import json as _json
+            _possible_paths = [
+                os.getenv("VERTEX_SA_PATH"),
+                os.path.join(os.path.dirname(__file__), "vertex.json"),
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), "vertex.json"),
+            ]
+            _vertex_sa_path = next((p for p in _possible_paths if p and os.path.exists(p)), None)
+            if _vertex_sa_path:
+                with open(_vertex_sa_path, "r") as _vf:
+                    _vertex_data = _json.load(_vf)
+                    project_id = _vertex_data.get("project_id")
+        except Exception:
+            pass
+
+    if not project_id:
+        print("Vertex fallback disabled: no project id available")
+        return False
+
+    try:
+        vertex_location = os.getenv("VERTEX_LOCATION", "us-central1")
+        vertexai.init(project=project_id, location=vertex_location)
+        return True
+    except Exception as e:
+        print(f"Error initializing Vertex AI: {e}")
+        return False
+
+
+async def call_gemini_with_retry_and_vertex_fallback(
+    model_name,
+    contents,
+    config=None,
+    max_retries=3,
+    prefer_vertex: bool = False,
+):
+    """
+    Master function ported from reference project.
+    Tries: Gemini SDK → native Vertex AI → SeedDream → Flux
+    """
+    # For non-image models, just use the primary path
+    if model_name != "gemini-3-pro-image-preview":
+        return await call_gemini_with_retry(
+            model_name=model_name,
+            contents=contents,
+            config=config,
+            max_retries=max_retries,
+        )
+
+    async def _try_vertex() -> "_GeminiLikeImageResponse":
+        if not _init_vertex_if_configured():
+            raise RuntimeError("Vertex not configured")
+
+        vertex_model_name = os.getenv("VERTEX_IMAGE_MODEL") or model_name
+        project_id = os.getenv("VERTEX_PROJECT_ID")
+        if not project_id:
+            try:
+                _, project_id = google.auth.default()
+            except Exception:
+                pass
+        if not project_id:
+            raise RuntimeError("No Vertex project ID available")
+
+        # gemini-3-pro-image-preview requires the GLOBAL endpoint
+        location = "global"
+
+        def _vertex_genai_call(use_model_name: str):
+            vertex_client = genai.Client(
+                vertexai=True,
+                project=project_id,
+                location=location,
+            )
+
+            genai_contents = []
+            for item in contents:
+                if isinstance(item, str):
+                    genai_contents.append(item)
+                elif isinstance(item, types.Part):
+                    genai_contents.append(item)
+                elif isinstance(item, Image.Image):
+                    buf = io.BytesIO()
+                    item.save(buf, format="PNG")
+                    genai_contents.append(types.Part.from_bytes(
+                        data=buf.getvalue(),
+                        mime_type="image/png"
+                    ))
+                elif isinstance(item, (bytes, bytearray)):
+                    genai_contents.append(types.Part.from_bytes(
+                        data=bytes(item),
+                        mime_type="image/png"
+                    ))
+                else:
+                    genai_contents.append(str(item))
+
+            v_response = vertex_client.models.generate_content(
+                model=use_model_name,
+                contents=genai_contents,
+                config=config,
+            )
+
+            image_bytes = None
+            for part in getattr(v_response, "candidates", [{}])[0].content.parts if hasattr(v_response, "candidates") and v_response.candidates else []:
+                inline = getattr(part, "inline_data", None)
+                if inline and getattr(inline, "data", None):
+                    image_bytes = inline.data
+                    break
+
+            if image_bytes is None:
+                for part in getattr(v_response, "parts", []):
+                    inline = getattr(part, "inline_data", None)
+                    if inline and getattr(inline, "data", None):
+                        image_bytes = inline.data
+                        break
+
+            if not image_bytes:
+                raise RuntimeError(f"Vertex AI ({use_model_name}) returned no image payload")
+
+            return image_bytes
+
+        # Cascade: try primary model, then flash fallbacks on 429/quota errors
+        vertex_models = [
+            vertex_model_name,
+            "gemini-3.1-flash-image-preview",
+            "gemini-2.5-flash-image",
+        ]
+
+        for i, try_model in enumerate(vertex_models):
+            try:
+                image_bytes = await run_blocking(_vertex_genai_call, try_model)
+                print(f"[Vertex] Successfully generated image via Vertex AI Gen AI SDK ({try_model})")
+                return _GeminiLikeImageResponse(image_bytes)
+            except Exception as e:
+                err_str = str(e).lower()
+                is_quota_error = any(k in err_str for k in ["429", "resource_exhausted", "quota", "rate limit"])
+                print(f"[Vertex] Model {try_model} failed: {e}")
+                if is_quota_error and i < len(vertex_models) - 1:
+                    print(f"[Vertex] Quota exhausted for {try_model}, trying next model...")
+                    continue
+                else:
+                    raise
+
+    async def _try_seedream(sd_contents):
+        """SeedDream 4.5 fallback via fal.ai"""
+        seedream_key = os.getenv("SEEDREAM_KEY")
+        if not seedream_key:
+            raise RuntimeError("SEEDREAM_KEY not configured")
+        prompt = ""
+        image_data_uris = []
+        for item in sd_contents:
+            if isinstance(item, str):
+                prompt += item + " "
+            elif isinstance(item, Image.Image):
+                buf = io.BytesIO()
+                item.save(buf, format="PNG")
+                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                image_data_uris.append(f"data:image/png;base64,{b64}")
+            elif isinstance(item, (bytes, bytearray)):
+                b64 = base64.b64encode(item).decode("utf-8")
+                image_data_uris.append(f"data:image/png;base64,{b64}")
+
+        url = "https://fal.run/fal-ai/bytedance/seedream/v4.5/edit"
+        headers = {"Authorization": f"Key {seedream_key}", "Content-Type": "application/json"}
+        payload = {
+            "prompt": f"IMAGE ONLY. FULL FRAME DIGITAL CONTENT. NO physical mockups. {prompt.strip()}",
+            "image_urls": image_data_uris,
+            "sync_mode": True
+        }
+        async with httpx.AsyncClient(timeout=120.0) as hc:
+            resp = await hc.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            result = resp.json()
+            images = result.get("images", [])
+            if not images:
+                raise RuntimeError("SeedDream returned no images")
+            image_url = images[0].get("url")
+            if image_url.startswith("data:"):
+                header, encoded = image_url.split(",", 1)
+                return _GeminiLikeImageResponse(base64.b64decode(encoded))
+            else:
+                img_resp = await hc.get(image_url)
+                return _GeminiLikeImageResponse(img_resp.content)
+
+    async def _try_flux(fx_contents):
+        """Flux Schnell fallback via fal.ai"""
+        flux_key = os.getenv("FLUX_KEY")
+        if not flux_key:
+            raise RuntimeError("FLUX_KEY not configured")
+        prompt = ""
+        for item in fx_contents:
+            if isinstance(item, str):
+                prompt += item + " "
+        url = "https://fal.run/fal-ai/flux-1/schnell"
+        headers = {"Authorization": f"Key {flux_key}", "Content-Type": "application/json"}
+        payload = {"prompt": prompt.strip(), "sync_mode": True}
+        async with httpx.AsyncClient(timeout=120.0) as hc:
+            resp = await hc.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            result = resp.json()
+            images = result.get("images", [])
+            if not images:
+                raise RuntimeError("Flux returned no images")
+            image_url = images[0].get("url")
+            if image_url.startswith("data:"):
+                header, encoded = image_url.split(",", 1)
+                return _GeminiLikeImageResponse(base64.b64decode(encoded))
+            else:
+                img_resp = await hc.get(image_url)
+                return _GeminiLikeImageResponse(img_resp.content)
+
+    # --- Execution order ---
+    if prefer_vertex:
+        try:
+            return await _try_vertex()
+        except Exception as e:
+            print(f"[Vertex Primary] Vertex-first attempt failed: {e}")
+
+    # --- TIER 0 (FIRST PRIORITY): OPENROUTER ---
+    try:
+        print("[OpenRouter] Attempting OpenRouter as primary fallback...")
+        return await call_openrouter_image(contents)
+    except Exception as or_error:
+        print(f"[OpenRouter] OpenRouter failed: {or_error}")
+
+    try:
+        return await call_gemini_with_retry(
+            model_name=model_name,
+            contents=contents,
+            config=config,
+            max_retries=max_retries,
+        )
+    except Exception as primary_error:
+        print(f"[Gemini Fallback] Primary Gemini call failed: {primary_error}")
+
+        try:
+            return await _try_vertex()
+        except Exception as vertex_error:
+            print(f"[Vertex Fallback] Vertex AI call also failed: {vertex_error}")
+
+            try:
+                print("[SeedDream Fallback] Attempting SeedDream 4.5...")
+                return await _try_seedream(contents)
+            except Exception as sd_error:
+                print(f"[SeedDream Fallback] SeedDream failed: {sd_error}")
+
+                try:
+                    print("[Flux Fallback] Attempting Flux Schnell...")
+                    return await _try_flux(contents)
+                except Exception as flux_error:
+                    print(f"[Flux Fallback] Flux also failed: {flux_error}")
+                    raise vertex_error
 
 import warnings
 # Suppress the Google Cloud Python 3.10 deprecation warnings for cleaner logs
@@ -164,12 +608,29 @@ FAL_FALLBACK_URL = os.getenv(
     "https://recreative.signagexai.com/fal-ai-fallback/generate",
 )
 
-# We will init inside the function or global if key exists.
-client = None
-if GOOGLE_API_KEY:
-    client = genai.Client(api_key=GOOGLE_API_KEY)
+# ── Gemini API Keys (dual-key setup from reference project) ──────────────────
+# Two separate keys distribute load so neither route saturates its quota:
+#   image_client  → GOOGLE_API_KEY_IMAGE  (image gen endpoints: resize, edit)
+#   widget_client → GOOGLE_API_KEY        (widget gen endpoints: /api/widget/*)
+GOOGLE_API_KEY_IMAGE = os.getenv("GOOGLE_API_KEY_IMAGE") or GOOGLE_API_KEY  # falls back to widget key if not set
+
+image_client = None
+widget_client = None
+
+if GOOGLE_API_KEY_IMAGE:
+    image_client = genai.Client(api_key=GOOGLE_API_KEY_IMAGE)
+    print(f"✅ Image gen client initialized (key: ...{GOOGLE_API_KEY_IMAGE[-6:]})")
 else:
-    print("Warning: GOOGLE_API_KEY not set in .env")
+    print("⚠️  GOOGLE_API_KEY_IMAGE not set")
+
+if GOOGLE_API_KEY:
+    widget_client = genai.Client(api_key=GOOGLE_API_KEY)
+    print(f"✅ Widget gen client initialized (key: ...{GOOGLE_API_KEY[-6:]})")
+else:
+    print("⚠️  GOOGLE_API_KEY not set")
+
+# Legacy alias — existing code paths that use `client` will use the image key
+client = image_client or widget_client
 
 # Initialize Digital Ocean Spaces client (matching NestJS implementation exactly)
 if not DO_SPACES_ENDPOINT or not DO_SPACES_BUCKET_NAME:
@@ -229,7 +690,7 @@ async def get_status():
         "db_connected": auth_module.client is not None
     }
 
-@app.post("/api/users/login", response_model=TokenResponse)
+@app.post("/api/users/login")
 async def login(credentials: UserLogin):
     """Login user"""
     user = verify_user_credentials(credentials.email, credentials.password)
@@ -272,7 +733,7 @@ async def reset_password(request: ResetPasswordRequest):
     
     return {"message": "Password reset successfully"}
 
-@app.get("/api/users/me", response_model=UserResponse)
+@app.get("/api/users/me")
 async def get_current_user_info(current_user = Depends(get_current_user)):
     """Get current user info"""
     return user_doc_to_response(current_user)
@@ -902,6 +1363,240 @@ async def generate_bill(current_user = Depends(get_current_user)):
     return bill
 
 
+# ─── AI Content-Aware Resize Utilities ───────────────────────────────────────
+
+from PIL import ImageEnhance
+
+# Gemini only supports a fixed set of aspect ratios.  Any custom dimension
+# must be mapped to the closest supported ratio before calling the API.
+GEMINI_RATIOS = {
+    "1:1":  1.0,
+    "16:9": 16/9,    # 1.7778
+    "9:16": 9/16,    # 0.5625
+    "4:3":  4/3,     # 1.3333
+    "3:4":  3/4,     # 0.75
+    "3:2":  3/2,     # 1.5
+    "2:3":  2/3,     # 0.6667
+    "21:9": 21/9,    # 2.3333
+}
+
+GEMINI_NATIVE_RESOLUTIONS = {
+    "1:1":   (1024, 1024),
+    "16:9":  (1344, 768),
+    "9:16":  (768, 1344),
+    "4:3":   (1152, 896),
+    "3:4":   (896, 1152),
+    "3:2":   (1216, 832),
+    "2:3":   (832, 1216),
+    "21:9":  (1536, 640),
+}
+
+
+def _find_closest_gemini_ratio(target_ratio: float) -> tuple:
+    """Map an arbitrary aspect ratio value to the nearest Gemini-supported ratio."""
+    if target_ratio < 0.5:
+        return "9:16", 9/16
+    if target_ratio > 2.5:
+        return "21:9", 21/9
+
+    closest_ratio = "1:1"
+    closest_val = 1.0
+    min_diff = float('inf')
+    for ratio_str, ratio_val in GEMINI_RATIOS.items():
+        diff = abs(target_ratio - ratio_val)
+        if diff < min_diff:
+            min_diff = diff
+            closest_ratio = ratio_str
+            closest_val = ratio_val
+    return closest_ratio, closest_val
+
+
+def get_native_resolution(ratio_str: str) -> tuple:
+    """Return the native Gemini resolution for a given ratio string."""
+    return GEMINI_NATIVE_RESOLUTIONS.get(ratio_str, (1024, 1024))
+
+
+def validate_aspect_ratio_smart(aspect_ratio: str) -> tuple:
+    """
+    Validate and map custom aspect ratios / dimensions to Gemini-supported
+    formats.  Accepts multiple input formats:
+      - Direct Gemini ratio:  "16:9", "1:1"
+      - Named preset:        "landscape", "story", "square" …
+      - pWxH format:         "p288x608"
+      - WxH format:          "1920x1080"
+      - W:H arbitrary:       "288:608"
+
+    Returns (gemini_ratio_str, target_dims | None, gemini_ratio_val)
+    """
+    # 1. Direct Gemini ratio pass-through
+    if aspect_ratio in GEMINI_RATIOS:
+        return aspect_ratio, None, GEMINI_RATIOS[aspect_ratio]
+
+    # 2. Named semantic presets
+    named_presets = {
+        "landscape":   ("16:9", (1920, 1080), 16/9),
+        "story":       ("9:16", (1080, 1920), 9/16),
+        "square":      ("1:1",  (1024, 1024), 1.0),
+        "portrait":    ("3:4",  (768,  1024), 3/4),
+        "ultrawide":   ("21:9", (2560, 1080), 21/9),
+        "billboard":   ("16:9", (1920, 1080), 16/9),
+        "poster":      ("2:3",  (800,  1200), 2/3),
+        "banner":      ("21:9", (2100, 900),  21/9),
+        "kiosk":       ("9:16", (1080, 1920), 9/16),
+        "menu_board":  ("16:9", (1920, 1080), 16/9),
+    }
+    if aspect_ratio.lower() in named_presets:
+        return named_presets[aspect_ratio.lower()]
+
+    # 3. pWxH format (e.g. "p288x608") — used by pixel-specific presets
+    if aspect_ratio.lower().startswith("p") and "x" in aspect_ratio.lower():
+        try:
+            dims_part = aspect_ratio[1:]
+            w_str, h_str = dims_part.lower().split("x")
+            width, height = int(w_str), int(h_str)
+            actual_ratio = width / height
+            closest_ratio, closest_val = _find_closest_gemini_ratio(actual_ratio)
+            return closest_ratio, (width, height), closest_val
+        except (ValueError, ZeroDivisionError):
+            pass
+
+    # 4. WxH format (e.g. "800x600") — from custom dimension inputs
+    if "x" in aspect_ratio.lower() and not aspect_ratio.lower().startswith("p"):
+        try:
+            w_str, h_str = aspect_ratio.lower().split("x")
+            width, height = int(w_str), int(h_str)
+            actual_ratio = width / height
+            closest_ratio, closest_val = _find_closest_gemini_ratio(actual_ratio)
+            return closest_ratio, (width, height), closest_val
+        except (ValueError, ZeroDivisionError):
+            pass
+
+    # 5. Fallback: W:H colon format (e.g. "288:608")
+    try:
+        width, height = map(int, aspect_ratio.split(':'))
+        target_ratio = width / height
+        closest_ratio, closest_val = _find_closest_gemini_ratio(target_ratio)
+        # If both values are >= 100 treat them as pixel dimensions
+        if width >= 100 and height >= 100:
+            return closest_ratio, (width, height), closest_val
+        return closest_ratio, None, closest_val
+    except (ValueError, ZeroDivisionError):
+        return "1:1", None, 1.0
+
+
+def build_ai_recompose_prompt(user_prompt: str, target_dims: tuple, validated_ratio: str) -> str:
+    """
+    Build a highly-detailed AI prompt that instructs Gemini to ADAPT the
+    source image into a new aspect ratio while preserving ALL content.
+    """
+    tw, th = target_dims
+    orientation = "TALL VERTICAL" if th > tw else "WIDE HORIZONTAL" if tw > th else "SQUARE"
+
+    recompose_prompt = f"""TASK: Resize the attached image to {tw}x{th} pixels ({validated_ratio}, {orientation}).
+
+You are performing a SIMPLE RESIZE/CANVAS EXTENSION operation. This is NOT a creative task.
+
+WHAT TO DO:
+- Take the source image and fit it into a {tw}x{th} canvas
+- If the aspect ratio changes, extend the background edges to fill the new space
+- Keep the image FLAT, STRAIGHT, and FRONT-FACING — exactly as the original
+- Maintain every pixel of the original content
+
+ABSOLUTE PROHIBITIONS (DO NOT DO ANY OF THESE):
+❌ Do NOT rotate, tilt, skew, or apply ANY perspective transform
+❌ Do NOT place the image at an angle
+❌ Do NOT add ANY background pattern, texture, or decoration
+❌ Do NOT create a "photo on a surface" or "card on a table" effect
+❌ Do NOT add frames, borders, shadows, or 3D effects
+❌ Do NOT regenerate, redraw, or artistically reinterpret the content
+❌ Do NOT change ANY text — keep exact same words, spelling, font, size, color
+❌ Do NOT add black bars, white bars, or colored padding
+❌ Do NOT crop or remove any part of the image
+❌ Do NOT add physical mockups, screens, monitors, kiosks
+❌ Do NOT add watermarks or signatures
+
+WHAT YOU ARE ALLOWED TO DO:
+✅ Extend the existing background color/gradient/pattern to fill new space
+✅ Adjust spacing and margins around existing content
+✅ Scale the composition proportionally if needed
+
+OUTPUT REQUIREMENTS:
+- Resolution: exactly {tw}x{th} pixels
+- The image must be FLAT and RECTANGULAR — no 3D, no angles, no perspective
+- Content must fill the entire canvas edge-to-edge
+- Crystal clear, sharp output — no blur, no pixelation, no artifacts
+- All text must be razor-sharp and fully legible"""
+
+    if user_prompt and user_prompt.strip():
+        recompose_prompt += f"\n\nADDITIONAL INSTRUCTIONS: {user_prompt}"
+
+    return recompose_prompt
+
+
+def safe_scale_to_exact(image_bytes: bytes, target_width: int, target_height: int) -> bytes:
+    """
+    Scale AI output to exact target dimensions using LANCZOS.
+    No cropping, no padding — progressive upscaling for quality.
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    src_w, src_h = img.size
+    if src_w <= 0 or src_h <= 0:
+        raise ValueError("Invalid source image dimensions")
+
+    # Skip if already exact
+    if src_w == target_width and src_h == target_height:
+        return image_bytes
+
+    scale_factor = max(target_width / src_w, target_height / src_h)
+    print(f"📏 [SCALE] Source: {src_w}x{src_h} → Target: {target_width}x{target_height} (scale: {scale_factor:.2f}x)")
+
+    # Progressive upscaling: scale in 1.5x steps for better quality
+    # This preserves detail much better than one giant jump
+    if scale_factor > 1.6:
+        current_w, current_h = src_w, src_h
+        step = 1.5
+        while True:
+            next_w = int(current_w * step)
+            next_h = int(current_h * step)
+            # If the next step would overshoot, just go to final target
+            if next_w >= target_width or next_h >= target_height:
+                break
+            img = img.resize((next_w, next_h), Image.Resampling.LANCZOS)
+            current_w, current_h = next_w, next_h
+            print(f"  📐 [SCALE] Progressive step: {current_w}x{current_h}")
+
+    # Final resize to exact target
+    img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+    # Adaptive sharpening: stronger for larger upscales
+    if scale_factor > 2.0:
+        sharpness_amount = 1.4
+    elif scale_factor > 1.5:
+        sharpness_amount = 1.3
+    elif scale_factor > 1.0:
+        sharpness_amount = 1.2
+    else:
+        sharpness_amount = 1.1  # Downscale: very gentle
+
+    enhancer = ImageEnhance.Sharpness(img)
+    img = enhancer.enhance(sharpness_amount)
+
+    # Subtle detail enhancement for upscaled images
+    if scale_factor > 1.3:
+        detail_filter = ImageFilter.DETAIL
+        img = img.filter(detail_filter)
+
+    # Preserve contrast (scaling can wash out colors)
+    if scale_factor > 1.5:
+        contrast_enhancer = ImageEnhance.Contrast(img)
+        img = contrast_enhancer.enhance(1.05)
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    print(f"  ✅ [SCALE] Final output: {target_width}x{target_height}, sharpness={sharpness_amount}")
+    return buffer.getvalue()
+
+
 @app.post("/api/resize", response_class=JSONResponse)
 async def resize_image(
     aspect_ratio: str = Form("1:1", description="Target aspect ratio, e.g., '16:9', '1:1', '4:3'"),
@@ -1005,42 +1700,10 @@ async def resize_image(
                 detail=f"Insufficient credits for {engine_type}. Required: {tokens_to_deduct}, Available: {remaining}. Please upgrade your {engine_type} plan."
             )
         
-        # 2. Aspect Ratio Sanitization
-        SUPPORTED_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']
-        
-        # Save the original requested ratio for post-processing
+        # 2. Aspect Ratio Sanitization — use the smart validator
         original_aspect_ratio = aspect_ratio
-        
-        # Normalize input aspect_ratio (handle both '16:9' and '16x9' or '1120:360')
-        input_ratio = aspect_ratio.replace('x', ':')
-        
-        # If not directly supported, find the closest one to prevent API crash
-        gemini_aspect_ratio = input_ratio  # This will be sent to Gemini
-        if input_ratio not in SUPPORTED_RATIOS:
-            try:
-                w_in, h_in = map(int, input_ratio.split(':'))
-                ratio_val = w_in / h_in
-                
-                # Find closest supported ratio based on decimal value
-                ratio_map = {
-                    '1:1': 1.0,
-                    '2:3': 0.66,
-                    '3:2': 1.5,
-                    '3:4': 0.75,
-                    '4:3': 1.33,
-                    '4:5': 0.8,
-                    '5:4': 1.25,
-                    '9:16': 0.56,
-                    '16:9': 1.77,
-                    '21:9': 2.33
-                }
-                
-                closest_ratio = min(ratio_map.keys(), key=lambda k: abs(ratio_map[k] - ratio_val))
-                print(f"⚠️ [RESIZE] Unsupported ratio {input_ratio} ({ratio_val:.2f}). Mapping to closest supported: {closest_ratio}")
-                gemini_aspect_ratio = closest_ratio
-            except Exception as e:
-                print(f"❌ [RESIZE] Aspect ratio parsing error: {e}. Defaulting to 1:1")
-                gemini_aspect_ratio = '1:1'
+        gemini_aspect_ratio, target_dims, gemini_ratio_val = validate_aspect_ratio_smart(aspect_ratio)
+        print(f"📐 [RESIZE] Validated ratio: '{aspect_ratio}' → gemini='{gemini_aspect_ratio}', target_dims={target_dims}")
         
         if not client:
             # Try reloading env if key was added later
@@ -1071,232 +1734,70 @@ async def resize_image(
                 return getattr(inline, "data", None)
             return None
 
-        # Construct the structured prompt
-        if prompt:
+        # Construct the structured prompt — use content-preserving AI recompose prompt
+        effective_dims = target_dims or get_native_resolution(gemini_aspect_ratio)
+        if prompt and engine_type == "creation":
+            # Creation engine: use the user's prompt directly
             use_prompt = prompt
+        elif pil_image:
+            # Transformation engine OR creation with image: use the AI recompose prompt
+            use_prompt = build_ai_recompose_prompt(
+                prompt or "", effective_dims, gemini_aspect_ratio
+            )
         else:
-            use_prompt = (
-                f"recreate this image in {gemini_aspect_ratio} ratio format and keep all the the information of image intact . "
-                "you can rearrange the elements to ensure it is perfect."
+            # Prompt-only generation (creation engine, no image)
+            use_prompt = prompt or f"Generate a {gemini_aspect_ratio} image"
+
+        # --- Call AI with full fallback chain (matches reference project) ---
+        # Order: Gemini SDK → native Vertex AI → SeedDream → Flux
+        if pil_image:
+            contents = [use_prompt, pil_image]
+        else:
+            contents = [use_prompt]
+
+        try:
+            response = await call_gemini_with_retry_and_vertex_fallback(
+                model_name="gemini-3-pro-image-preview",
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=gemini_aspect_ratio
+                    )
+                ),
+                prefer_vertex=True,
             )
 
-        # --- Primary: Vertex AI via google-genai SDK (High Priority) ---
-        # Uses genai.Client(vertexai=True) with service account credentials
-        # This has its own separate quota from the Gemini API key
-        if not image_data and vertex_client:
-            # Try multiple image-capable models in order of preference
-            VERTEX_IMAGE_MODELS = [
-                "gemini-2.0-flash-001",
-                "gemini-2.0-flash-preview-image-generation",
-                "gemini-2.5-flash-preview-image-generation",
-            ]
-            for v_model_name in VERTEX_IMAGE_MODELS:
-                try:
-                    print(f"🧭 [PRIMARY] Trying Vertex AI model: {v_model_name}")
+            # Extract image bytes from response
+            if response.parts:
+                for part in response.parts:
+                    extracted = extract_img_bytes(part)
+                    if extracted:
+                        image_data = extracted
+                        print(f"🖼️ [RESIZE] Extracted image: {len(image_data)} bytes")
+                        break
 
-                    # Build contents just like Gemini SDK
-                    if pil_image:
-                        v_contents = [use_prompt, pil_image]
-                    else:
-                        v_contents = [use_prompt]
-
-                    v_response = vertex_client.models.generate_content(
-                        model=v_model_name,
-                        contents=v_contents,
-                        config=types.GenerateContentConfig(
-                            response_modalities=["IMAGE"],
-                        )
-                    )
-                    print(f"📡 [PRIMARY] Vertex AI response received (model={v_model_name}). Parts: {len(v_response.parts) if v_response.parts else 0}")
-
-                    if v_response.parts:
-                        for part in v_response.parts:
-                            extracted = extract_img_bytes(part)
-                            if extracted:
-                                image_data = extracted
-                                print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes (model={v_model_name})")
-                                break
-
-                    if image_data:
-                        break  # Success! Stop trying models
-                    else:
-                        print(f"❌ [PRIMARY] {v_model_name} returned no image bytes, trying next model...")
-
-                except Exception as ve:
-                    vertex_error = ve
-                    print(f"❌ [PRIMARY] {v_model_name} failed: {ve}")
-                    continue  # Try next model
-
-            if not image_data and vertex_error:
-                print(f"❌ [PRIMARY] All Vertex AI models failed. Last error: {vertex_error}")
-
-        # --- Second: Gemini (google-genai SDK - Fallback 1) ---
-        if not image_data and client:
-            try:
-                model_name = "gemini-3-pro-image-preview"
-                print(f"🤖 [FALLBACK] Calling {model_name} (Gemini SDK) with prompt: '{use_prompt[:50]}...'")
-
-                # Build contents based on whether we have an image
-                if pil_image:
-                    contents = [use_prompt, pil_image]
-                else:
-                    contents = [use_prompt]
-
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
-                        image_config=types.ImageConfig(
-                            aspect_ratio=gemini_aspect_ratio
-                        )
-                    )
-                )
-                print(f"📡 [FALLBACK] Gemini SDK response received. Parts: {len(response.parts) if response.parts else 0}")
-                
-                if response.parts:
-                    for part in response.parts:
-                        extracted = extract_img_bytes(part)
-                        if extracted:
-                            image_data = extracted
-                            print(f"🖼️ [FALLBACK] Extracted Gemini SDK image: {len(image_data)} bytes")
-                            break
-
-                if not image_data:
-                    print(f"❌ [FALLBACK] No image data in Gemini SDK response.")
-            except Exception as ge:
-                gemini_error = ge
-                print(f"❌ [FALLBACK] Gemini SDK failed: {ge}")
-
-        # --- Third: Fal.ai wrapper (Fallback 2) ---
-        if not image_data:
-            try:
-                print(f"🛟 [FALLBACK] Invoking Fal.ai wrapper at {FAL_FALLBACK_URL}")
-                payload = {
-                    "prompt": use_prompt,
-                    "aspect_ratio": gemini_aspect_ratio,
-                    "sync_mode": True,
-                }
-
-                async with httpx.AsyncClient(timeout=60.0) as http_client:
-                    fal_response = await http_client.post(FAL_FALLBACK_URL, json=payload)
-                fal_response.raise_for_status()
-
-                fal_json = fal_response.json()
-                print(f"🛟 [FALLBACK] Fal.ai response received")
-
-                image_url = None
-                if isinstance(fal_json, dict):
-                    if fal_json.get("image_urls"):
-                        image_url = fal_json["image_urls"][0]
-                    elif fal_json.get("images"):
-                        first = fal_json["images"][0]
-                        if isinstance(first, dict):
-                            image_url = first.get("url") or first.get("image_url")
-                        else:
-                            image_url = first
-                    elif fal_json.get("url"):
-                        image_url = fal_json["url"]
-
-                if not image_url:
-                    raise RuntimeError("Fal.ai fallback did not return an image URL")
-
-                print(f"🛟 [FALLBACK] Downloading image from {image_url}")
-                async with httpx.AsyncClient(timeout=60.0) as http_client:
-                    img_resp = await http_client.get(image_url)
-                img_resp.raise_for_status()
-                image_data = img_resp.content
-                print(f"✅ [FALLBACK] Retrieved fallback image: {len(image_data)} bytes")
-
-            except Exception as fallback_err:
-                print(f"❌ [FALLBACK] Fal.ai fallback failed: {fallback_err}")
-                # Final failure: throw the best error we had
-                base_error = vertex_error or gemini_error or fallback_err
+            if not image_data:
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
+                    detail="AI returned no image data from any provider"
                 )
+        except HTTPException:
+            raise
+        except Exception as ai_err:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Image generation failed across all providers. Error: {ai_err}"
+            )
 
-        # 5. Post-process: Resize to exact requested dimensions
-        # Standard ratio → pixel mapping for consistent output
-        RATIO_TO_PIXELS = {
-            '16:9':  (1920, 1080),
-            '9:16':  (1080, 1920),
-            '1:1':   (1080, 1080),
-            '3:4':   (1080, 1440),
-            '4:3':   (1440, 1080),
-            '21:9':  (2520, 1080),
-            '2:3':   (1080, 1620),
-            '3:2':   (1620, 1080),
-            '4:5':   (1080, 1350),
-            '5:4':   (1350, 1080),
-        }
-        
-        target_width = target_height = None
+        # 5. Post-process: Safe scale to exact target dims (NO crop, NO pad)
+        final_dims = target_dims or get_native_resolution(gemini_aspect_ratio)
+        target_width, target_height = final_dims
         try:
-            # First check if it's a known ratio
-            if original_aspect_ratio in RATIO_TO_PIXELS:
-                target_width, target_height = RATIO_TO_PIXELS[original_aspect_ratio]
-                print(f"🎯 [RESIZE] Mapped ratio '{original_aspect_ratio}' to {target_width}x{target_height}")
-            else:
-                # Try parsing as exact pixel dimensions (e.g., "1920x1080" or "1920:1080")
-                original_ratio_str = original_aspect_ratio.replace(':', 'x')
-                if 'x' in original_ratio_str:
-                    w_val, h_val = map(int, original_ratio_str.split('x'))
-                    if w_val >= 100 and h_val >= 100:
-                        target_width, target_height = w_val, h_val
-                        print(f"🎯 [RESIZE] Detected exact target dimensions: {target_width}x{target_height}")
-                    else:
-                        print(f"ℹ️ [RESIZE] Ratio '{original_aspect_ratio}' has small values. Using default mapping.")
-                        # Try as ratio lookup with normalized format
-                        normalized = f"{w_val}:{h_val}"
-                        if normalized in RATIO_TO_PIXELS:
-                            target_width, target_height = RATIO_TO_PIXELS[normalized]
-                            print(f"🎯 [RESIZE] Mapped normalized ratio '{normalized}' to {target_width}x{target_height}")
-        except Exception as parse_err:
-            print(f"⚠️ [RESIZE] Could not parse dimensions from '{original_aspect_ratio}': {parse_err}")
-            target_width = target_height = None
-        
-        # Only post-process if we have exact target dimensions
-        if target_width and target_height:
-            try:
-                # Load the generated image
-                generated_image = Image.open(io.BytesIO(image_data))
-                orig_w, orig_h = generated_image.size
-                print(f"📐 [RESIZE] Generated image size: {orig_w}x{orig_h}, Target: {target_width}x{target_height}")
-                
-                # Calculate the aspect ratios
-                gen_ratio = orig_w / orig_h
-                target_ratio = target_width / target_height
-                
-                # Strategy: Center crop to exact ratio, then resize to exact dimensions
-                if abs(gen_ratio - target_ratio) > 0.01:  # Ratios differ
-                    print(f"✂️ [RESIZE] Cropping to match target ratio {target_ratio:.2f}")
-                    if gen_ratio > target_ratio:
-                        # Generated image is wider, crop width
-                        new_width = int(orig_h * target_ratio)
-                        left = (orig_w - new_width) // 2
-                        generated_image = generated_image.crop((left, 0, left + new_width, orig_h))
-                    else:
-                        # Generated image is taller, crop height
-                        new_height = int(orig_w / target_ratio)
-                        top = (orig_h - new_height) // 2
-                        generated_image = generated_image.crop((0, top, orig_w, top + new_height))
-                
-                # Resize to exact target dimensions
-                if generated_image.size != (target_width, target_height):
-                    print(f"🔄 [RESIZE] Resizing from {generated_image.size} to {target_width}x{target_height}")
-                    generated_image = generated_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                
-                # Convert back to bytes
-                output_buffer = io.BytesIO()
-                generated_image.save(output_buffer, format='PNG')
-                image_data = output_buffer.getvalue()
-                print(f"✅ [RESIZE] Post-processed to exact dimensions: {target_width}x{target_height}")
-                
-            except Exception as resize_err:
-                print(f"⚠️ [RESIZE] Post-processing failed: {resize_err}. Using original generated image.")
-                # Continue with original image_data if post-processing fails
+            image_data = safe_scale_to_exact(image_data, target_width, target_height)
+            print(f"✅ [RESIZE] Safe-scaled to exact dimensions: {target_width}x{target_height}")
+        except Exception as scale_err:
+            print(f"⚠️ [RESIZE] Safe-scale failed: {scale_err}. Using original AI output.")
         
         # 6. Upload to Digital Ocean Spaces (matching NestJS implementation exactly)
         uploaded_url = None
