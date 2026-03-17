@@ -632,6 +632,20 @@ else:
 # Legacy alias — existing code paths that use `client` will use the image key
 client = image_client or widget_client
 
+# Glenn's own Gemini clients (separate keys, separate quota)
+GLENN_API_KEY = os.getenv("GLENN_VERTEX_API_KEY")
+GLENN_GOOGLE_KEY = os.getenv("GLENN_GOOGLE_API_KEY")
+glenn_client = None
+glenn_google_client = None
+if GLENN_GOOGLE_KEY:
+    glenn_google_client = genai.Client(api_key=GLENN_GOOGLE_KEY)
+    print(f"Glenn Google client initialised (key: ...{GLENN_GOOGLE_KEY[-6:]})")
+if GLENN_API_KEY:
+    glenn_client = genai.Client(api_key=GLENN_API_KEY)
+    print(f"Glenn Vertex client initialised (key: ...{GLENN_API_KEY[-6:]})")
+if not GLENN_GOOGLE_KEY and not GLENN_API_KEY:
+    print("Warning: No Glenn API keys set in .env")
+
 # Initialize Digital Ocean Spaces client (matching NestJS implementation exactly)
 if not DO_SPACES_ENDPOINT or not DO_SPACES_BUCKET_NAME:
     raise ValueError("ENDPOINT and SPACENAME must be set in environment variables")
@@ -1619,6 +1633,170 @@ async def resize_image(
     - Can generate from prompt alone OR transform image with custom prompt
     """
     global client
+    
+    # ── Glenn Pipeline Interception ──────────────────────────────────────
+    GLENN_DOMAINS = ["fmctv.co.nz"]
+    GLENN_EMAILS = ["muhammadhamzafaisal146@gmail.com"]
+    user_email = (current_user.get("email") or "").lower()
+    user_domain = user_email.split("@")[-1] if "@" in user_email else ""
+    is_glenn = user_domain in GLENN_DOMAINS or user_email in GLENN_EMAILS
+    
+    if is_glenn and file:
+        print(f"[GLENN INTERCEPT] Detected Glenn user ({user_email}) — routing to Glenn pipeline")
+        
+        GLENN_PROVIDER = os.getenv("GLENN_PROVIDER", "google").lower().strip()
+        GLENN_MODELS = [
+            "gemini-3-pro-image-preview",
+            "gemini-3.1-flash-image-preview",
+        ]
+        
+        gemini_aspect_ratio, target_dims, gemini_ratio_val = validate_aspect_ratio_smart(aspect_ratio)
+        
+        # Credit check — use the Secure backend's engine_data structure
+        user_id = str(current_user["_id"])
+        engine_data = current_user.get("engine_data", {})
+        target_engine_info = engine_data.get("transformation", {})
+        engine_credits = target_engine_info.get("credits", {}) if target_engine_info else {}
+        if not engine_credits and current_user.get("engineType") == "transformation":
+            engine_credits = current_user.get("credits", {})
+        remaining = float(engine_credits.get("remaining_units", 0.0))
+        cost = 1.0
+        if remaining < cost:
+            raise HTTPException(status_code=429, detail=f"Insufficient credits. Need {cost}, have {remaining}")
+        
+        image_bytes = await file.read()
+        if len(image_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large. Max 10MB.")
+        
+        try:
+            if target_dims:
+                tw, th = target_dims
+            else:
+                tw, th = get_native_resolution(gemini_aspect_ratio)
+            
+            # Short Glenn resize prompt
+            orientation = "TALL VERTICAL" if th > tw else "WIDE HORIZONTAL" if tw > th else "SQUARE"
+            resize_prompt = (
+                f"Resize this image to exactly {tw}x{th} pixels ({orientation}). "
+                f"Keep all content identical — same text, same placement, same colors, same everything. "
+                f"Fill the entire {tw}x{th} canvas with no empty space, no bars, no borders. "
+                f"Output one single image only."
+            )
+            if prompt and prompt.strip():
+                resize_prompt += f" {prompt}"
+            
+            pil_image = await run_blocking(Image.open, io.BytesIO(image_bytes))
+            
+            image_data = None
+            provider_used = "none"
+            
+            # PROVIDER: GOOGLE
+            if GLENN_PROVIDER == "google":
+                print(f"[GLENN] Provider: GOOGLE (direct key) | Target: {tw}x{th}")
+                contents = [resize_prompt, pil_image]
+                config = types.GenerateContentConfig(
+                    response_modalities=["Image"],
+                    image_config=types.ImageConfig(aspect_ratio=gemini_aspect_ratio),
+                )
+                try:
+                    response = await call_gemini_with_retry(
+                        model_name="gemini-3-pro-image-preview",
+                        contents=contents,
+                        config=config,
+                        max_retries=3,
+                        api_client=glenn_google_client,
+                    )
+                    if response.parts:
+                        for part in response.parts:
+                            if part.inline_data:
+                                image_data = part.inline_data.data
+                                break
+                    if image_data:
+                        provider_used = "google/gemini-3-pro-image-preview"
+                        print(f"[GLENN] ✅ Success with Google key")
+                except Exception as e:
+                    print(f"[GLENN] ❌ Google key failed: {e}")
+            
+            # PROVIDER: VERTEX (fallback from Google or primary)
+            if GLENN_PROVIDER == "vertex" or (GLENN_PROVIDER == "google" and not image_data):
+                if not image_data:
+                    print(f"[GLENN] Provider: VERTEX | Target: {tw}x{th}")
+                    contents = [resize_prompt, pil_image]
+                    config = types.GenerateContentConfig(response_modalities=["Image"])
+                    for model_name in GLENN_MODELS:
+                        try:
+                            response = await call_gemini_with_retry(
+                                model_name=model_name, contents=contents, config=config,
+                                max_retries=2, api_client=glenn_client,
+                            )
+                            if response.parts:
+                                for part in response.parts:
+                                    if part.inline_data:
+                                        image_data = part.inline_data.data
+                                        break
+                            if image_data:
+                                provider_used = f"vertex/{model_name}"
+                                print(f"[GLENN] ✅ Success with {model_name}")
+                                break
+                        except Exception as e:
+                            print(f"[GLENN] ❌ {model_name} failed: {e}")
+                            continue
+            
+            # PROVIDER: OPENROUTER (final fallback)
+            if not image_data:
+                print(f"[GLENN] Provider: OPENROUTER | Target: {tw}x{th}")
+                try:
+                    or_response = await call_openrouter_image([pil_image, resize_prompt])
+                    if or_response.parts:
+                        for part in or_response.parts:
+                            if part.inline_data:
+                                image_data = part.inline_data.data
+                                break
+                    if image_data:
+                        provider_used = "openrouter"
+                        print(f"[GLENN] ✅ Success with OpenRouter")
+                except Exception as e:
+                    print(f"[GLENN] ❌ OpenRouter failed: {e}")
+            
+            if not image_data:
+                raise RuntimeError("All Glenn resize providers failed")
+            
+            image_data = await run_blocking(safe_scale_to_exact, image_data, tw, th)
+            print(f"[GLENN] Resize complete via {provider_used}: {tw}x{th}")
+            
+            # Upload to DO Spaces
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            unique_id = str(uuid.uuid4())[:8]
+            filename = f"glenn_resized/{timestamp}_{unique_id}.png"
+            await run_blocking(
+                s3_client.put_object,
+                Bucket=DO_SPACES_BUCKET_NAME,
+                Key=filename,
+                Body=image_data,
+                ContentType='image/png',
+                ACL='public-read'
+            )
+            endpoint_for_url = DO_SPACES_ENDPOINT.replace('https://', '').replace('http://', '').strip()
+            uploaded_url = f"https://{DO_SPACES_BUCKET_NAME}.{endpoint_for_url}/{filename}"
+            
+            # Deduct credits
+            consume_units(user_id, cost, engine_type="transformation")
+            
+            print(f"[GLENN] Done: {uploaded_url}")
+            return JSONResponse(content={
+                "url": uploaded_url,
+                "width": tw,
+                "height": th,
+                "ratio": gemini_aspect_ratio,
+                "provider": provider_used,
+            })
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[GLENN] Pipeline error: {e}")
+            raise HTTPException(status_code=500, detail=f"Glenn resize failed: {str(e)}")
+    
+    # ── End Glenn Pipeline ────────────────────────────────────────────────
     
     try:
         # Engine-specific validation
