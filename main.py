@@ -255,6 +255,7 @@ async def call_gemini_with_retry_and_vertex_fallback(
     config=None,
     max_retries=3,
     prefer_vertex: bool = False,
+    vertex_contents=None,
 ):
     """
     Master function ported from reference project.
@@ -292,9 +293,9 @@ async def call_gemini_with_retry_and_vertex_fallback(
                 project=project_id,
                 location=location,
             )
-
+            effective_contents = vertex_contents if vertex_contents is not None else contents
             genai_contents = []
-            for item in contents:
+            for item in effective_contents:
                 if isinstance(item, str):
                     genai_contents.append(item)
                 elif isinstance(item, types.Part):
@@ -1662,7 +1663,23 @@ OUTPUT REQUIREMENTS:
 
     return recompose_prompt
 
-
+def build_vertex_resize_prompt(validated_ratio: str) -> str:
+    """
+    Vertex AI-specific prompt for the resize/transformation use case.
+    Used when the Vertex AI fallback is activated during resize operations.
+    """
+    return (
+        f"Recreate the provided image in the target aspect ratio: {validated_ratio}.\n\n"
+        "Preserve all original visual elements exactly as they are, including shapes, objects, "
+        "text, logos, QR codes, and design components. Do not alter, redesign, or restyle any element.\n\n"
+        "Maintain the original color scheme, typography, proportions of elements, and visual identity.\n\n"
+        "You may intelligently reposition, scale, or adjust spacing between elements only as needed "
+        "to fit the new aspect ratio, ensuring a clean and balanced composition.\n\n"
+        "Do not crop out or remove any existing content. Do not introduce any new elements.\n\n"
+        "Logos, QR codes, and critical brand elements must remain pixel-accurate and unmodified.\n\n"
+        "The final output should look like a natural, professionally adapted version of the original "
+        "image for the new aspect ratio, not a distorted or stretched transformation."
+    )
 def safe_scale_to_exact(image_bytes: bytes, target_width: int, target_height: int) -> bytes:
     """
     Scale AI output to exact target dimensions using LANCZOS.
@@ -2090,8 +2107,13 @@ async def resize_image(
             contents = [use_prompt]
 
         try:
+            model_name = "gemini-3-pro-image-preview"
+            vertex_resize_contents = None
+            if source_image_bytes:
+                vertex_resize_prompt = build_vertex_resize_prompt(validated_ratio)
+                vertex_resize_contents = [vertex_resize_prompt, pil_image]
             response = await call_gemini_with_retry_and_vertex_fallback(
-                model_name="gemini-3-pro-image-preview",
+                model_name=model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE"],
@@ -2100,6 +2122,7 @@ async def resize_image(
                     )
                 ),
                 prefer_vertex=True,
+                vertex_contents=vertex_resize_contents,
             )
 
             # Extract image bytes from response
