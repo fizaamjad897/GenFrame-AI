@@ -632,19 +632,135 @@ else:
 # Legacy alias — existing code paths that use `client` will use the image key
 client = image_client or widget_client
 
-# Glenn's own Gemini clients (separate keys, separate quota)
+# Glenn's own Gemini clients (multi-key rotation with 250/24h limit per key)
 GLENN_API_KEY = os.getenv("GLENN_VERTEX_API_KEY")
-GLENN_GOOGLE_KEY = os.getenv("GLENN_GOOGLE_API_KEY")
+GLENN_GOOGLE_KEY_1 = os.getenv("GLENN_GOOGLE_API_KEY")
+GLENN_GOOGLE_KEY_2 = os.getenv("GLENN_GOOGLE_API_KEY_2")
+GLENN_GOOGLE_KEY_3 = os.getenv("GLENN_GOOGLE_API_KEY_3")
 glenn_client = None
-glenn_google_client = None
-if GLENN_GOOGLE_KEY:
-    glenn_google_client = genai.Client(api_key=GLENN_GOOGLE_KEY)
-    print(f"Glenn Google client initialised (key: ...{GLENN_GOOGLE_KEY[-6:]})")
+glenn_google_client_1 = None
+glenn_google_client_2 = None
+glenn_google_client_3 = None
+
+if GLENN_GOOGLE_KEY_1:
+    glenn_google_client_1 = genai.Client(api_key=GLENN_GOOGLE_KEY_1)
+    print(f"Glenn Google client #1 initialised (key: ...{GLENN_GOOGLE_KEY_1[-8:]})")
+if GLENN_GOOGLE_KEY_2:
+    glenn_google_client_2 = genai.Client(api_key=GLENN_GOOGLE_KEY_2)
+    print(f"Glenn Google client #2 initialised (key: ...{GLENN_GOOGLE_KEY_2[-8:]})")
+if GLENN_GOOGLE_KEY_3:
+    glenn_google_client_3 = genai.Client(api_key=GLENN_GOOGLE_KEY_3)
+    print(f"Glenn Google client #3 initialised (key: ...{GLENN_GOOGLE_KEY_3[-8:]})")
 if GLENN_API_KEY:
     glenn_client = genai.Client(api_key=GLENN_API_KEY)
-    print(f"Glenn Vertex client initialised (key: ...{GLENN_API_KEY[-6:]})")
-if not GLENN_GOOGLE_KEY and not GLENN_API_KEY:
+    print(f"Glenn Vertex client initialised  (key: ...{GLENN_API_KEY[-8:]})")
+if not GLENN_GOOGLE_KEY_1 and not GLENN_GOOGLE_KEY_2 and not GLENN_GOOGLE_KEY_3 and not GLENN_API_KEY:
     print("Warning: No Glenn API keys set in .env")
+
+# ── Glenn key request counters (250 requests / 24h per key) ──────────────
+GLENN_KEY_LIMIT = 250
+
+# MongoDB collection for shared counters
+glenn_key_usage_collection = auth_module.glenn_key_usage_collection
+
+# Map key labels → (client object, api_key string)
+_glenn_keys_map = {
+    "key_1":  {"client": glenn_google_client_1, "api_key": GLENN_GOOGLE_KEY_1 or "not-set"},
+    "key_2":  {"client": glenn_google_client_2, "api_key": GLENN_GOOGLE_KEY_2 or "not-set"},
+    "key_3":  {"client": glenn_google_client_3, "api_key": GLENN_GOOGLE_KEY_3 or "not-set"},
+    "vertex": {"client": glenn_client,          "api_key": GLENN_API_KEY      or "not-set"},
+}
+
+# Map key labels → client objects (kept for interception fallback loop)
+_glenn_clients = {k: v["client"] for k, v in _glenn_keys_map.items()}
+
+# ── MongoDB-backed Glenn key counters ─────────────────────────────────
+def _glenn_db_seed_if_needed():
+    """Seed Glenn counter documents in MongoDB if they don't exist yet."""
+    if not glenn_key_usage_collection:
+        return
+    initial_counts = {"key_1": 60, "key_2": 25, "key_3": 2, "vertex": 60}
+    next_reset = datetime.utcnow().replace(hour=0, minute=0, second=0) + __import__("datetime").timedelta(days=1)
+    for kid, info in _glenn_keys_map.items():
+        existing = glenn_key_usage_collection.find_one({"_id": kid})
+        if not existing:
+            glenn_key_usage_collection.insert_one({
+                "_id": kid,
+                "count": initial_counts.get(kid, 0),
+                "reset_at": next_reset,
+                "api_key_suffix": f"...{info['api_key'][-8:]}" if info['api_key'] != "not-set" else "NOT SET",
+            })
+            print(f"[GLENN] 📦 Seeded MongoDB counter for {kid}: {initial_counts.get(kid, 0)}/{GLENN_KEY_LIMIT}")
+
+_glenn_db_seed_if_needed()
+
+def _glenn_db_get_counter(key_label: str) -> dict:
+    """Read counter from MongoDB. Auto-resets if 24h window has passed."""
+    if not glenn_key_usage_collection:
+        return {"count": 0, "reset_at": datetime.utcnow()}
+    now = datetime.utcnow()
+    doc = glenn_key_usage_collection.find_one({"_id": key_label})
+    if not doc:
+        return {"count": 0, "reset_at": now}
+    if now >= doc.get("reset_at", now):
+        next_reset = now.replace(hour=0, minute=0, second=0) + __import__("datetime").timedelta(days=1)
+        glenn_key_usage_collection.update_one(
+            {"_id": key_label},
+            {"$set": {"count": 0, "reset_at": next_reset}}
+        )
+        print(f"[GLENN] 🔄 Counter reset for {key_label} (24h window passed)")
+        return {"count": 0, "reset_at": next_reset}
+    return doc
+
+def glenn_log_all_counters():
+    """Print a dashboard of all Glenn key counters from MongoDB."""
+    lines = ["[GLENN] 📊 Key counters (MongoDB shared):"]
+    for kid in ["key_1", "key_2", "key_3", "vertex"]:
+        doc = _glenn_db_get_counter(kid)
+        suffix = _glenn_keys_map.get(kid, {}).get("api_key", "?")
+        suffix = f"...{suffix[-8:]}" if suffix != "not-set" and suffix != "?" else "NOT SET"
+        lines.append(f"  {kid} ({suffix}): {doc.get('count', 0)}/{GLENN_KEY_LIMIT}")
+    print("\n".join(lines))
+
+def glenn_get_google_client():
+    """Return the active Google client + key label. Reads counters from MongoDB."""
+    for kid in ["key_1", "key_2", "key_3"]:
+        if _glenn_clients.get(kid):
+            doc = _glenn_db_get_counter(kid)
+            if doc.get("count", 0) < GLENN_KEY_LIMIT:
+                return _glenn_clients[kid], kid
+    return glenn_google_client_1 or glenn_google_client_2 or glenn_google_client_3, "all_google_exhausted"
+
+def glenn_increment_counter(key_label: str):
+    """Atomically increment the counter in MongoDB after a successful request."""
+    if glenn_key_usage_collection:
+        result = glenn_key_usage_collection.find_one_and_update(
+            {"_id": key_label},
+            {"$inc": {"count": 1}},
+            return_document=True
+        )
+        count = result.get("count", "?") if result else "?"
+    else:
+        count = "?"
+    suffix = _glenn_keys_map.get(key_label, {}).get("api_key", "?")
+    suffix = f"...{suffix[-8:]}" if suffix != "not-set" and suffix != "?" else "?"
+    print(f"[GLENN] 📊 {key_label} ({suffix}): {count}/{GLENN_KEY_LIMIT} requests used")
+    glenn_log_all_counters()
+
+def glenn_mark_key_exhausted(key_label: str):
+    """Mark a key as exhausted in MongoDB so neither backend will pick it again."""
+    if glenn_key_usage_collection:
+        glenn_key_usage_collection.update_one(
+            {"_id": key_label},
+            {"$set": {"count": GLENN_KEY_LIMIT}}
+        )
+    suffix = _glenn_keys_map.get(key_label, {}).get("api_key", "?")
+    suffix = f"...{suffix[-8:]}" if suffix != "not-set" and suffix != "?" else "?"
+    print(f"[GLENN] 🚫 {key_label} ({suffix}) marked EXHAUSTED in MongoDB — neither backend will use it until reset")
+    glenn_log_all_counters()
+
+# Legacy alias for backward compat
+glenn_google_client = glenn_google_client_1
 
 # Initialize Digital Ocean Spaces client (matching NestJS implementation exactly)
 if not DO_SPACES_ENDPOINT or not DO_SPACES_BUCKET_NAME:
@@ -1636,7 +1752,7 @@ async def resize_image(
     
     # ── Glenn Pipeline Interception ──────────────────────────────────────
     GLENN_DOMAINS = ["fmctv.co.nz"]
-    GLENN_EMAILS = ["muhammadhamzafaisal146@gmail.com"]
+    GLENN_EMAILS = ["muhammadhamzafaisal146@gmail.com", "richard.moore@oohmedia.com.au"]
     user_email = (current_user.get("email") or "").lower()
     user_domain = user_email.split("@")[-1] if "@" in user_email else ""
     is_glenn = user_domain in GLENN_DOMAINS or user_email in GLENN_EMAILS
@@ -1674,37 +1790,47 @@ async def resize_image(
             else:
                 tw, th = get_native_resolution(gemini_aspect_ratio)
             
-            # Short Glenn resize prompt
+            # ── Glenn-specific resize prompt ──────────────────────────────
             orientation = "TALL VERTICAL" if th > tw else "WIDE HORIZONTAL" if tw > th else "SQUARE"
             resize_prompt = (
                 f"Resize this image to exactly {tw}x{th} pixels ({orientation}). "
                 f"Keep all content identical — same text, same placement, same colors, same everything. "
                 f"Fill the entire {tw}x{th} canvas with no empty space, no bars, no borders. "
-                f"Output one single image only."
+                f"Output one single image only. "
+                f"Make sure there is no changes in the content and input image should be exact as output image with changed dimensions."
             )
             if prompt and prompt.strip():
                 resize_prompt += f" {prompt}"
+            print(f"[GLENN] Prompt: {resize_prompt}")
+            
+            # Log all key counters at start of each request
+            glenn_log_all_counters()
             
             pil_image = await run_blocking(Image.open, io.BytesIO(image_bytes))
             
             image_data = None
             provider_used = "none"
             
-            # PROVIDER: GOOGLE
+            # ── PROVIDER: GOOGLE (multi-key rotation) ────────────────────
             if GLENN_PROVIDER == "google":
-                print(f"[GLENN] Provider: GOOGLE (direct key) | Target: {tw}x{th}")
+                active_client, key_label = glenn_get_google_client()
+                actual_key = _glenn_keys_map.get(key_label, {}).get("api_key", "?")
+                key_suffix = f"...{actual_key[-8:]}" if actual_key and actual_key != "?" and actual_key != "not-set" else "exhausted"
+                db_counter = _glenn_db_get_counter(key_label)
+                print(f"[GLENN] Provider: GOOGLE ({key_label} | {key_suffix}) | Target: {tw}x{th} | Counter: {db_counter.get('count', '?')}/{GLENN_KEY_LIMIT}")
                 contents = [resize_prompt, pil_image]
                 config = types.GenerateContentConfig(
                     response_modalities=["Image"],
                     image_config=types.ImageConfig(aspect_ratio=gemini_aspect_ratio),
                 )
                 try:
+                    print(f"[GLENN] Trying gemini-3-pro-image-preview with {key_label}...")
                     response = await call_gemini_with_retry(
                         model_name="gemini-3-pro-image-preview",
                         contents=contents,
                         config=config,
                         max_retries=3,
-                        api_client=glenn_google_client,
+                        api_client=active_client,
                     )
                     if response.parts:
                         for part in response.parts:
@@ -1712,12 +1838,41 @@ async def resize_image(
                                 image_data = part.inline_data.data
                                 break
                     if image_data:
-                        provider_used = "google/gemini-3-pro-image-preview"
-                        print(f"[GLENN] ✅ Success with Google key")
+                        glenn_increment_counter(key_label)
+                        provider_used = f"google/{key_label}/gemini-3-pro-image-preview"
+                        print(f"[GLENN] ✅ Success with {key_label}")
                 except Exception as e:
-                    print(f"[GLENN] ❌ Google key failed: {e}")
+                    print(f"[GLENN] ❌ {key_label} failed: {e}")
+                    glenn_mark_key_exhausted(key_label)
+                    # Try remaining Google keys
+                    remaining_keys = [k for k in ["key_1", "key_2", "key_3"] if k != key_label and _glenn_clients.get(k) and _glenn_db_get_counter(k).get("count", 0) < GLENN_KEY_LIMIT]
+                    for fallback_kid in remaining_keys:
+                        try:
+                            fb_key = _glenn_keys_map.get(fallback_kid, {}).get("api_key", "?")
+                            fb_suffix = f"...{fb_key[-8:]}" if fb_key != "not-set" and fb_key != "?" else "?"
+                            print(f"[GLENN] 🔄 Trying fallback {fallback_kid} ({fb_suffix})...")
+                            response = await call_gemini_with_retry(
+                                model_name="gemini-3-pro-image-preview",
+                                contents=contents,
+                                config=config,
+                                max_retries=2,
+                                api_client=_glenn_clients[fallback_kid],
+                            )
+                            if response.parts:
+                                for part in response.parts:
+                                    if part.inline_data:
+                                        image_data = part.inline_data.data
+                                        break
+                            if image_data:
+                                glenn_increment_counter(fallback_kid)
+                                provider_used = f"google/{fallback_kid}/gemini-3-pro-image-preview"
+                                print(f"[GLENN] ✅ Success with fallback {fallback_kid}")
+                                break
+                        except Exception as fb_err:
+                            print(f"[GLENN] ❌ {fallback_kid} also failed: {fb_err}")
+                            glenn_mark_key_exhausted(fallback_kid)
             
-            # PROVIDER: VERTEX (fallback from Google or primary)
+            # ── PROVIDER: VERTEX (fallback from Google or primary) ───────
             if GLENN_PROVIDER == "vertex" or (GLENN_PROVIDER == "google" and not image_data):
                 if not image_data:
                     print(f"[GLENN] Provider: VERTEX | Target: {tw}x{th}")
@@ -1735,6 +1890,7 @@ async def resize_image(
                                         image_data = part.inline_data.data
                                         break
                             if image_data:
+                                glenn_increment_counter("vertex")
                                 provider_used = f"vertex/{model_name}"
                                 print(f"[GLENN] ✅ Success with {model_name}")
                                 break
@@ -1742,7 +1898,7 @@ async def resize_image(
                             print(f"[GLENN] ❌ {model_name} failed: {e}")
                             continue
             
-            # PROVIDER: OPENROUTER (final fallback)
+            # ── PROVIDER: OPENROUTER (final fallback) ────────────────────
             if not image_data:
                 print(f"[GLENN] Provider: OPENROUTER | Target: {tw}x{th}")
                 try:
