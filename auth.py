@@ -69,7 +69,7 @@ try:
     usage_logs_collection = db["usage_logs"]
     billing_records_collection = db["billing_records"]
     stripe_events_collection = db["stripe_events"]
-    glenn_key_usage_collection = db["glenn_key_usage"]
+    glenn_key_usage_collection = client["visual_engine"]["glenn_key_usage"]  # Shared DB for both backends
     print("Connected to MongoDB successfully")
 
     # Create indexes
