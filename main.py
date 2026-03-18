@@ -734,7 +734,7 @@ def glenn_get_google_client():
 
 def glenn_increment_counter(key_label: str):
     """Atomically increment the counter in MongoDB after a successful request."""
-    if glenn_key_usage_collection:
+    if glenn_key_usage_collection is not None:
         result = glenn_key_usage_collection.find_one_and_update(
             {"_id": key_label},
             {"$inc": {"count": 1}},
@@ -750,7 +750,7 @@ def glenn_increment_counter(key_label: str):
 
 def glenn_mark_key_exhausted(key_label: str):
     """Mark a key as exhausted in MongoDB so neither backend will pick it again."""
-    if glenn_key_usage_collection:
+    if glenn_key_usage_collection is not None:
         glenn_key_usage_collection.update_one(
             {"_id": key_label},
             {"$set": {"count": GLENN_KEY_LIMIT}}
