@@ -69,6 +69,7 @@ try:
     usage_logs_collection = db["usage_logs"]
     billing_records_collection = db["billing_records"]
     stripe_events_collection = db["stripe_events"]
+    glenn_key_usage_collection = db["glenn_key_usage"]
     print("Connected to MongoDB successfully")
 
     # Create indexes
@@ -89,6 +90,7 @@ except Exception as e:
     usage_logs_collection = None
     billing_records_collection = None
     stripe_events_collection = None
+    glenn_key_usage_collection = None
     print(f"Warning: MongoDB unavailable during import ({e}).")
     if REQUIRE_MONGO and not _is_pytest:
         raise
