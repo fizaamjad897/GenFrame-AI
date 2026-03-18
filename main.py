@@ -672,7 +672,7 @@ _glenn_keys_map = {
 # Map key labels → client objects (kept for interception fallback loop)
 _glenn_clients = {k: v["client"] for k, v in _glenn_keys_map.items()}
 
-# ── Simple in-memory Glenn key counters ───────────────────────────────
+# In-memory fallback cache (only used if MongoDB is unreachable)
 _glenn_counters = {
     "key_1":  {"count": 0, "reset_at": datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)},
     "key_2":  {"count": 0, "reset_at": datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)},
@@ -680,22 +680,51 @@ _glenn_counters = {
     "vertex": {"count": 0, "reset_at": datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)},
 }
 
-print("[GLENN] ✅ In-memory counters initialised for all keys")
+def _get_glenn_col():
+    """Safely get the MongoDB collection, returns None if unavailable."""
+    try:
+        col = auth_module.glenn_key_usage_collection
+        return col if col is not None else None
+    except Exception:
+        return None
+
+print("[GLENN] ✅ Counter system initialised")
 
 def _glenn_get_counter(key_label: str) -> dict:
-    """Read counter. Auto-resets if 24h window has passed."""
-    c = _glenn_counters.get(key_label, {"count": 0, "reset_at": datetime.utcnow()})
+    """Read counter from MongoDB (shared). Falls back to in-memory if DB is down."""
     now = datetime.utcnow()
+    next_reset = now.replace(hour=0, minute=0, second=0) + timedelta(days=1)
+    try:
+        col = _get_glenn_col()
+        if col is not None:
+            doc = col.find_one({"_id": key_label})
+            if doc:
+                # Auto-reset if 24h window passed
+                if now >= doc.get("reset_at", now):
+                    col.update_one({"_id": key_label}, {"$set": {"count": 0, "reset_at": next_reset}})
+                    print(f"[GLENN] 🔄 Counter reset for {key_label} (24h window passed)")
+                    _glenn_counters[key_label] = {"count": 0, "reset_at": next_reset}
+                    return {"count": 0, "reset_at": next_reset}
+                # Sync in-memory cache from DB
+                _glenn_counters[key_label] = {"count": doc.get("count", 0), "reset_at": doc.get("reset_at", next_reset)}
+                return _glenn_counters[key_label]
+            else:
+                # No doc yet — seed it
+                col.insert_one({"_id": key_label, "count": 0, "reset_at": next_reset})
+                _glenn_counters[key_label] = {"count": 0, "reset_at": next_reset}
+                return _glenn_counters[key_label]
+    except Exception as e:
+        print(f"[GLENN] ⚠️  MongoDB read failed, using in-memory fallback: {e}")
+    # Fallback to in-memory
+    c = _glenn_counters.get(key_label, {"count": 0, "reset_at": next_reset})
     if now >= c.get("reset_at", now):
-        next_reset = now.replace(hour=0, minute=0, second=0) + timedelta(days=1)
         c["count"] = 0
         c["reset_at"] = next_reset
-        print(f"[GLENN] 🔄 Counter reset for {key_label} (24h window passed)")
     return c
 
 def glenn_log_all_counters():
     """Print a dashboard of all Glenn key counters."""
-    lines = ["[GLENN] 📊 Key counters:"]
+    lines = ["[GLENN] 📊 Key counters (shared):"]
     for kid in ["key_1", "key_2", "key_3", "vertex"]:
         c = _glenn_get_counter(kid)
         suffix = _glenn_keys_map.get(kid, {}).get("api_key", "?")
@@ -704,7 +733,7 @@ def glenn_log_all_counters():
     print("\n".join(lines))
 
 def glenn_get_google_client():
-    """Return the active Google client + key label based on counters."""
+    """Return the active Google client + key label based on shared counters."""
     for kid in ["key_1", "key_2", "key_3"]:
         if _glenn_clients.get(kid):
             c = _glenn_get_counter(kid)
@@ -713,29 +742,44 @@ def glenn_get_google_client():
     return glenn_google_client_1 or glenn_google_client_2 or glenn_google_client_3, "all_google_exhausted"
 
 def glenn_increment_counter(key_label: str):
-    """Increment in-memory counter + persist to MongoDB on successful hit."""
-    c = _glenn_counters.get(key_label)
-    if c:
-        c["count"] = c.get("count", 0) + 1
-    count = c["count"] if c else "?"
-    # Persist to MongoDB (fire-and-forget, never crash the pipeline)
+    """Atomically increment counter in MongoDB (shared) + sync in-memory cache."""
+    count = "?"
     try:
-        _col = auth_module.glenn_key_usage_collection
-        if _col is not None:
-            _col.update_one(
+        col = _get_glenn_col()
+        if col is not None:
+            next_reset = datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)
+            result = col.find_one_and_update(
                 {"_id": key_label},
-                {"$inc": {"count": 1}, "$setOnInsert": {"reset_at": datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)}},
+                {"$inc": {"count": 1}, "$setOnInsert": {"reset_at": next_reset}},
                 upsert=True,
+                return_document=True,
             )
-    except Exception as db_err:
-        print(f"[GLENN] ⚠️  MongoDB counter update failed (non-fatal): {db_err}")
+            if result:
+                count = result.get("count", 0)
+                _glenn_counters[key_label] = {"count": count, "reset_at": result.get("reset_at", next_reset)}
+    except Exception as e:
+        print(f"[GLENN] ⚠️  MongoDB increment failed, using in-memory: {e}")
+        c = _glenn_counters.get(key_label)
+        if c:
+            c["count"] = c.get("count", 0) + 1
+            count = c["count"]
     suffix = _glenn_keys_map.get(key_label, {}).get("api_key", "?")
     suffix = f"...{suffix[-8:]}" if suffix != "not-set" and suffix != "?" else "?"
     print(f"[GLENN] 📊 {key_label} ({suffix}): {count}/{GLENN_KEY_LIMIT} requests used")
     glenn_log_all_counters()
 
 def glenn_mark_key_exhausted(key_label: str):
-    """Mark a key as exhausted so it won't be picked until reset."""
+    """Mark a key as exhausted in shared MongoDB + in-memory cache."""
+    try:
+        col = _get_glenn_col()
+        if col is not None:
+            col.update_one(
+                {"_id": key_label},
+                {"$set": {"count": GLENN_KEY_LIMIT}},
+                upsert=True,
+            )
+    except Exception as e:
+        print(f"[GLENN] ⚠️  MongoDB exhausted-mark failed: {e}")
     c = _glenn_counters.get(key_label)
     if c:
         c["count"] = GLENN_KEY_LIMIT
