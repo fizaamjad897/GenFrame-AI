@@ -8,7 +8,7 @@ from google.genai import types
 from PIL import Image, ImageEnhance, ImageFilter
 import io
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 import boto3
 import stripe
@@ -661,9 +661,6 @@ if not GLENN_GOOGLE_KEY_1 and not GLENN_GOOGLE_KEY_2 and not GLENN_GOOGLE_KEY_3 
 # ── Glenn key request counters (250 requests / 24h per key) ──────────────
 GLENN_KEY_LIMIT = 250
 
-# MongoDB collection for shared counters
-glenn_key_usage_collection = auth_module.glenn_key_usage_collection
-
 # Map key labels → (client object, api_key string)
 _glenn_keys_map = {
     "key_1":  {"client": glenn_google_client_1, "api_key": GLENN_GOOGLE_KEY_1 or "not-set"},
@@ -675,89 +672,76 @@ _glenn_keys_map = {
 # Map key labels → client objects (kept for interception fallback loop)
 _glenn_clients = {k: v["client"] for k, v in _glenn_keys_map.items()}
 
-# ── MongoDB-backed Glenn key counters ─────────────────────────────────
-def _glenn_db_seed_if_needed():
-    """Seed Glenn counter documents in MongoDB if they don't exist yet."""
-    if glenn_key_usage_collection is None:
-        return
-    initial_counts = {"key_1": 60, "key_2": 25, "key_3": 2, "vertex": 60}
-    next_reset = datetime.utcnow().replace(hour=0, minute=0, second=0) + __import__("datetime").timedelta(days=1)
-    for kid, info in _glenn_keys_map.items():
-        existing = glenn_key_usage_collection.find_one({"_id": kid})
-        if not existing:
-            glenn_key_usage_collection.insert_one({
-                "_id": kid,
-                "count": initial_counts.get(kid, 0),
-                "reset_at": next_reset,
-                "api_key_suffix": f"...{info['api_key'][-8:]}" if info['api_key'] != "not-set" else "NOT SET",
-            })
-            print(f"[GLENN] 📦 Seeded MongoDB counter for {kid}: {initial_counts.get(kid, 0)}/{GLENN_KEY_LIMIT}")
+# ── Simple in-memory Glenn key counters ───────────────────────────────
+_glenn_counters = {
+    "key_1":  {"count": 0, "reset_at": datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)},
+    "key_2":  {"count": 0, "reset_at": datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)},
+    "key_3":  {"count": 0, "reset_at": datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)},
+    "vertex": {"count": 0, "reset_at": datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)},
+}
 
-_glenn_db_seed_if_needed()
+print("[GLENN] ✅ In-memory counters initialised for all keys")
 
-def _glenn_db_get_counter(key_label: str) -> dict:
-    """Read counter from MongoDB. Auto-resets if 24h window has passed."""
-    if glenn_key_usage_collection is None:
-        return {"count": 0, "reset_at": datetime.utcnow()}
+def _glenn_get_counter(key_label: str) -> dict:
+    """Read counter. Auto-resets if 24h window has passed."""
+    c = _glenn_counters.get(key_label, {"count": 0, "reset_at": datetime.utcnow()})
     now = datetime.utcnow()
-    doc = glenn_key_usage_collection.find_one({"_id": key_label})
-    if not doc:
-        return {"count": 0, "reset_at": now}
-    if now >= doc.get("reset_at", now):
-        next_reset = now.replace(hour=0, minute=0, second=0) + __import__("datetime").timedelta(days=1)
-        glenn_key_usage_collection.update_one(
-            {"_id": key_label},
-            {"$set": {"count": 0, "reset_at": next_reset}}
-        )
+    if now >= c.get("reset_at", now):
+        next_reset = now.replace(hour=0, minute=0, second=0) + timedelta(days=1)
+        c["count"] = 0
+        c["reset_at"] = next_reset
         print(f"[GLENN] 🔄 Counter reset for {key_label} (24h window passed)")
-        return {"count": 0, "reset_at": next_reset}
-    return doc
+    return c
 
 def glenn_log_all_counters():
-    """Print a dashboard of all Glenn key counters from MongoDB."""
-    lines = ["[GLENN] 📊 Key counters (MongoDB shared):"]
+    """Print a dashboard of all Glenn key counters."""
+    lines = ["[GLENN] 📊 Key counters:"]
     for kid in ["key_1", "key_2", "key_3", "vertex"]:
-        doc = _glenn_db_get_counter(kid)
+        c = _glenn_get_counter(kid)
         suffix = _glenn_keys_map.get(kid, {}).get("api_key", "?")
         suffix = f"...{suffix[-8:]}" if suffix != "not-set" and suffix != "?" else "NOT SET"
-        lines.append(f"  {kid} ({suffix}): {doc.get('count', 0)}/{GLENN_KEY_LIMIT}")
+        lines.append(f"  {kid} ({suffix}): {c['count']}/{GLENN_KEY_LIMIT}")
     print("\n".join(lines))
 
 def glenn_get_google_client():
-    """Return the active Google client + key label. Reads counters from MongoDB."""
+    """Return the active Google client + key label based on counters."""
     for kid in ["key_1", "key_2", "key_3"]:
         if _glenn_clients.get(kid):
-            doc = _glenn_db_get_counter(kid)
-            if doc.get("count", 0) < GLENN_KEY_LIMIT:
+            c = _glenn_get_counter(kid)
+            if c["count"] < GLENN_KEY_LIMIT:
                 return _glenn_clients[kid], kid
     return glenn_google_client_1 or glenn_google_client_2 or glenn_google_client_3, "all_google_exhausted"
 
 def glenn_increment_counter(key_label: str):
-    """Atomically increment the counter in MongoDB after a successful request."""
-    if glenn_key_usage_collection is not None:
-        result = glenn_key_usage_collection.find_one_and_update(
-            {"_id": key_label},
-            {"$inc": {"count": 1}},
-            return_document=True
-        )
-        count = result.get("count", "?") if result else "?"
-    else:
-        count = "?"
+    """Increment in-memory counter + persist to MongoDB on successful hit."""
+    c = _glenn_counters.get(key_label)
+    if c:
+        c["count"] = c.get("count", 0) + 1
+    count = c["count"] if c else "?"
+    # Persist to MongoDB (fire-and-forget, never crash the pipeline)
+    try:
+        _col = auth_module.glenn_key_usage_collection
+        if _col is not None:
+            _col.update_one(
+                {"_id": key_label},
+                {"$inc": {"count": 1}, "$setOnInsert": {"reset_at": datetime.utcnow().replace(hour=0, minute=0, second=0) + timedelta(days=1)}},
+                upsert=True,
+            )
+    except Exception as db_err:
+        print(f"[GLENN] ⚠️  MongoDB counter update failed (non-fatal): {db_err}")
     suffix = _glenn_keys_map.get(key_label, {}).get("api_key", "?")
     suffix = f"...{suffix[-8:]}" if suffix != "not-set" and suffix != "?" else "?"
     print(f"[GLENN] 📊 {key_label} ({suffix}): {count}/{GLENN_KEY_LIMIT} requests used")
     glenn_log_all_counters()
 
 def glenn_mark_key_exhausted(key_label: str):
-    """Mark a key as exhausted in MongoDB so neither backend will pick it again."""
-    if glenn_key_usage_collection is not None:
-        glenn_key_usage_collection.update_one(
-            {"_id": key_label},
-            {"$set": {"count": GLENN_KEY_LIMIT}}
-        )
+    """Mark a key as exhausted so it won't be picked until reset."""
+    c = _glenn_counters.get(key_label)
+    if c:
+        c["count"] = GLENN_KEY_LIMIT
     suffix = _glenn_keys_map.get(key_label, {}).get("api_key", "?")
     suffix = f"...{suffix[-8:]}" if suffix != "not-set" and suffix != "?" else "?"
-    print(f"[GLENN] 🚫 {key_label} ({suffix}) marked EXHAUSTED in MongoDB — neither backend will use it until reset")
+    print(f"[GLENN] 🚫 {key_label} ({suffix}) marked EXHAUSTED — won't be used until reset")
     glenn_log_all_counters()
 
 # Legacy alias for backward compat
