@@ -678,7 +678,7 @@ _glenn_clients = {k: v["client"] for k, v in _glenn_keys_map.items()}
 # ── MongoDB-backed Glenn key counters ─────────────────────────────────
 def _glenn_db_seed_if_needed():
     """Seed Glenn counter documents in MongoDB if they don't exist yet."""
-    if not glenn_key_usage_collection:
+    if glenn_key_usage_collection is None:
         return
     initial_counts = {"key_1": 60, "key_2": 25, "key_3": 2, "vertex": 60}
     next_reset = datetime.utcnow().replace(hour=0, minute=0, second=0) + __import__("datetime").timedelta(days=1)
@@ -697,7 +697,7 @@ _glenn_db_seed_if_needed()
 
 def _glenn_db_get_counter(key_label: str) -> dict:
     """Read counter from MongoDB. Auto-resets if 24h window has passed."""
-    if not glenn_key_usage_collection:
+    if glenn_key_usage_collection is None:
         return {"count": 0, "reset_at": datetime.utcnow()}
     now = datetime.utcnow()
     doc = glenn_key_usage_collection.find_one({"_id": key_label})
