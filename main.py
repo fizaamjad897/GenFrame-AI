@@ -1800,7 +1800,7 @@ async def resize_image(
                 active_client, key_label = glenn_get_google_client()
                 actual_key = _glenn_keys_map.get(key_label, {}).get("api_key", "?")
                 key_suffix = f"...{actual_key[-8:]}" if actual_key and actual_key != "?" and actual_key != "not-set" else "exhausted"
-                db_counter = _glenn_db_get_counter(key_label)
+                db_counter = _glenn_get_counter(key_label)
                 print(f"[GLENN] Provider: GOOGLE ({key_label} | {key_suffix}) | Target: {tw}x{th} | Counter: {db_counter.get('count', '?')}/{GLENN_KEY_LIMIT}")
                 contents = [resize_prompt, pil_image]
                 config = types.GenerateContentConfig(
@@ -1829,7 +1829,7 @@ async def resize_image(
                     print(f"[GLENN] ❌ {key_label} failed: {e}")
                     glenn_mark_key_exhausted(key_label)
                     # Try remaining Google keys
-                    remaining_keys = [k for k in ["key_1", "key_2", "key_3"] if k != key_label and _glenn_clients.get(k) and _glenn_db_get_counter(k).get("count", 0) < GLENN_KEY_LIMIT]
+                    remaining_keys = [k for k in ["key_1", "key_2", "key_3"] if k != key_label and _glenn_clients.get(k) and _glenn_get_counter(k).get("count", 0) < GLENN_KEY_LIMIT]
                     for fallback_kid in remaining_keys:
                         try:
                             fb_key = _glenn_keys_map.get(fallback_kid, {}).get("api_key", "?")
