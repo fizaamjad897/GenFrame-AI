@@ -44,6 +44,8 @@ class UserResponse(BaseModel):
     remainingUnits: Optional[float] = None
     credits: Optional[Dict[str, Any]] = None
     engine_data: Optional[Dict[str, Any]] = None
+    available_engines: Optional[list[str]] = None
+    is_postpaid: Optional[bool] = False
     stripeCustomerId: Optional[str] = None
     stripeSubscriptionId: Optional[str] = None
     createdAt: datetime

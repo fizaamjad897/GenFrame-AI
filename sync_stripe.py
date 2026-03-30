@@ -16,6 +16,11 @@ def sync_user_purchase(email):
         print(f"Error: User with email {email} not found in database.")
         return
 
+    # CRITICAL: Skip PostPaid users - they don't sync with Stripe
+    if user.get("is_postpaid", False):
+        print(f"Skipping PostPaid user {email} - Stripe sync not applicable")
+        return
+
     user_id = str(user["_id"])
     customer_id = user.get("stripeCustomerId")
     

@@ -14,3 +14,5 @@ python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
 email-validator
+stripe
+PyJWT

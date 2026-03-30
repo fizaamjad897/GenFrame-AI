@@ -28,7 +28,8 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # Extend to 1 week for better UX during development
 
 # MongoDB
-MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
+# Check both MONGODB_URI (production) and MONGODB_URL (fallback)
+MONGODB_URL = os.getenv("MONGODB_URI") or os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "visual_engine")
 
 # Email configuration
@@ -38,7 +39,8 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL", "your-email@gmail.com")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "your-app-password")
 
 # Initialize MongoDB
-MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017").strip("'\" ")
+# Check both MONGODB_URI (production) and MONGODB_URL (fallback)
+MONGODB_URL = (os.getenv("MONGODB_URI") or os.getenv("MONGODB_URL", "mongodb://localhost:27017")).strip("'\" ")
 DB_NAME = os.getenv("DB_NAME", "visual_engine").strip("'\" ")
 
 def get_db_client(url, max_retries=3):
@@ -70,6 +72,8 @@ try:
     billing_records_collection = db["billing_records"]
     stripe_events_collection = db["stripe_events"]
     glenn_key_usage_collection = client["visual_engine"]["glenn_key_usage"]  # Shared DB for both backends
+    org_db_name = os.getenv("ORG_DB_NAME", "organisation_db").strip("'\" ")
+    org_users_collection = client[org_db_name]["users"]
     print("Connected to MongoDB successfully")
 
     # Create indexes
@@ -91,9 +95,40 @@ except Exception as e:
     billing_records_collection = None
     stripe_events_collection = None
     glenn_key_usage_collection = None
+    org_users_collection = None
     print(f"Warning: MongoDB unavailable during import ({e}).")
     if REQUIRE_MONGO and not _is_pytest:
         raise
+
+
+def _sync_org_module_credits_used(user_doc: dict) -> None:
+    """Best-effort sync of creditsUsed into Organisation Module users collection."""
+    if not user_doc or org_users_collection is None:
+        return
+
+    org_user_id = user_doc.get("org_module_user_id")
+    if not org_user_id:
+        return
+
+    engine_data = user_doc.get("engine_data", {}) or {}
+    transformation_credits = ((engine_data.get("transformation") or {}).get("credits") or {})
+    creation_credits = ((engine_data.get("creation") or {}).get("credits") or {})
+
+    transformation_used = float(transformation_credits.get("monthly_units_used", 0.0)) + float(
+        transformation_credits.get("addon_units_used", 0.0)
+    )
+    creation_used = float(creation_credits.get("monthly_units_used", 0.0)) + float(
+        creation_credits.get("addon_units_used", 0.0)
+    )
+    total_used = transformation_used + creation_used
+
+    try:
+        org_users_collection.update_one(
+            {"id": org_user_id},
+            {"$set": {"creditsUsed": total_used}},
+        )
+    except Exception as e:
+        print(f"[CREDITS_SYNC] Failed syncing org creditsUsed for {org_user_id}: {e}")
 
 # API key hashing secret (prefer explicit API_KEY_SECRET; fallback to JWT secret)
 API_KEY_SECRET = (os.getenv("API_KEY_SECRET") or SECRET_KEY).encode("utf-8")
@@ -571,6 +606,46 @@ def consume_units(user_id: str, amount: float = 1.0, engine_type: str = "transfo
     addon_used = float(credits.get("addon_units_used", 0.0))
     addon_max = float(credits.get("addon_units_max", 0.0))
 
+    # PostPaid users are pay-as-you-go: never block on remaining units.
+    if user.get("is_postpaid", False):
+        monthly_used += float(amount)
+
+        new_engine_credits = {
+            "monthly_units_used": monthly_used,
+            "monthly_units_max": monthly_max,
+            "addon_units_used": addon_used,
+            "addon_units_max": addon_max,
+            "overageRate": float(credits.get("overageRate", 0.19)),
+            "remaining_units": 0.0,
+        }
+
+        if engine_type not in engine_data:
+            engine_data[engine_type] = {"plan": user.get("plan", ""), "credits": new_engine_credits}
+        else:
+            engine_data[engine_type]["credits"] = new_engine_credits
+
+        update_payload = {
+            "engine_data": engine_data,
+            "updatedAt": datetime.utcnow(),
+            "is_postpaid": True,
+        }
+
+        if user.get("engineType") == engine_type:
+            update_payload["credits"] = new_engine_credits
+            update_payload["units"] = int(monthly_used)
+
+        result = users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": update_payload}
+        )
+        if result.modified_count > 0:
+            refreshed_user = users_collection.find_one({"_id": ObjectId(user_id)})
+            try:
+                _sync_org_module_credits_used(refreshed_user)
+            except Exception as e:
+                print(f"[CREDITS_SYNC] Non-fatal postpaid sync error for {user_id}: {e}")
+        return result.modified_count > 0
+
     monthly_remaining = max(0.0, monthly_max - monthly_used)
     addon_remaining = max(0.0, addon_max - addon_used)
 
@@ -615,6 +690,12 @@ def consume_units(user_id: str, amount: float = 1.0, engine_type: str = "transfo
         {"_id": ObjectId(user_id)},
         {"$set": update_payload}
     )
+    if result.modified_count > 0:
+        refreshed_user = users_collection.find_one({"_id": ObjectId(user_id)})
+        try:
+            _sync_org_module_credits_used(refreshed_user)
+        except Exception as e:
+            print(f"[CREDITS_SYNC] Non-fatal prepaid sync error for {user_id}: {e}")
     return result.modified_count > 0
 
 
@@ -802,6 +883,9 @@ def user_doc_to_response(user_doc):
         remaining = float(remaining)
 
     engine_data = user_doc.get("engine_data", {}) or {}
+    org_context = user_doc.get("_org_context", {}) or {}
+    selected_engines = org_context.get("selected_engines") or []
+    available_engines = selected_engines if selected_engines else ["transformation", "creation"]
     
     # Lazy migration: ensure both engines are present in the response
     for etype in ["transformation", "creation"]:
@@ -836,8 +920,10 @@ def user_doc_to_response(user_doc):
         "remainingUnits": remaining,
         "credits": credits,
         "engine_data": engine_data,
+        "available_engines": available_engines,
         "stripeCustomerId": user_doc.get("stripeCustomerId"),
         "stripeSubscriptionId": user_doc.get("stripeSubscriptionId"),
+        "is_postpaid": user_doc.get("is_postpaid", False),
         "createdAt": user_doc.get("createdAt"),
     }
 
@@ -912,12 +998,171 @@ def calculate_overage_charge(units_used: int, max_units: int, overage_rate: floa
     overage_units = units_used - max_units
     return round(overage_units * overage_rate, 2)
 
+def send_billing_statement_email(user: dict, bill_doc: dict):
+        """Send billing statement email to the user after bill generation."""
+        recipient = (user or {}).get("email")
+        if not recipient:
+                return False, "Missing recipient email"
+
+        is_dev_mode = (
+                not SENDER_EMAIL or SENDER_EMAIL == "your-email@gmail.com" or
+                not SENDER_PASSWORD or SENDER_PASSWORD == "your-app-password"
+        )
+
+        period_start = bill_doc.get("billingPeriodStart")
+        period_end = bill_doc.get("billingPeriodEnd")
+        period_start_str = period_start.strftime("%Y-%m-%d") if isinstance(period_start, datetime) else "-"
+        period_end_str = period_end.strftime("%Y-%m-%d") if isinstance(period_end, datetime) else "-"
+
+        plan_name = bill_doc.get("plan", "-")
+        total_amount = float(bill_doc.get("totalAmount", 0.0))
+        units_used = float(bill_doc.get("unitsUsed", 0.0))
+        overage_charge = float(bill_doc.get("overageCharge", 0.0))
+
+        engine_breakdown = bill_doc.get("engineBreakdown") or {}
+        has_engine_breakdown = bool(engine_breakdown)
+
+        breakdown_rows = ""
+        if has_engine_breakdown:
+                for engine_name in ["transformation", "creation"]:
+                        data = engine_breakdown.get(engine_name) or {}
+                        breakdown_rows += f"""
+                                <tr>
+                                        <td style='padding:8px;border:1px solid #e5e7eb;text-transform:capitalize'>{engine_name}</td>
+                                        <td style='padding:8px;border:1px solid #e5e7eb'>{float(data.get('unitsUsed', 0.0)):.4f}</td>
+                                        <td style='padding:8px;border:1px solid #e5e7eb'>${float(data.get('ratePerCredit', 0.0)):.4f}</td>
+                                        <td style='padding:8px;border:1px solid #e5e7eb'>${float(data.get('amount', 0.0)):.2f}</td>
+                                </tr>
+                        """
+
+        html = f"""
+        <html>
+            <body style='font-family:Arial,sans-serif;color:#111827'>
+                <h2 style='margin-bottom:4px'>Your Billing Statement</h2>
+                <p style='margin-top:0;color:#6b7280'>Billing period: {period_start_str} to {period_end_str}</p>
+
+                <table style='border-collapse:collapse;width:100%;max-width:680px;margin-top:16px'>
+                    <tr>
+                        <td style='padding:8px;border:1px solid #e5e7eb;background:#f8fafc'><strong>Plan</strong></td>
+                        <td style='padding:8px;border:1px solid #e5e7eb'>{plan_name}</td>
+                    </tr>
+                    <tr>
+                        <td style='padding:8px;border:1px solid #e5e7eb;background:#f8fafc'><strong>Total Units Used</strong></td>
+                        <td style='padding:8px;border:1px solid #e5e7eb'>{units_used:.4f}</td>
+                    </tr>
+                    <tr>
+                        <td style='padding:8px;border:1px solid #e5e7eb;background:#f8fafc'><strong>Overage Charge</strong></td>
+                        <td style='padding:8px;border:1px solid #e5e7eb'>${overage_charge:.2f}</td>
+                    </tr>
+                    <tr>
+                        <td style='padding:8px;border:1px solid #e5e7eb;background:#f8fafc'><strong>Total Amount</strong></td>
+                        <td style='padding:8px;border:1px solid #e5e7eb'><strong>${total_amount:.2f}</strong></td>
+                    </tr>
+                </table>
+
+                {f"<h3 style='margin-top:24px'>Engine Breakdown</h3><table style='border-collapse:collapse;width:100%;max-width:680px'><tr><th style='text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc'>Engine</th><th style='text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc'>Units Used</th><th style='text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc'>Rate / Credit</th><th style='text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc'>Amount</th></tr>{breakdown_rows}</table>" if has_engine_breakdown else ""}
+
+                <p style='margin-top:20px;color:#6b7280'>If you have any questions about this statement, please contact support.</p>
+            </body>
+        </html>
+        """
+
+        if is_dev_mode:
+                print(f"[DEV MODE] Billing statement for {recipient}: total=${total_amount:.2f}, period={period_start_str}..{period_end_str}")
+                return True, None
+
+        try:
+                message = MIMEMultipart("alternative")
+                message["Subject"] = f"Visual Engine Billing Statement ({period_start_str} to {period_end_str})"
+                message["From"] = SENDER_EMAIL
+                message["To"] = recipient
+                message.attach(MIMEText(html, "html"))
+
+                with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                        server.starttls()
+                        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                        server.sendmail(SENDER_EMAIL, recipient, message.as_string())
+
+                print(f"Billing statement email sent to {recipient}")
+                return True, None
+        except Exception as e:
+                print(f"Error sending billing statement email to {recipient}: {e}")
+                return False, str(e)
+
 def generate_monthly_bill(user_id: str):
     """Generate a monthly bill for a user"""
     from bson import ObjectId
     user = get_user_by_id(user_id)
     if not user:
         return None
+
+    # Postpaid users are billed manually: usage * org-configured per-credit rate.
+    if user.get("is_postpaid", False):
+        now = datetime.utcnow()
+        period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if now.month == 12:
+            period_end = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            period_end = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        engine_data = user.get("engine_data", {}) or {}
+        transformation_credits = ((engine_data.get("transformation") or {}).get("credits") or {})
+        creation_credits = ((engine_data.get("creation") or {}).get("credits") or {})
+
+        transformation_used = float(transformation_credits.get("monthly_units_used", 0.0))
+        creation_used = float(creation_credits.get("monthly_units_used", 0.0))
+
+        transformation_rate = float(transformation_credits.get("overageRate", 0.19))
+        creation_rate = float(creation_credits.get("overageRate", 0.19))
+
+        transformation_amount = round(transformation_used * transformation_rate, 2)
+        creation_amount = round(creation_used * creation_rate, 2)
+        total_amount = round(transformation_amount + creation_amount, 2)
+
+        bill_doc = {
+            "userId": user_id,
+            "billingPeriodStart": period_start,
+            "billingPeriodEnd": period_end,
+            "plan": "PostPaid Manual Invoice",
+            "basePrice": 0.0,
+            "includedUnits": 0,
+            "unitsUsed": round(transformation_used + creation_used, 4),
+            "overageUnits": round(transformation_used + creation_used, 4),
+            "overageCharge": total_amount,
+            "totalAmount": total_amount,
+            "engineBreakdown": {
+                "transformation": {
+                    "unitsUsed": round(transformation_used, 4),
+                    "ratePerCredit": transformation_rate,
+                    "amount": transformation_amount,
+                },
+                "creation": {
+                    "unitsUsed": round(creation_used, 4),
+                    "ratePerCredit": creation_rate,
+                    "amount": creation_amount,
+                },
+            },
+            "generatedAt": datetime.utcnow(),
+            "status": "pending",
+        }
+
+        result = billing_records_collection.insert_one(bill_doc)
+        bill_doc["_id"] = result.inserted_id
+        email_sent, email_error = send_billing_statement_email(user, bill_doc)
+        billing_records_collection.update_one(
+            {"_id": result.inserted_id},
+            {
+                "$set": {
+                    "emailSent": email_sent,
+                    "emailSentAt": datetime.utcnow() if email_sent else None,
+                    "emailError": email_error,
+                }
+            },
+        )
+        bill_doc["emailSent"] = email_sent
+        bill_doc["emailSentAt"] = datetime.utcnow() if email_sent else None
+        bill_doc["emailError"] = email_error
+        return bill_doc
     
     # Get plan details
     plan_name = user.get("plan", "")
@@ -965,6 +1210,19 @@ def generate_monthly_bill(user_id: str):
     
     result = billing_records_collection.insert_one(bill_doc)
     bill_doc["_id"] = result.inserted_id
+    billing_records_collection.update_one(
+        {"_id": result.inserted_id},
+        {
+            "$set": {
+                "emailSent": False,
+                "emailSentAt": None,
+                "emailError": "Not applicable for prepaid billing",
+            }
+        },
+    )
+    bill_doc["emailSent"] = False
+    bill_doc["emailSentAt"] = None
+    bill_doc["emailError"] = "Not applicable for prepaid billing"
     return bill_doc
 
 def get_billing_history(user_id: str, limit: int = 10):
