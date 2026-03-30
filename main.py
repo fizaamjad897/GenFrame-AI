@@ -5,23 +5,18 @@ import os
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image
 import io
+import base64
 import httpx
 from datetime import datetime, timedelta
 import uuid
 import boto3
 import stripe
+import google.auth
+import vertexai
 from bson import ObjectId
 from botocore.config import Config
-import vertexai
-from vertexai.generative_models import (
-    GenerativeModel as VertexGenerativeModel,
-    Image as VertexImage,
-)
-import google.auth
-import base64
-import numpy as np
 from models import UserRegister, UserLogin, ForgotPasswordRequest, ResetPasswordRequest, TokenResponse, UserResponse, PlanUpgradeRequest, CheckoutRequest
 from auth import (
     create_user, verify_user_credentials, create_access_token, 
@@ -33,6 +28,7 @@ from auth import (
     consume_units, cancel_user_plan, update_user_plan
 )
 import auth as auth_module
+import org_auth  # Organisation Module JWT validation
 from stripe_manager import create_checkout_session, create_portal_session, handle_webhook_event, cancel_subscription
 import asyncio
 from functools import partial
@@ -489,7 +485,6 @@ app = FastAPI(
     root_path="/secure"
 )
 
-
 # Add CORS middleware
 # CORS: allow explicit origins (Starlette blocks "*" when allow_credentials=True)
 ALLOWED_ORIGINS = [
@@ -528,30 +523,61 @@ DO_SPACES_BUCKET_NAME = os.getenv("SPACENAME", "").strip("'\" ")
 
 # Dependency for authentication
 def get_current_user(request: Request, authorization: str = Header(None), x_api_key: str = Header(None, alias="X-API-KEY")):
-    # API Key auth (preferred for server-to-server usage)
+    """
+    Enhanced authentication handler that supports:
+    1. API Key auth (server-to-server) - highest priority
+    2. Organisation Module JWT (from microservice) - preferred for new users
+    3. Legacy Visual Engine JWT (for backward compatibility during migration)
+    """
+    
+    # Priority 1: API Key auth (server-to-server, always works)
     if x_api_key:
         user = auth_module.verify_api_key(x_api_key)
         if not user:
             raise HTTPException(status_code=401, detail="Invalid API key")
-        # store key scope for downstream authorization decisions
         request.state.api_key_type = auth_module.get_api_key_type(user, x_api_key)
         request.state.auth_mode = "api_key"
         return user
 
+    # Validate Bearer token exists
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     token = authorization.split(" ")[1]
+    
+    # Priority 2: Try Organisation Module JWT (new microservice)
+    # This JWT contains userId, orgId, userRole, etc.
+    try:
+        user = org_auth.validate_org_module_jwt(token)
+        request.state.auth_mode = "org_jwt"
+        request.state.org_id = org_auth.get_org_context_from_user(user).get("org_id")
+        request.state.org_role = org_auth.get_org_context_from_user(user).get("role")
+        print(f"[AUTH] Org Module JWT authenticated user: {user.get('email')}")
+        return user
+    except HTTPException as org_jwt_error:
+        # If not a valid org JWT, try legacy
+        if org_jwt_error.status_code == 401:
+            # Likely not an org JWT, try legacy
+            print(f"[AUTH] Status 401, will try legacy JWT")
+            pass
+        else:
+            # Server error, don't try legacy
+            raise
+    except Exception as e:
+        print(f"[AUTH]Org JWT validation failed, trying legacy: {e}")
+    
+    # Priority 3: Fallback to legacy Visual Engine JWT (during migration)
+    # This JWT only contains {"sub": user_id}
     user_id = verify_token(token)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    if user_id:
+        user = get_user_by_id(user_id)
+        if user:
+            request.state.auth_mode = "legacy_jwt"
+            print(f"[AUTH] Legacy Visual Engine JWT authenticated user: {user.get('email')}")
+            return user
     
-    user = get_user_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    
-    request.state.auth_mode = "jwt"
-    return user
+    # No auth method succeeded
+    raise HTTPException(status_code=401, detail="Invalid or expired credentials")
 
 # Initialize Gemini Client (lazy init or global if key is present)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -609,29 +635,12 @@ FAL_FALLBACK_URL = os.getenv(
     "https://recreative.signagexai.com/fal-ai-fallback/generate",
 )
 
-# ── Gemini API Keys (dual-key setup from reference project) ──────────────────
-# Two separate keys distribute load so neither route saturates its quota:
-#   image_client  → GOOGLE_API_KEY_IMAGE  (image gen endpoints: resize, edit)
-#   widget_client → GOOGLE_API_KEY        (widget gen endpoints: /api/widget/*)
-GOOGLE_API_KEY_IMAGE = os.getenv("GOOGLE_API_KEY_IMAGE") or GOOGLE_API_KEY  # falls back to widget key if not set
-
-image_client = None
-widget_client = None
-
-if GOOGLE_API_KEY_IMAGE:
-    image_client = genai.Client(api_key=GOOGLE_API_KEY_IMAGE)
-    print(f"✅ Image gen client initialized (key: ...{GOOGLE_API_KEY_IMAGE[-6:]})")
-else:
-    print("⚠️  GOOGLE_API_KEY_IMAGE not set")
-
+# We will init inside the function or global if key exists.
+client = None
 if GOOGLE_API_KEY:
-    widget_client = genai.Client(api_key=GOOGLE_API_KEY)
-    print(f"✅ Widget gen client initialized (key: ...{GOOGLE_API_KEY[-6:]})")
+    client = genai.Client(api_key=GOOGLE_API_KEY)
 else:
-    print("⚠️  GOOGLE_API_KEY not set")
-
-# Legacy alias — existing code paths that use `client` will use the image key
-client = image_client or widget_client
+    print("Warning: GOOGLE_API_KEY not set in .env")
 
 # Glenn's own Gemini clients (multi-key rotation with 250/24h limit per key)
 GLENN_API_KEY = os.getenv("GLENN_VERTEX_API_KEY")
@@ -849,7 +858,7 @@ async def get_status():
         "db_connected": auth_module.client is not None
     }
 
-@app.post("/api/users/login")
+@app.post("/api/users/login", response_model=TokenResponse)
 async def login(credentials: UserLogin):
     """Login user"""
     user = verify_user_credentials(credentials.email, credentials.password)
@@ -892,7 +901,7 @@ async def reset_password(request: ResetPasswordRequest):
     
     return {"message": "Password reset successfully"}
 
-@app.get("/api/users/me")
+@app.get("/api/users/me", response_model=UserResponse)
 async def get_current_user_info(current_user = Depends(get_current_user)):
     """Get current user info"""
     return user_doc_to_response(current_user)
@@ -1195,6 +1204,13 @@ async def _perform_stripe_sync(user_id: str, email: str, stripe_customer_id: str
     """Internal helper to sync user from Stripe with extreme robustness"""
     users_collection = auth_module.users_collection
     print(f"\n--- 🔄 STRIPE SYNC START ({email}) ---")
+    
+    # Skip Stripe sync for postpaid users - they don't use Stripe subscriptions
+    user = users_collection.find_one({"_id": ObjectId(user_id)})
+    if user and user.get("is_postpaid", False):
+        print(f"[SYNC] Skipping Stripe sync for postpaid user: {email}")
+        return {"success": True, "detail": "Postpaid user - Stripe sync not applicable.", "plan": None}
+    
     if session_id:
         print(f"🔍 [SYNC] Called with session_id: {session_id}")
     
@@ -1472,6 +1488,10 @@ async def manual_sync_subscription(request: dict):
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
+    
+    # Skip for postpaid users - they don't use Stripe subscriptions
+    if user.get("is_postpaid", False):
+        return {"success": True, "detail": "Postpaid user - Stripe sync not applicable.", "plan": None}
 
     res = await _perform_stripe_sync(str(user["_id"]), user.get("email"), user.get("stripeCustomerId"), session_id)
     if not res["success"]:
@@ -1482,6 +1502,10 @@ async def manual_sync_subscription(request: dict):
 @app.post("/api/stripe/refresh-subscription")
 async def refresh_subscription(current_user = Depends(get_current_user)):
     """Authenticated endpoint to refresh subscription status."""
+    # Skip for postpaid users - they don't use Stripe subscriptions
+    if current_user.get("is_postpaid", False):
+        return {"success": True, "detail": "Postpaid user - Stripe subscription not applicable.", "plan": None}
+    
     res = await _perform_stripe_sync(str(current_user["_id"]), current_user.get("email"), current_user.get("stripeCustomerId"))
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["detail"])
@@ -1524,7 +1548,7 @@ async def generate_bill(current_user = Depends(get_current_user)):
 
 # ─── AI Content-Aware Resize Utilities ───────────────────────────────────────
 
-from PIL import ImageEnhance
+from PIL import ImageEnhance, ImageFilter
 
 # Gemini only supports a fixed set of aspect ratios.  Any custom dimension
 # must be mapped to the closest supported ratio before calling the API.
@@ -1794,16 +1818,36 @@ async def resize_image(
     - Can generate from prompt alone OR transform image with custom prompt
     """
     global client
+
+    # Enforce engine allocation at API level so direct callers cannot bypass UI route guards.
+    allocated_engines = (
+        (current_user.get("_org_context", {}) or {}).get("selected_engines")
+        or current_user.get("available_engines")
+        or current_user.get("engine_access")
+        or ["transformation", "creation"]
+    )
+    if isinstance(allocated_engines, list) and allocated_engines:
+        if engine_type not in allocated_engines:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Engine '{engine_type}' is not allocated for this user",
+            )
+
+    # Legacy Glenn interception (kept as commented reference; do not remove):
+    # user_email = str(current_user.get("email", "")).lower()
+    # user_domain = user_email.split("@")[-1] if "@" in user_email else ""
+    #
+    # # ── Glenn Pipeline Interception ──────────────────────────────────────
+    # GLENN_DOMAINS = ["fmctv.co.nz"]
+    # GLENN_EMAILS = ["muhammadhamzafaisal146@gmail.com", "richard.moore@oohmedia.com.au"]
+    # is_glenn = user_domain in GLENN_DOMAINS or user_email in GLENN_EMAILS
+    # if is_glenn and file:
+    #     print(f"[GLENN INTERCEPT] Detected Glenn user ({user_email}) — routing to Glenn pipeline")
     
-    # ── Glenn Pipeline Interception ──────────────────────────────────────
-    GLENN_DOMAINS = ["fmctv.co.nz"]
-    GLENN_EMAILS = ["muhammadhamzafaisal146@gmail.com", "richard.moore@oohmedia.com.au"]
-    user_email = (current_user.get("email") or "").lower()
-    user_domain = user_email.split("@")[-1] if "@" in user_email else ""
-    is_glenn = user_domain in GLENN_DOMAINS or user_email in GLENN_EMAILS
+    # ── Glenn Pipeline (now available to all users) ──────────────────────
     
-    if is_glenn and file:
-        print(f"[GLENN INTERCEPT] Detected Glenn user ({user_email}) — routing to Glenn pipeline")
+    if file:
+        print(f"[GLENN PIPELINE] Using advanced Glenn image processing")
         
         GLENN_PROVIDER = os.getenv("GLENN_PROVIDER", "google").lower().strip()
         GLENN_MODELS = [
@@ -1813,21 +1857,36 @@ async def resize_image(
         
         gemini_aspect_ratio, target_dims, gemini_ratio_val = validate_aspect_ratio_smart(aspect_ratio)
         
-        # Credit check — use the Secure backend's engine_data structure
         user_id = str(current_user["_id"])
-        engine_data = current_user.get("engine_data", {})
-        target_engine_info = engine_data.get("transformation", {})
-        engine_credits = target_engine_info.get("credits", {}) if target_engine_info else {}
-        if not engine_credits and current_user.get("engineType") == "transformation":
-            engine_credits = current_user.get("credits", {})
-        remaining = float(engine_credits.get("remaining_units", 0.0))
-        cost = 1.0
-        if remaining < cost:
-            raise HTTPException(status_code=429, detail=f"Insufficient credits. Need {cost}, have {remaining}")
-        
+        is_postpaid = current_user.get("is_postpaid", False)
         image_bytes = await file.read()
         if len(image_bytes) > 10 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="File too large. Max 10MB.")
+
+        pil_image = await run_blocking(Image.open, io.BytesIO(image_bytes))
+        src_w, src_h = pil_image.size
+        max_dim = max(src_w, src_h)
+
+        # Match standard engine pricing logic.
+        if is_postpaid:
+            # Postpaid is billed with org-configured per-credit rate; each successful image counts as 1 unit.
+            cost = 1.0
+        elif engine_type == "creation":
+            cost = 2.0 if max_dim <= 1024 else 4.4
+        else:
+            cost = 1.0 if max_dim <= 1024 else 2.5
+        
+        # Credit check — only for prepaid users (postpaid users have unlimited usage)
+        if not is_postpaid:
+            # Prepaid user: check credits
+            engine_data = current_user.get("engine_data", {})
+            target_engine_info = engine_data.get(engine_type, {})
+            engine_credits = target_engine_info.get("credits", {}) if target_engine_info else {}
+            if not engine_credits and current_user.get("engineType") == engine_type:
+                engine_credits = current_user.get("credits", {})
+            remaining = float(engine_credits.get("remaining_units", 0.0))
+            if remaining < cost:
+                raise HTTPException(status_code=429, detail=f"Insufficient credits. Need {cost}, have {remaining}")
         
         try:
             if target_dims:
@@ -1850,8 +1909,6 @@ async def resize_image(
             
             # Log all key counters at start of each request
             glenn_log_all_counters()
-            
-            pil_image = await run_blocking(Image.open, io.BytesIO(image_bytes))
             
             image_data = None
             provider_used = "none"
@@ -1980,8 +2037,22 @@ async def resize_image(
             endpoint_for_url = DO_SPACES_ENDPOINT.replace('https://', '').replace('http://', '').strip()
             uploaded_url = f"https://{DO_SPACES_BUCKET_NAME}.{endpoint_for_url}/{filename}"
             
-            # Deduct credits
-            consume_units(user_id, cost, engine_type="transformation")
+            # Consume units (handles both prepaid credit deduction and postpaid usage tracking)
+            consume_units(user_id, cost, engine_type=engine_type)
+            
+            # Increment legacy counter
+            increment_user_units(user_id)
+            
+            # Log to archive for history page
+            log_usage(
+                user_id=user_id,
+                operation="resize",
+                aspect_ratio=gemini_aspect_ratio,
+                success=True,
+                image_url=uploaded_url,
+                prompt=resize_prompt,
+                target_dims=[tw, th]
+            )
             
             print(f"[GLENN] Done: {uploaded_url}")
             return JSONResponse(content={
@@ -2043,11 +2114,16 @@ async def resize_image(
             # Creation engine with prompt only - no image
             print(f"🎨 [CREATION] Generating image from prompt only (no input image)")
         
+        is_postpaid = bool(current_user.get("is_postpaid", False))
+
         # Calculate token cost based on user requirements:
         # Creation Engine: <= 1024: 2.0, > 1024: 4.4
         # Transformation Engine: <= 1024: 1.0, > 1024: 2.5
         tokens_to_deduct = 1.0
-        if engine_type == "creation":
+        if is_postpaid:
+            # Postpaid: usage is counted per successful output image.
+            tokens_to_deduct = 1.0
+        elif engine_type == "creation":
             tokens_to_deduct = 2.0 if max_dim <= 1024 else 4.4
         else:
             tokens_to_deduct = 1.0 if max_dim <= 1024 else 2.5
@@ -2072,17 +2148,49 @@ async def resize_image(
             engine_credits = current_user.get("credits", {})
 
         remaining = float(engine_credits.get("remaining_units", 0.0))
-        
-        if remaining < tokens_to_deduct:
+
+        if (not is_postpaid) and remaining < tokens_to_deduct:
             raise HTTPException(
                 status_code=429, 
                 detail=f"Insufficient credits for {engine_type}. Required: {tokens_to_deduct}, Available: {remaining}. Please upgrade your {engine_type} plan."
             )
         
-        # 2. Aspect Ratio Sanitization — use the smart validator
+        # 2. Aspect Ratio Sanitization
+        SUPPORTED_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']
+        
+        # Save the original requested ratio for post-processing
         original_aspect_ratio = aspect_ratio
-        gemini_aspect_ratio, target_dims, gemini_ratio_val = validate_aspect_ratio_smart(aspect_ratio)
-        print(f"📐 [RESIZE] Validated ratio: '{aspect_ratio}' → gemini='{gemini_aspect_ratio}', target_dims={target_dims}")
+        
+        # Normalize input aspect_ratio (handle both '16:9' and '16x9' or '1120:360')
+        input_ratio = aspect_ratio.replace('x', ':')
+        
+        # If not directly supported, find the closest one to prevent API crash
+        gemini_aspect_ratio = input_ratio  # This will be sent to Gemini
+        if input_ratio not in SUPPORTED_RATIOS:
+            try:
+                w_in, h_in = map(int, input_ratio.split(':'))
+                ratio_val = w_in / h_in
+                
+                # Find closest supported ratio based on decimal value
+                ratio_map = {
+                    '1:1': 1.0,
+                    '2:3': 0.66,
+                    '3:2': 1.5,
+                    '3:4': 0.75,
+                    '4:3': 1.33,
+                    '4:5': 0.8,
+                    '5:4': 1.25,
+                    '9:16': 0.56,
+                    '16:9': 1.77,
+                    '21:9': 2.33
+                }
+                
+                closest_ratio = min(ratio_map.keys(), key=lambda k: abs(ratio_map[k] - ratio_val))
+                print(f"⚠️ [RESIZE] Unsupported ratio {input_ratio} ({ratio_val:.2f}). Mapping to closest supported: {closest_ratio}")
+                gemini_aspect_ratio = closest_ratio
+            except Exception as e:
+                print(f"❌ [RESIZE] Aspect ratio parsing error: {e}. Defaulting to 1:1")
+                gemini_aspect_ratio = '1:1'
         
         if not client:
             # Try reloading env if key was added later
@@ -2113,76 +2221,232 @@ async def resize_image(
                 return getattr(inline, "data", None)
             return None
 
-        # Construct the structured prompt — use content-preserving AI recompose prompt
-        effective_dims = target_dims or get_native_resolution(gemini_aspect_ratio)
-        if prompt and engine_type == "creation":
-            # Creation engine: use the user's prompt directly
+        # Construct the structured prompt
+        if prompt:
             use_prompt = prompt
-        elif pil_image:
-            # Transformation engine OR creation with image: use the AI recompose prompt
-            use_prompt = build_ai_recompose_prompt(
-                prompt or "", effective_dims, gemini_aspect_ratio
+        else:
+            use_prompt = (
+                f"recreate this image in {gemini_aspect_ratio} ratio format and keep all the the information of image intact . "
+                "you can rearrange the elements to ensure it is perfect."
             )
-        else:
-            # Prompt-only generation (creation engine, no image)
-            use_prompt = prompt or f"Generate a {gemini_aspect_ratio} image"
 
-        # --- Call AI with full fallback chain (matches reference project) ---
-        # Order: Gemini SDK → native Vertex AI → SeedDream → Flux
-        if pil_image:
-            contents = [use_prompt, pil_image]
-        else:
-            contents = [use_prompt]
+        # --- Primary: Vertex AI via google-genai SDK (High Priority) ---
+        # Uses genai.Client(vertexai=True) with service account credentials
+        # This has its own separate quota from the Gemini API key
+        if not image_data and vertex_client:
+            # Try multiple image-capable models in order of preference
+            VERTEX_IMAGE_MODELS = [
+                "gemini-2.0-flash-001",
+                "gemini-2.0-flash-preview-image-generation",
+                "gemini-2.5-flash-preview-image-generation",
+            ]
+            for v_model_name in VERTEX_IMAGE_MODELS:
+                try:
+                    print(f"🧭 [PRIMARY] Trying Vertex AI model: {v_model_name}")
 
-        try:
-            model_name = "gemini-3-pro-image-preview"
-            vertex_resize_contents = None
-            if source_image_bytes:
-                vertex_resize_prompt = build_vertex_resize_prompt(validated_ratio)
-                vertex_resize_contents = [vertex_resize_prompt, pil_image]
-            response = await call_gemini_with_retry_and_vertex_fallback(
-                model_name=model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE"],
-                    image_config=types.ImageConfig(
-                        aspect_ratio=gemini_aspect_ratio
+                    # Build contents just like Gemini SDK
+                    if pil_image:
+                        v_contents = [use_prompt, pil_image]
+                    else:
+                        v_contents = [use_prompt]
+
+                    v_response = vertex_client.models.generate_content(
+                        model=v_model_name,
+                        contents=v_contents,
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE"],
+                        )
                     )
-                ),
-                prefer_vertex=True,
-                vertex_contents=vertex_resize_contents,
-            )
+                    print(f"📡 [PRIMARY] Vertex AI response received (model={v_model_name}). Parts: {len(v_response.parts) if v_response.parts else 0}")
 
-            # Extract image bytes from response
-            if response.parts:
-                for part in response.parts:
-                    extracted = extract_img_bytes(part)
-                    if extracted:
-                        image_data = extracted
-                        print(f"🖼️ [RESIZE] Extracted image: {len(image_data)} bytes")
-                        break
+                    if v_response.parts:
+                        for part in v_response.parts:
+                            extracted = extract_img_bytes(part)
+                            if extracted:
+                                image_data = extracted
+                                print(f"🖼️ [PRIMARY] Extracted Vertex image: {len(image_data)} bytes (model={v_model_name})")
+                                break
 
-            if not image_data:
+                    if image_data:
+                        break  # Success! Stop trying models
+                    else:
+                        print(f"❌ [PRIMARY] {v_model_name} returned no image bytes, trying next model...")
+
+                except Exception as ve:
+                    vertex_error = ve
+                    print(f"❌ [PRIMARY] {v_model_name} failed: {ve}")
+                    continue  # Try next model
+
+            if not image_data and vertex_error:
+                print(f"❌ [PRIMARY] All Vertex AI models failed. Last error: {vertex_error}")
+
+        # --- Second: Gemini (google-genai SDK - Fallback 1) ---
+        if not image_data and client:
+            try:
+                model_name = "gemini-3-pro-image-preview"
+                print(f"🤖 [FALLBACK] Calling {model_name} (Gemini SDK) with prompt: '{use_prompt[:50]}...'")
+
+                # Build contents based on whether we have an image
+                if pil_image:
+                    contents = [use_prompt, pil_image]
+                else:
+                    contents = [use_prompt]
+
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                        image_config=types.ImageConfig(
+                            aspect_ratio=gemini_aspect_ratio
+                        )
+                    )
+                )
+                print(f"📡 [FALLBACK] Gemini SDK response received. Parts: {len(response.parts) if response.parts else 0}")
+                
+                if response.parts:
+                    for part in response.parts:
+                        extracted = extract_img_bytes(part)
+                        if extracted:
+                            image_data = extracted
+                            print(f"🖼️ [FALLBACK] Extracted Gemini SDK image: {len(image_data)} bytes")
+                            break
+
+                if not image_data:
+                    print(f"❌ [FALLBACK] No image data in Gemini SDK response.")
+            except Exception as ge:
+                gemini_error = ge
+                print(f"❌ [FALLBACK] Gemini SDK failed: {ge}")
+
+        # --- Third: Fal.ai wrapper (Fallback 2) ---
+        if not image_data:
+            try:
+                print(f"🛟 [FALLBACK] Invoking Fal.ai wrapper at {FAL_FALLBACK_URL}")
+                payload = {
+                    "prompt": use_prompt,
+                    "aspect_ratio": gemini_aspect_ratio,
+                    "sync_mode": True,
+                }
+
+                async with httpx.AsyncClient(timeout=60.0) as http_client:
+                    fal_response = await http_client.post(FAL_FALLBACK_URL, json=payload)
+                fal_response.raise_for_status()
+
+                fal_json = fal_response.json()
+                print(f"🛟 [FALLBACK] Fal.ai response received")
+
+                image_url = None
+                if isinstance(fal_json, dict):
+                    if fal_json.get("image_urls"):
+                        image_url = fal_json["image_urls"][0]
+                    elif fal_json.get("images"):
+                        first = fal_json["images"][0]
+                        if isinstance(first, dict):
+                            image_url = first.get("url") or first.get("image_url")
+                        else:
+                            image_url = first
+                    elif fal_json.get("url"):
+                        image_url = fal_json["url"]
+
+                if not image_url:
+                    raise RuntimeError("Fal.ai fallback did not return an image URL")
+
+                print(f"🛟 [FALLBACK] Downloading image from {image_url}")
+                async with httpx.AsyncClient(timeout=60.0) as http_client:
+                    img_resp = await http_client.get(image_url)
+                img_resp.raise_for_status()
+                image_data = img_resp.content
+                print(f"✅ [FALLBACK] Retrieved fallback image: {len(image_data)} bytes")
+
+            except Exception as fallback_err:
+                print(f"❌ [FALLBACK] Fal.ai fallback failed: {fallback_err}")
+                # Final failure: throw the best error we had
+                base_error = vertex_error or gemini_error or fallback_err
                 raise HTTPException(
                     status_code=500,
-                    detail="AI returned no image data from any provider"
+                    detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
                 )
-        except HTTPException:
-            raise
-        except Exception as ai_err:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Image generation failed across all providers. Error: {ai_err}"
-            )
 
-        # 5. Post-process: Safe scale to exact target dims (NO crop, NO pad)
-        final_dims = target_dims or get_native_resolution(gemini_aspect_ratio)
-        target_width, target_height = final_dims
+        # 5. Post-process: Resize to exact requested dimensions
+        # Standard ratio → pixel mapping for consistent output
+        RATIO_TO_PIXELS = {
+            '16:9':  (1920, 1080),
+            '9:16':  (1080, 1920),
+            '1:1':   (1080, 1080),
+            '3:4':   (1080, 1440),
+            '4:3':   (1440, 1080),
+            '21:9':  (2520, 1080),
+            '2:3':   (1080, 1620),
+            '3:2':   (1620, 1080),
+            '4:5':   (1080, 1350),
+            '5:4':   (1350, 1080),
+        }
+        
+        target_width = target_height = None
         try:
-            image_data = safe_scale_to_exact(image_data, target_width, target_height)
-            print(f"✅ [RESIZE] Safe-scaled to exact dimensions: {target_width}x{target_height}")
-        except Exception as scale_err:
-            print(f"⚠️ [RESIZE] Safe-scale failed: {scale_err}. Using original AI output.")
+            # First check if it's a known ratio
+            if original_aspect_ratio in RATIO_TO_PIXELS:
+                target_width, target_height = RATIO_TO_PIXELS[original_aspect_ratio]
+                print(f"🎯 [RESIZE] Mapped ratio '{original_aspect_ratio}' to {target_width}x{target_height}")
+            else:
+                # Try parsing as exact pixel dimensions (e.g., "1920x1080" or "1920:1080")
+                original_ratio_str = original_aspect_ratio.replace(':', 'x')
+                if 'x' in original_ratio_str:
+                    w_val, h_val = map(int, original_ratio_str.split('x'))
+                    if w_val >= 100 and h_val >= 100:
+                        target_width, target_height = w_val, h_val
+                        print(f"🎯 [RESIZE] Detected exact target dimensions: {target_width}x{target_height}")
+                    else:
+                        print(f"ℹ️ [RESIZE] Ratio '{original_aspect_ratio}' has small values. Using default mapping.")
+                        # Try as ratio lookup with normalized format
+                        normalized = f"{w_val}:{h_val}"
+                        if normalized in RATIO_TO_PIXELS:
+                            target_width, target_height = RATIO_TO_PIXELS[normalized]
+                            print(f"🎯 [RESIZE] Mapped normalized ratio '{normalized}' to {target_width}x{target_height}")
+        except Exception as parse_err:
+            print(f"⚠️ [RESIZE] Could not parse dimensions from '{original_aspect_ratio}': {parse_err}")
+            target_width = target_height = None
+        
+        # Only post-process if we have exact target dimensions
+        if target_width and target_height:
+            try:
+                # Load the generated image
+                generated_image = Image.open(io.BytesIO(image_data))
+                orig_w, orig_h = generated_image.size
+                print(f"📐 [RESIZE] Generated image size: {orig_w}x{orig_h}, Target: {target_width}x{target_height}")
+                
+                # Calculate the aspect ratios
+                gen_ratio = orig_w / orig_h
+                target_ratio = target_width / target_height
+                
+                # Strategy: Center crop to exact ratio, then resize to exact dimensions
+                if abs(gen_ratio - target_ratio) > 0.01:  # Ratios differ
+                    print(f"✂️ [RESIZE] Cropping to match target ratio {target_ratio:.2f}")
+                    if gen_ratio > target_ratio:
+                        # Generated image is wider, crop width
+                        new_width = int(orig_h * target_ratio)
+                        left = (orig_w - new_width) // 2
+                        generated_image = generated_image.crop((left, 0, left + new_width, orig_h))
+                    else:
+                        # Generated image is taller, crop height
+                        new_height = int(orig_w / target_ratio)
+                        top = (orig_h - new_height) // 2
+                        generated_image = generated_image.crop((0, top, orig_w, top + new_height))
+                
+                # Resize to exact target dimensions
+                if generated_image.size != (target_width, target_height):
+                    print(f"🔄 [RESIZE] Resizing from {generated_image.size} to {target_width}x{target_height}")
+                    generated_image = generated_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                
+                # Convert back to bytes
+                output_buffer = io.BytesIO()
+                generated_image.save(output_buffer, format='PNG')
+                image_data = output_buffer.getvalue()
+                print(f"✅ [RESIZE] Post-processed to exact dimensions: {target_width}x{target_height}")
+                
+            except Exception as resize_err:
+                print(f"⚠️ [RESIZE] Post-processing failed: {resize_err}. Using original generated image.")
+                # Continue with original image_data if post-processing fails
         
         # 6. Upload to Digital Ocean Spaces (matching NestJS implementation exactly)
         uploaded_url = None
@@ -2320,4 +2584,14 @@ async def read_root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Configure to accept large file uploads (100MB limit)
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=8000,
+        limit_max_size=100 * 1024 * 1024,
+        limit_request_fields=32000,
+        limit_request_line=8190,
+        limit_concurrency=1000,
+        timeout_keep_alive=65
+    )
