@@ -48,11 +48,12 @@ def validate_org_module_jwt(token: str) -> dict:
         )
         
         # Extract essential fields from Organisation Module JWT
-        org_user_id = payload.get("userId")
-        org_id = payload.get("orgId")
-        user_email = payload.get("userEmail")
-        user_name = payload.get("userName")
-        user_role = payload.get("userRole", "user")
+        # Be tolerant to claim-name variations across environments.
+        org_user_id = payload.get("userId") or payload.get("user_id") or payload.get("id")
+        org_id = payload.get("orgId") or payload.get("org_id") or payload.get("organizationId")
+        user_email = payload.get("userEmail") or payload.get("email")
+        user_name = payload.get("userName") or payload.get("name")
+        user_role = payload.get("userRole") or payload.get("role") or "user"
         org_customer_type_raw = payload.get("orgCustomerType")
         org_transform_price_raw = payload.get("orgTransformationCreditPrice")
         org_creation_price_raw = payload.get("orgCreationCreditPrice")
@@ -215,6 +216,7 @@ def _create_visual_engine_user_for_org_user(
     """
     try:
         now = datetime.utcnow()
+        email_normalized = (email or "").strip().lower()
         transformation_rate = float(transformation_credit_price) if transformation_credit_price is not None else 0.19
         creation_rate = float(creation_credit_price) if creation_credit_price is not None else 0.19
         
@@ -226,7 +228,7 @@ def _create_visual_engine_user_for_org_user(
             "is_postpaid": bool(is_postpaid) if is_postpaid is not None else False,
             
             # User info from Org Module
-            "email": email,
+            "email": email_normalized,
             "fullName": name or "",
             
             # Plan and credits (empty on creation)
@@ -304,10 +306,15 @@ def _create_visual_engine_user_for_org_user(
             # Handle duplicate key error (email already exists)
             # This happens when user created VE account first, then migrated to Org Module
             if "E11000" in str(insert_error) and "email" in str(insert_error):
-                print(f"[ORG_AUTH] Email {email} already exists, attempting to link org_module_user_id")
+                print(f"[ORG_AUTH] Email {email_normalized} already exists, attempting to link org_module_user_id")
                 
                 # Find and update existing user with org linking
-                existing_user = auth_module.users_collection.find_one({"email": email})
+                existing_user = auth_module.users_collection.find_one({"email": email_normalized})
+                if not existing_user and email_normalized:
+                    # Extra safety for legacy records that may have different casing/spacing.
+                    existing_user = auth_module.users_collection.find_one(
+                        {"email": {"$regex": f"^{email_normalized}$", "$options": "i"}}
+                    )
                 if existing_user:
                     # Update with org linking fields
                     auth_module.users_collection.update_one(
