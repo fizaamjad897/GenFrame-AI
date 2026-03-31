@@ -1693,6 +1693,7 @@ ABSOLUTE PROHIBITIONS (DO NOT DO ANY OF THESE):
 ❌ Do NOT add frames, borders, shadows, or 3D effects
 ❌ Do NOT regenerate, redraw, or artistically reinterpret the content
 ❌ Do NOT change ANY text — keep exact same words, spelling, font, size, color
+❌ Do NOT duplicate, mirror, or repeat any foreground subject, logo, or text. Each element must appear exactly once.
 ❌ Do NOT add black bars, white bars, or colored padding
 ❌ Do NOT crop or remove any part of the image
 ❌ Do NOT add physical mockups, screens, monitors, kiosks
@@ -1867,14 +1868,17 @@ async def resize_image(
         src_w, src_h = pil_image.size
         max_dim = max(src_w, src_h)
 
-        # Match standard engine pricing logic.
+        has_custom_prompt = bool(prompt and prompt.strip()) and engine_type == "creation"
+
+        # Match Visual-Engine pricing logic:
+        # - 4 credits: plain transformation (image-only) or prompt-only generation
+        # - 6 credits: image + prompt edit (creation engine with a custom prompt)
         if is_postpaid:
-            # Postpaid is billed with org-configured per-credit rate; each successful image counts as 1 unit.
-            cost = 1.0
+            cost = 6.0 if has_custom_prompt else 4.0
         elif engine_type == "creation":
-            cost = 2.0 if max_dim <= 1024 else 4.4
+            cost = 6.0 if has_custom_prompt else 4.0
         else:
-            cost = 1.0 if max_dim <= 1024 else 2.5
+            cost = 4.0
         
         # Credit check — only for prepaid users (postpaid users have unlimited usage)
         if not is_postpaid:
@@ -1901,9 +1905,10 @@ async def resize_image(
                 f"Keep all content identical — same text, same placement, same colors, same everything. "
                 f"Fill the entire {tw}x{th} canvas with no empty space, no bars, no borders. "
                 f"Output one single image only. "
+                f"ZERO DUPLICATION: Do not repeat, mirror, or create multiple instances of any text or objects; each element must appear exactly once. "
                 f"Make sure there is no changes in the content and input image should be exact as output image with changed dimensions."
             )
-            if prompt and prompt.strip():
+            if has_custom_prompt:
                 resize_prompt += f" {prompt}"
             print(f"[GLENN] Prompt: {resize_prompt}")
             
@@ -2116,17 +2121,14 @@ async def resize_image(
         
         is_postpaid = bool(current_user.get("is_postpaid", False))
 
-        # Calculate token cost based on user requirements:
-        # Creation Engine: <= 1024: 2.0, > 1024: 4.4
-        # Transformation Engine: <= 1024: 1.0, > 1024: 2.5
-        tokens_to_deduct = 1.0
-        if is_postpaid:
-            # Postpaid: usage is counted per successful output image.
-            tokens_to_deduct = 1.0
-        elif engine_type == "creation":
-            tokens_to_deduct = 2.0 if max_dim <= 1024 else 4.4
-        else:
-            tokens_to_deduct = 1.0 if max_dim <= 1024 else 2.5
+        has_custom_prompt = bool(prompt and prompt.strip()) and engine_type == "creation"
+        has_image = pil_image is not None
+
+        # Match Visual-Engine pricing logic:
+        # - 4 credits: plain transformation (image-only) or prompt-only creation
+        # - 6 credits: creation engine with image + custom prompt
+        # Postpaid users are billed with the same unit cost; `consume_units` handles the ledger.
+        tokens_to_deduct = 6.0 if (engine_type == "creation" and has_image and has_custom_prompt) else 4.0
 
         if pil_image:
             width, height = pil_image.size
