@@ -2283,10 +2283,25 @@ async def resize_image(
                 print(f"❌ [PRIMARY] All Vertex AI models failed. Last error: {vertex_error}")
 
         # --- Second: Gemini (google-genai SDK - Fallback 1) ---
-        if not image_data and client:
+        # For prompt-only creation, prefer Glenn rotated Google keys first.
+        gemini_client_for_request = client
+        gemini_client_label = "default"
+        if engine_type == "creation" and not pil_image:
+            try:
+                glenn_candidate_client, glenn_key_label = glenn_get_google_client()
+                if glenn_candidate_client:
+                    gemini_client_for_request = glenn_candidate_client
+                    gemini_client_label = f"glenn/{glenn_key_label}"
+                    print(f"🤖 [CREATION] Using rotated Glenn client: {gemini_client_label}")
+                else:
+                    print("🤖 [CREATION] No Glenn Google key available, using default Gemini client")
+            except Exception as glenn_client_err:
+                print(f"⚠️ [CREATION] Failed to pick Glenn client, using default: {glenn_client_err}")
+
+        if not image_data and gemini_client_for_request:
             try:
                 model_name = "gemini-3-pro-image-preview"
-                print(f"🤖 [FALLBACK] Calling {model_name} (Gemini SDK) with prompt: '{use_prompt[:50]}...'")
+                print(f"🤖 [FALLBACK] Calling {model_name} (Gemini SDK, client={gemini_client_label}) with prompt: '{use_prompt[:50]}...'")
 
                 # Build contents based on whether we have an image
                 if pil_image:
@@ -2294,7 +2309,7 @@ async def resize_image(
                 else:
                     contents = [use_prompt]
 
-                response = client.models.generate_content(
+                response = gemini_client_for_request.models.generate_content(
                     model=model_name,
                     contents=contents,
                     config=types.GenerateContentConfig(
@@ -2313,6 +2328,15 @@ async def resize_image(
                             image_data = extracted
                             print(f"🖼️ [FALLBACK] Extracted Gemini SDK image: {len(image_data)} bytes")
                             break
+
+                # Track Glenn key usage only when it was actually used successfully.
+                if image_data and gemini_client_label.startswith("glenn/"):
+                    try:
+                        key_label = gemini_client_label.split("/", 1)[1]
+                        if key_label in ("key_1", "key_2", "key_3"):
+                            glenn_increment_counter(key_label)
+                    except Exception as glenn_counter_err:
+                        print(f"⚠️ [CREATION] Could not increment Glenn counter: {glenn_counter_err}")
 
                 if not image_data:
                     print(f"❌ [FALLBACK] No image data in Gemini SDK response.")
