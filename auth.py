@@ -204,7 +204,6 @@ def create_user(user_data: UserRegister):
             "addon_units_used": 0.0,
             "addon_units_max": 0.0,
             "remaining_units": float(DEFAULT_SIGNUP_CREDITS),
-            "overageRate": 0.19,
         },
         # Engine-specific isolated data
         "engine_data": {
@@ -216,7 +215,6 @@ def create_user(user_data: UserRegister):
                     "addon_units_used": 0.0,
                     "addon_units_max": 0.0,
                     "remaining_units": float(DEFAULT_SIGNUP_CREDITS),
-                    "overageRate": 0.19,
                 },
                 "is_pending_cancellation": False,
                 "stripeSubscriptionId": None,
@@ -230,7 +228,6 @@ def create_user(user_data: UserRegister):
                     "addon_units_used": 0.0,
                     "addon_units_max": 0.0,
                     "remaining_units": 0.0,
-                    "overageRate": 0.19,
                 },
                 "is_pending_cancellation": False,
                 "stripeSubscriptionId": None,
@@ -615,7 +612,7 @@ def consume_units(user_id: str, amount: float = 1.0, engine_type: str = "transfo
             "monthly_units_max": monthly_max,
             "addon_units_used": addon_used,
             "addon_units_max": addon_max,
-            "overageRate": float(credits.get("overageRate", 0.19)),
+            "overageRate": float(credits.get("overageRate", 1.5)),
             "remaining_units": 0.0,
         }
 
@@ -1112,8 +1109,8 @@ def generate_monthly_bill(user_id: str):
         transformation_used = float(transformation_credits.get("monthly_units_used", 0.0))
         creation_used = float(creation_credits.get("monthly_units_used", 0.0))
 
-        transformation_rate = float(transformation_credits.get("overageRate", 0.19))
-        creation_rate = float(creation_credits.get("overageRate", 0.19))
+        transformation_rate = float(transformation_credits.get("overageRate", 1.5))
+        creation_rate = float(creation_credits.get("overageRate", 1.5))
 
         transformation_amount = round(transformation_used * transformation_rate, 2)
         creation_amount = round(creation_used * creation_rate, 2)
