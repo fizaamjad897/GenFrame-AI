@@ -2050,7 +2050,7 @@ async def resize_image(
                 aspect_ratio=gemini_aspect_ratio,
                 success=True,
                 image_url=uploaded_url,
-                prompt=resize_prompt,
+                prompt=prompt,
                 target_dims=[tw, th]
             )
             
@@ -2536,7 +2536,7 @@ async def resize_image(
             aspect_ratio=aspect_ratio,
             success=True,
             image_url=uploaded_url,
-            prompt=use_prompt if 'use_prompt' in dir() else prompt,
+            prompt=prompt,
             target_dims=[target_width, target_height] if target_width and target_height else None
         )
 
@@ -2558,7 +2558,7 @@ async def resize_image(
                 aspect_ratio=aspect_ratio,
                 success=False,
                 image_url=None,
-                prompt=use_prompt if 'use_prompt' in dir() else (prompt if 'prompt' in locals() else None)
+                prompt=prompt
             )
         except:
             pass
@@ -2579,7 +2579,8 @@ async def get_history(current_user = Depends(get_current_user)):
             {
                 "userId": user_id,
                 "success": True,
-                "imageUrl": {"$ne": None}
+                "imageUrl": {"$ne": None},
+                "is_deleted_from_s3": {"$ne": True}
             },
             sort=[("timestamp", -1)],
             limit=100
@@ -2601,6 +2602,69 @@ async def get_history(current_user = Depends(get_current_user)):
     except Exception as e:
         print(f"❌ [HISTORY] Error fetching history: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
+
+from urllib.parse import urlparse
+
+@app.delete("/api/dev/clean-user-archive")
+async def clean_user_archive(email: str = Body(..., embed=True), current_user = Depends(get_current_user)):
+    """
+    Delete a user's generated images from S3 and usage_logs DB.
+    Requires a valid Bearer Token from ANY authenticated user.
+    Usage: DELETE /api/dev/clean-user-archive with body {"email": "user@example.com"}
+    """
+    user = auth_module.get_user_by_email(email)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with email {email} not found")
+
+    user_id = str(user["_id"])
+    cursor = auth_module.usage_logs_collection.find(
+        {"userId": user_id, "imageUrl": {"$ne": None}, "success": True}
+    )
+    
+    docs = list(cursor)
+    if not docs:
+        return {"message": "No archive images found for user.", "deleted_count": 0}
+
+    # Gather S3 keys to delete
+    keys_to_delete = []
+    object_ids = []
+    
+    for doc in docs:
+        img_url = doc.get("imageUrl")
+        if img_url:
+            parsed = urlparse(img_url)
+            s3_key = parsed.path.lstrip('/')
+            
+            keys_to_delete.append({'Key': s3_key})
+            object_ids.append(doc["_id"])
+            
+    # S3 allows up to 1000 keys per delete_objects call
+    deleted_s3_count = 0
+    chunk_size = 1000
+    for i in range(0, len(keys_to_delete), chunk_size):
+        chunk = keys_to_delete[i:i+chunk_size]
+        try:
+            response = await run_blocking(
+                s3_client.delete_objects,
+                Bucket=DO_SPACES_BUCKET_NAME,
+                Delete={'Objects': chunk, 'Quiet': True}
+            )
+            deleted_s3_count += len(chunk)
+        except Exception as e:
+            print(f"Error deleting chunk from S3: {e}")
+            raise HTTPException(status_code=500, detail=f"S3 deletion error: {str(e)}")
+            
+    # Mark as deleted in DB
+    update_result = auth_module.usage_logs_collection.update_many(
+        {"_id": {"$in": object_ids}},
+        {"$set": {"is_deleted_from_s3": True, "deletedAt": datetime.utcnow()}}
+    )
+    
+    return {
+        "message": f"Successfully deleted {deleted_s3_count} objects from S3 and hidden from archive.",
+        "deleted_s3_count": deleted_s3_count,
+        "hidden_logs_count": update_result.modified_count
+    }
 
 @app.get("/")
 async def read_root():
