@@ -25,7 +25,8 @@ from auth import (
     send_password_reset_email, user_doc_to_response,
     get_all_plans, get_user_usage_stats, get_billing_history,
     generate_monthly_bill, log_usage,
-    consume_units, cancel_user_plan, update_user_plan
+    consume_units, cancel_user_plan, update_user_plan,
+    simulate_month_end_rollover, perform_all_postpaid_rollovers
 )
 import auth as auth_module
 import org_auth  # Organisation Module JWT validation
@@ -501,6 +502,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def billing_rollover_task():
+    """
+    Background loop to check if it's the 1st of the month and run rollovers.
+    """
+    print("🕒 [SYSTEM] Billing rollover background task started")
+    while True:
+        try:
+            now = datetime.utcnow()
+            # If it's the 1st day of the month
+            if now.day == 1:
+                # IMPORTANT: perform_all_postpaid_rollovers is synchronous (blocking).
+                # We use asyncio.to_thread to run it in a separate side-thread so it doesn't 
+                # freeze the main server event loop for other users.
+                success = await asyncio.to_thread(perform_all_postpaid_rollovers)
+                if success:
+                    print(f"✅ [SYSTEM] Automated rollover for {now.strftime('%Y-%m')} completed successfully")
+            
+            # Wait 1 hour before checking again
+            await asyncio.sleep(3600)
+        except Exception as e:
+            print(f"❌ [SYSTEM] Error in billing rollover task: {e}")
+            await asyncio.sleep(600)  # Wait 10 mins before retry on error
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(billing_rollover_task())
+
 from fastapi.exceptions import RequestValidationError
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -578,6 +606,25 @@ def get_current_user(request: Request, authorization: str = Header(None), x_api_
     
     # No auth method succeeded
     raise HTTPException(status_code=401, detail="Invalid or expired credentials")
+
+def get_admin_user(current_user = Depends(get_current_user)):
+    """
+    Dependency to ensure the current user has administrative privileges.
+    """
+    # 1. Check for 'admin' role in Organization Context (preferred for new users)
+    org_context = current_user.get("_org_context", {})
+    org_role = org_context.get("role", "").lower()
+    
+    # 2. Check for 'admin' role in local user record (fallback for legacy/local users)
+    local_role = str(current_user.get("role") or "").lower()
+    
+    # 3. Specific owner/tester fallback
+    is_owner = current_user.get("email") == "muhammadhamzafaisal146@gmail.com"
+    
+    if org_role == "admin" or local_role == "admin" or is_owner:
+        return current_user
+        
+    raise HTTPException(status_code=403, detail="Administrative privileges required")
 
 # Initialize Gemini Client (lazy init or global if key is present)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -1546,6 +1593,7 @@ async def generate_bill(current_user = Depends(get_current_user)):
     return bill
 
 
+
 # ─── AI Content-Aware Resize Utilities ───────────────────────────────────────
 
 from PIL import ImageEnhance, ImageFilter
@@ -1874,7 +1922,7 @@ async def resize_image(
         # - 4 credits: plain transformation (image-only) or prompt-only generation
         # - 6 credits: image + prompt edit (creation engine with a custom prompt)
         if is_postpaid:
-            cost = 6.0 if has_custom_prompt else 4.0
+            cost = 1.0
         elif engine_type == "creation":
             cost = 6.0 if has_custom_prompt else 4.0
         else:
@@ -2124,17 +2172,19 @@ async def resize_image(
         has_custom_prompt = bool(prompt and prompt.strip()) and engine_type == "creation"
         has_image = pil_image is not None
 
-        # Match Visual-Engine pricing logic:
-        # - 4 credits: plain transformation (image-only) or prompt-only creation
-        # - 6 credits: creation engine with image + custom prompt
-        # Postpaid users are billed with the same unit cost; `consume_units` handles the ledger.
-        tokens_to_deduct = 6.0 if (engine_type == "creation" and has_image and has_custom_prompt) else 4.0
+        # Credit cost logic:
+        # POSTPAID: Always 1 credit per operation (dollar cost is dynamic via per-credit rate)
+        # PREPAID:  4 credits base, 6 credits for creation engine with image + custom prompt
+        if is_postpaid:
+            tokens_to_deduct = 1.0
+        else:
+            tokens_to_deduct = 6.0 if (engine_type == "creation" and has_image and has_custom_prompt) else 4.0
 
         if pil_image:
             width, height = pil_image.size
-            print(f"🖼️ [RESIZE] Image: {width}x{height} ({max_dim}px). Engine: {engine_type}. Cost: {tokens_to_deduct} tokens.")
+            print(f"🖼️ [RESIZE] Image: {width}x{height} ({max_dim}px). Engine: {engine_type}. Postpaid: {is_postpaid}. Cost: {tokens_to_deduct} credits.")
         else:
-            print(f"🎨 [GENERATE] Prompt-only generation ({max_dim}px default). Engine: {engine_type}. Cost: {tokens_to_deduct} tokens.")
+            print(f"🎨 [GENERATE] Prompt-only generation ({max_dim}px default). Engine: {engine_type}. Postpaid: {is_postpaid}. Cost: {tokens_to_deduct} credits.")
 
         # Check user's credits
         user_id = str(current_user["_id"])
@@ -2667,6 +2717,22 @@ async def clean_user_archive(email: str = Body(..., embed=True), current_user = 
         "deleted_s3_count": deleted_s3_count,
         "hidden_logs_count": update_result.modified_count
     }
+
+@app.post("/api/admin/trigger-billing-rollover")
+async def trigger_billing_rollover(current_user = Depends(get_admin_user)):
+    """
+    Manually trigger the monthly billing rollover for all postpaid users.
+    Useful for testing or if the automated task was missed.
+    We run this in a thread to prevent blocking the entire server during bulk processing.
+    """
+    try:
+        success = await asyncio.to_thread(perform_all_postpaid_rollovers, force=True)
+        if success:
+            return {"message": "Monthly rollover triggered and processed successfully."}
+        else:
+            return {"message": "Monthly rollover already completed for the current month."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 async def read_root():

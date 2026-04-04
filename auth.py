@@ -74,6 +74,7 @@ try:
     glenn_key_usage_collection = client["visual_engine"]["glenn_key_usage"]  # Shared DB for both backends
     org_db_name = os.getenv("ORG_DB_NAME", "organisation_db").strip("'\" ")
     org_users_collection = client[org_db_name]["users"]
+    org_organisations_collection = client[org_db_name]["Organisations"]
     print("Connected to MongoDB successfully")
 
     # Create indexes
@@ -102,7 +103,7 @@ except Exception as e:
 
 
 def _sync_org_module_credits_used(user_doc: dict) -> None:
-    """Best-effort sync of creditsUsed into Organisation Module users collection."""
+    """Best-effort sync of per-engine creditsUsed into Organisation Module users collection."""
     if not user_doc or org_users_collection is None:
         return
 
@@ -125,7 +126,11 @@ def _sync_org_module_credits_used(user_doc: dict) -> None:
     try:
         org_users_collection.update_one(
             {"id": org_user_id},
-            {"$set": {"creditsUsed": total_used}},
+            {"$set": {
+                "creditsUsed": total_used,
+                "transformationCreditsUsed": transformation_used,
+                "creationCreditsUsed": creation_used,
+            }},
         )
     except Exception as e:
         print(f"[CREDITS_SYNC] Failed syncing org creditsUsed for {org_user_id}: {e}")
@@ -910,6 +915,7 @@ def user_doc_to_response(user_doc):
         "email": user_doc["email"],
         "fullName": user_doc.get("fullName", ""),
         "avatar": user_doc.get("avatar"),
+        "role": user_doc.get("_org_context", {}).get("role") or user_doc.get("role", "user"),
         "plan": user_doc.get("plan", ""),
         "engineType": user_doc.get("engineType", "transformation"),
         "units": user_doc.get("units", 0),
@@ -1014,6 +1020,7 @@ def send_billing_statement_email(user: dict, bill_doc: dict):
         plan_name = bill_doc.get("plan", "-")
         total_amount = float(bill_doc.get("totalAmount", 0.0))
         units_used = float(bill_doc.get("unitsUsed", 0.0))
+        base_charge = float(bill_doc.get("baseCharge", 0.0))
         overage_charge = float(bill_doc.get("overageCharge", 0.0))
 
         engine_breakdown = bill_doc.get("engineBreakdown") or {}
@@ -1046,6 +1053,10 @@ def send_billing_statement_email(user: dict, bill_doc: dict):
                     <tr>
                         <td style='padding:8px;border:1px solid #e5e7eb;background:#f8fafc'><strong>Total Units Used</strong></td>
                         <td style='padding:8px;border:1px solid #e5e7eb'>{units_used:.4f}</td>
+                    </tr>
+                    <tr>
+                        <td style='padding:8px;border:1px solid #e5e7eb;background:#f8fafc'><strong>Minimum Charge</strong></td>
+                        <td style='padding:8px;border:1px solid #e5e7eb'>${base_charge:.2f}</td>
                     </tr>
                     <tr>
                         <td style='padding:8px;border:1px solid #e5e7eb;background:#f8fafc'><strong>Overage Charge</strong></td>
@@ -1093,14 +1104,18 @@ def generate_monthly_bill(user_id: str):
     if not user:
         return None
 
-    # Postpaid users are billed manually: usage * org-configured per-credit rate.
+    # Postpaid users are billed with threshold-based minimum commitment per engine.
     if user.get("is_postpaid", False):
         now = datetime.utcnow()
-        period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        if now.month == 12:
-            period_end = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        # Postpaid bills are typically generated on the 1st of the month for the PREVIOUS month.
+        # period_end = 1st of current month
+        period_end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        # period_start = 1st of previous month
+        if period_end.month == 1:
+            period_start = period_end.replace(year=period_end.year - 1, month=12)
         else:
-            period_end = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            period_start = period_end.replace(month=period_end.month - 1)
 
         engine_data = user.get("engine_data", {}) or {}
         transformation_credits = ((engine_data.get("transformation") or {}).get("credits") or {})
@@ -1109,39 +1124,86 @@ def generate_monthly_bill(user_id: str):
         transformation_used = float(transformation_credits.get("monthly_units_used", 0.0))
         creation_used = float(creation_credits.get("monthly_units_used", 0.0))
 
-        transformation_rate = float(transformation_credits.get("overageRate", 1.5))
-        creation_rate = float(creation_credits.get("overageRate", 1.5))
+        transformation_rate = float(transformation_credits.get("overageRate", 0))
+        creation_rate = float(creation_credits.get("overageRate", 0))
 
-        transformation_amount = round(transformation_used * transformation_rate, 2)
-        creation_amount = round(creation_used * creation_rate, 2)
-        total_amount = round(transformation_amount + creation_amount, 2)
+        # Thresholds from org module (synced on login)
+        transformation_threshold = float(user.get("transformation_threshold", 0))
+        creation_threshold = float(user.get("creation_threshold", 0))
+
+        # Threshold billing:
+        # - If usage >= threshold: threshold * rate + (usage - threshold) * (rate * 1.5)
+        # - If usage < threshold:  threshold * rate (minimum commitment)
+        # Threshold billing logic refined to separate base vs overage
+        def calc_engine_bill_breakdown(used, threshold, rate):
+            # If no threshold set, everything is considered base usage
+            if threshold <= 0:
+                return round(used * rate, 2), 0.0
+            
+            base_amount = round(threshold * rate, 2)
+            if used >= threshold:
+                overage_amount = round((used - threshold) * (rate * 1.5), 2)
+                return base_amount, overage_amount
+            else:
+                # Minimum commitment (base_amount) applies, 0 overage
+                return base_amount, 0.0
+
+        t_base, t_overage = calc_engine_bill_breakdown(transformation_used, transformation_threshold, transformation_rate)
+        c_base, c_overage = calc_engine_bill_breakdown(creation_used, creation_threshold, creation_rate)
+        
+        total_base = round(t_base + c_base, 2)
+        total_overage = round(t_overage + c_overage, 2)
+        total_amount = round(total_base + total_overage, 2)
 
         bill_doc = {
             "userId": user_id,
             "billingPeriodStart": period_start,
             "billingPeriodEnd": period_end,
             "plan": "PostPaid Manual Invoice",
-            "basePrice": 0.0,
+            "basePrice": total_base,
             "includedUnits": 0,
             "unitsUsed": round(transformation_used + creation_used, 4),
-            "overageUnits": round(transformation_used + creation_used, 4),
-            "overageCharge": total_amount,
+            "overageUnits": 0, # Not strictly tracked as a single number anymore
+            "baseCharge": total_base,
+            "overageCharge": total_overage,
             "totalAmount": total_amount,
             "engineBreakdown": {
                 "transformation": {
                     "unitsUsed": round(transformation_used, 4),
+                    "threshold": transformation_threshold,
                     "ratePerCredit": transformation_rate,
-                    "amount": transformation_amount,
+                    "overageRate": round(transformation_rate * 1.5, 4),
+                    "baseCharge": t_base,
+                    "overageCharge": t_overage,
+                    "amount": round(t_base + t_overage, 2),
                 },
                 "creation": {
                     "unitsUsed": round(creation_used, 4),
+                    "threshold": creation_threshold,
                     "ratePerCredit": creation_rate,
-                    "amount": creation_amount,
+                    "overageRate": round(creation_rate * 1.5, 4),
+                    "baseCharge": c_base,
+                    "overageCharge": c_overage,
+                    "amount": round(c_base + c_overage, 2),
                 },
             },
             "generatedAt": datetime.utcnow(),
             "status": "pending",
         }
+
+        # DEDUPLICATION: Before inserting and sending, check if an identical bill was already emailed.
+        existing_emailed_bill = billing_records_collection.find_one({
+            "userId": user_id,
+            "billingPeriodStart": period_start,
+            "emailSent": True
+        })
+
+        if existing_emailed_bill:
+            print(f"[BILLING] Skipping duplicate email for user {user_id} period {period_start}")
+            bill_doc["_id"] = existing_emailed_bill["_id"]
+            bill_doc["emailSent"] = True
+            bill_doc["emailSentAt"] = existing_emailed_bill.get("emailSentAt")
+            return bill_doc
 
         result = billing_records_collection.insert_one(bill_doc)
         bill_doc["_id"] = result.inserted_id
@@ -1234,3 +1296,190 @@ def get_all_plans():
     """Get all active pricing plans"""
     plans = list(plans_collection.find({"isActive": True}))
     return plans
+
+
+def simulate_month_end_rollover(user_id: str):
+    """
+    Simulate month-end billing rollover for testing.
+    1. Snapshot current engine credits into prev-month fields on org module user
+    2. Generate the bill for the current period
+    3. Reset monthly_units_used to 0 for all engines in the Python backend
+    Returns the generated bill document.
+    """
+    from bson import ObjectId
+    user = get_user_by_id(user_id)
+    if not user:
+        return None
+
+    if not user.get("is_postpaid", False):
+        return {"error": "Month-end simulation only applies to postpaid users"}
+
+    engine_data = user.get("engine_data", {}) or {}
+    transformation_credits = ((engine_data.get("transformation") or {}).get("credits") or {})
+    creation_credits = ((engine_data.get("creation") or {}).get("credits") or {})
+
+    transformation_used = float(transformation_credits.get("monthly_units_used", 0.0))
+    creation_used = float(creation_credits.get("monthly_units_used", 0.0))
+
+    # 1. Snapshot to org module user (prev month fields)
+    org_user_id = user.get("org_module_user_id")
+    if org_user_id and org_users_collection is not None:
+        try:
+            org_users_collection.update_one(
+                {"id": org_user_id},
+                {"$set": {
+                    "prevMonthTransformationCreditsUsed": transformation_used,
+                    "prevMonthCreationCreditsUsed": creation_used,
+                    "lastBillingRolloverDate": datetime.utcnow(),
+                    # Reset current month counters on org module side
+                    "transformationCreditsUsed": 0,
+                    "creationCreditsUsed": 0,
+                    "creditsUsed": 0,
+                }},
+            )
+        except Exception as e:
+            print(f"[MONTH_END] Failed to update org module user: {e}")
+
+    # 2. Generate bill BEFORE resetting (uses current usage)
+    # This function handles its own email sending and DB status updates
+    bill = generate_monthly_bill(user_id)
+
+    # 3. Reset monthly_units_used to 0 in Python backend
+    reset_updates = {}
+    for engine_key in ["transformation", "creation"]:
+        engine_info = engine_data.get(engine_key)
+        if engine_info and "credits" in engine_info:
+            engine_info["credits"]["monthly_units_used"] = 0.0
+            engine_info["credits"]["remaining_units"] = 0.0
+    reset_updates["engine_data"] = engine_data
+    reset_updates["updatedAt"] = datetime.utcnow()
+
+    # Also reset top-level credits if present
+    if user.get("credits"):
+        reset_updates["credits.monthly_units_used"] = 0.0
+    reset_updates["units"] = 0
+
+    users_collection.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": reset_updates}
+    )
+
+    return bill
+
+def perform_all_postpaid_rollovers(force: bool = False):
+    """
+    Drive the monthly billing cycle by iterating through ACTIVE PostPaid Organizations
+    in the Organisation Module. This ensures that:
+    1. Deleted/Inactive organizations are NOT processed.
+    2. New users in a postpaid org (who haven't logged in yet) ARE processed.
+    """
+    now = datetime.utcnow()
+    current_month_key = now.strftime("%Y-%m")
+    
+    # Check if we've already done the rollover for this month
+    if not force:
+        rollover_log = billing_records_collection.find_one({"_id": f"SYSTEM_ROLLOVER_{current_month_key}"})
+        if rollover_log and rollover_log.get("status") == "completed":
+            print(f"[SYSTEM] Monthly rollover for {current_month_key} already completed at {rollover_log.get('completedAt')}")
+            return False
+
+    print(f"[SYSTEM] Starting system-wide monthly rollover for {current_month_key}...")
+    
+    # Mark as started
+    billing_records_collection.update_one(
+        {"_id": f"SYSTEM_ROLLOVER_{current_month_key}"},
+        {"$set": {"status": "in_progress", "startedAt": now}},
+        upsert=True
+    )
+
+    try:
+        # 1. Find all active PostPaid organizations
+        postpaid_orgs = list(org_organisations_collection.find({
+            "customerType": "PostPaid"
+        }))
+        
+        total_processed = 0
+        total_orgs = len(postpaid_orgs)
+        print(f"[SYSTEM] Found {total_orgs} active PostPaid organizations.")
+
+        for org in postpaid_orgs:
+            org_id = org.get("id")  # Use the UUID 'id' field, not the MongoDB '_id'
+            org_name = org.get("name", "Unknown")
+            
+            if not org_id:
+                print(f"[SYSTEM]   SKIPPING Org {org_name}: Missing UUID 'id'")
+                continue
+
+            # Sync rates/thresholds from org doc
+            org_transform_rate = float(org.get("transformationCreditPrice", 0.19))
+            org_creation_rate = float(org.get("creationCreditPrice", 0.19))
+            org_transform_threshold = float(org.get("transformationCreditsThreshold", 0))
+            org_creation_threshold = float(org.get("creationCreditsThreshold", 0))
+
+            # 2. Get all users for this organization (using 'orgId' uuid according to schema)
+            org_users = list(org_users_collection.find({"orgId": org_id}))
+            print(f"[SYSTEM] - Processing Org: {org_name} ({len(org_users)} users)")
+
+            for org_user in org_users:
+                user_email = org_user.get("email")
+                org_module_user_id = org_user.get("id") # The UUID 'id' from org module
+                
+                if not user_email:
+                    continue
+
+                # 3. Find/Sync Visual Engine user record
+                ve_user = users_collection.find_one({
+                    "$or": [
+                        {"org_module_user_id": org_module_user_id},
+                        {"email": user_email.lower()}
+                    ]
+                })
+
+                if not ve_user:
+                    print(f"[SYSTEM]   SKIPPING user {user_email}: Has not logged into Visual Engine yet.")
+                    continue
+                
+                user_id = str(ve_user["_id"])
+
+                # 4. Proactively ensure thresholds/is_postpaid flags are up to date 
+                # (in case org was switched to postpaid recently)
+                users_collection.update_one(
+                    {"_id": ve_user["_id"]},
+                    {"$set": {
+                        "is_postpaid": True,
+                        "transformation_threshold": org_transform_threshold,
+                        "creation_threshold": org_creation_threshold,
+                        "engine_data.transformation.credits.overageRate": org_transform_rate,
+                        "engine_data.creation.credits.overageRate": org_creation_rate,
+                        "updatedAt": datetime.utcnow()
+                    }}
+                )
+
+                # 5. Perform the actual rollover (reset, bill, email)
+                try:
+                    simulate_month_end_rollover(user_id)
+                    total_processed += 1
+                except Exception as e:
+                    print(f"[SYSTEM]   ERROR during rollover for {user_email}: {e}")
+
+        # Mark as completed
+        billing_records_collection.update_one(
+            {"_id": f"SYSTEM_ROLLOVER_{current_month_key}"},
+            {"$set": {
+                "status": "completed", 
+                "completedAt": datetime.utcnow(), 
+                "processedCount": total_processed,
+                "orgCount": total_orgs
+            }},
+            upsert=True
+        )
+        print(f"[SYSTEM] Monthly rollover COMPLETED. Total processed: {total_processed} users across {total_orgs} orgs.")
+        return True
+
+    except Exception as e:
+        print(f"[SYSTEM] FATAL ERROR during bulk rollover: {e}")
+        billing_records_collection.update_one(
+            {"_id": f"SYSTEM_ROLLOVER_{current_month_key}"},
+            {"$set": {"status": "failed", "error": str(e), "failedAt": datetime.utcnow()}}
+        )
+        return False

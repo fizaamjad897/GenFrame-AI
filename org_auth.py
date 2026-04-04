@@ -57,6 +57,8 @@ def validate_org_module_jwt(token: str) -> dict:
         org_customer_type_raw = payload.get("orgCustomerType")
         org_transform_price_raw = payload.get("orgTransformationCreditPrice")
         org_creation_price_raw = payload.get("orgCreationCreditPrice")
+        org_transform_threshold_raw = payload.get("orgTransformationCreditsThreshold")
+        org_creation_threshold_raw = payload.get("orgCreationCreditsThreshold")
         org_customer_type = str(org_customer_type_raw) if org_customer_type_raw is not None else None
         is_postpaid: Optional[bool] = None
         if org_customer_type is not None:
@@ -69,6 +71,8 @@ def validate_org_module_jwt(token: str) -> dict:
 
         org_transform_price: Optional[float] = None
         org_creation_price: Optional[float] = None
+        org_transform_threshold: Optional[float] = None
+        org_creation_threshold: Optional[float] = None
         try:
             if org_transform_price_raw is not None:
                 org_transform_price = float(org_transform_price_raw)
@@ -79,6 +83,16 @@ def validate_org_module_jwt(token: str) -> dict:
                 org_creation_price = float(org_creation_price_raw)
         except (TypeError, ValueError):
             org_creation_price = None
+        try:
+            if org_transform_threshold_raw is not None:
+                org_transform_threshold = float(org_transform_threshold_raw)
+        except (TypeError, ValueError):
+            org_transform_threshold = None
+        try:
+            if org_creation_threshold_raw is not None:
+                org_creation_threshold = float(org_creation_threshold_raw)
+        except (TypeError, ValueError):
+            org_creation_threshold = None
         
         # Validate required fields
         if not org_user_id:
@@ -137,6 +151,16 @@ def validate_org_module_jwt(token: str) -> dict:
                 creation_credits["overageRate"] = org_creation_price
                 should_update = True
 
+            # Sync thresholds from org module
+            current_transform_threshold = float(visual_engine_user.get("transformation_threshold", 0))
+            current_creation_threshold = float(visual_engine_user.get("creation_threshold", 0))
+            if org_transform_threshold is not None and current_transform_threshold != org_transform_threshold:
+                update_set["transformation_threshold"] = org_transform_threshold
+                should_update = True
+            if org_creation_threshold is not None and current_creation_threshold != org_creation_threshold:
+                update_set["creation_threshold"] = org_creation_threshold
+                should_update = True
+
             if should_update:
                 auth_module.users_collection.update_one(
                     {"_id": visual_engine_user["_id"]},
@@ -166,6 +190,8 @@ def validate_org_module_jwt(token: str) -> dict:
             "customer_type": org_customer_type,
             "transformation_credit_price": org_transform_price,
             "creation_credit_price": org_creation_price,
+            "transformation_threshold": org_transform_threshold,
+            "creation_threshold": org_creation_threshold,
         }
         
         return visual_engine_user
