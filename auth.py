@@ -928,6 +928,7 @@ def user_doc_to_response(user_doc):
         "stripeSubscriptionId": user_doc.get("stripeSubscriptionId"),
         "is_postpaid": user_doc.get("is_postpaid", False),
         "createdAt": user_doc.get("createdAt"),
+        "_org_context": org_context,
     }
 
 def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, image_url: str = None, prompt: str = None, target_dims: list = None):

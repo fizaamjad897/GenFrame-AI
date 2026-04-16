@@ -626,6 +626,31 @@ def get_admin_user(current_user = Depends(get_current_user)):
         
     raise HTTPException(status_code=403, detail="Administrative privileges required")
 
+
+def _can_use_custom_resize(current_user: dict) -> bool:
+    """Allow custom-resize for Glen/HamzaFaisal orgs and their sub-orgs using org-id-based checks."""
+    # Allowed org UUIDs
+    ALLOWED_ORG_IDS = {
+        "d9f031dc-ba8f-4397-9534-81612cc8a686",  # Glen's org ID
+        "35cd976c-d4ac-4e76-8dde-d8065334fa42",  # HamzaFaisal's org ID
+    }
+    
+    # Org-id-based check (primary)
+    org_context = (current_user.get("_org_context") or {}) if isinstance(current_user, dict) else {}
+    org_id = str(org_context.get("org_id") or "").strip()
+    parent_org_id = str(org_context.get("parent_org_id") or "").strip()
+    
+    if org_id in ALLOWED_ORG_IDS or parent_org_id in ALLOWED_ORG_IDS:
+        return True
+    
+    # Email/domain fallback for testing
+    email = str(current_user.get("email") or "").strip().lower()
+    domain = email.split("@")[-1] if "@" in email else ""
+    if email == "muhammadhamzafaisal146@gmail.com" or domain == "fmctv.co.nz":
+        return True
+    
+    return False
+
 # Initialize Gemini Client (lazy init or global if key is present)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
@@ -2619,6 +2644,81 @@ async def resize_image(
             status_code=500,
             detail=f"Internal Server Error during image processing: {str(e)}"
         )
+
+
+@app.post("/api/custom-resize", response_class=JSONResponse)
+@app.post("/custom-resize", response_class=JSONResponse)
+async def custom_resize_image(
+    width: int = Form(...),
+    height: int = Form(...),
+    file: UploadFile = File(None),
+    prompt: str = Form(None),
+    engine_type: str = Form("transformation"),
+    current_user = Depends(get_current_user),
+):
+    """Custom resize endpoint using explicit pixel dimensions and shared resize pipeline."""
+    if not _can_use_custom_resize(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Custom resize is only enabled for the Glen account and approved sub-org users.",
+        )
+
+    MIN_DIM, MAX_DIM = 64, 4096
+    if not (MIN_DIM <= width <= MAX_DIM and MIN_DIM <= height <= MAX_DIM):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Dimensions must be between {MIN_DIM}px and {MAX_DIM}px. Got {width}x{height}.",
+        )
+
+    prompt_text = (prompt or "").strip()
+    if file is None and not prompt_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Either a file or a prompt must be provided",
+        )
+
+    # Keep behavior aligned with /api/resize pricing/validation paths.
+    effective_engine = (engine_type or "transformation").strip().lower()
+    if effective_engine not in {"transformation", "creation"}:
+        raise HTTPException(
+            status_code=400,
+            detail="engine_type must be either 'transformation' or 'creation'",
+        )
+    if prompt_text and effective_engine == "transformation":
+        effective_engine = "creation"
+    if file is None and prompt_text:
+        effective_engine = "creation"
+
+    requested_ratio = f"{width}:{height}"
+    mapped_ratio, _, _ = validate_aspect_ratio_smart(requested_ratio)
+
+    # Reuse existing resize pipeline to keep all checks and post-processing consistent.
+    base_response = await resize_image(
+        aspect_ratio=f"{width}x{height}",
+        engine_type=effective_engine,
+        file=file,
+        prompt=prompt,
+        current_user=current_user,
+    )
+
+    payload = {}
+    if isinstance(base_response, JSONResponse):
+        try:
+            import json
+
+            payload = json.loads(base_response.body.decode("utf-8")) if base_response.body else {}
+        except Exception:
+            payload = {}
+
+    payload.update(
+        {
+            "width": width,
+            "height": height,
+            "gemini_ratio": mapped_ratio,
+        }
+    )
+
+    return JSONResponse(content=payload, status_code=base_response.status_code)
 
 @app.get("/api/history")
 async def get_history(current_user = Depends(get_current_user)):
