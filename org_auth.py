@@ -180,9 +180,26 @@ def validate_org_module_jwt(token: str) -> dict:
                 creation_credit_price=org_creation_price,
             )
         
+        # Extract parent org ID (for sub-org access control)
+        parent_org_id = (
+            payload.get("parentOrgId")
+            or payload.get("orgParentId")
+            or payload.get("parent_org_id")
+        )
+        
+        # If parentOrgId not in JWT, query the org document to get it
+        if not parent_org_id and auth_module.org_organisations_collection is not None:
+            try:
+                org_doc = auth_module.org_organisations_collection.find_one({"id": org_id})
+                if org_doc:
+                    parent_org_id = org_doc.get("parentOrgId")
+            except Exception as e:
+                print(f"[ORG_AUTH] Failed to query org document for parentOrgId: {e}")
+        
         # Enrich user object with org context from JWT payload
         visual_engine_user["_org_context"] = {
             "org_id": org_id,
+            "parent_org_id": parent_org_id,
             "role": user_role,
             "org_name": payload.get("orgName"),
             "org_type": payload.get("orgTypeName"),
