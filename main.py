@@ -72,42 +72,147 @@ async def call_openrouter_image(contents: list) -> _GeminiLikeImageResponse:
     if not openrouter_key:
         raise RuntimeError("OPENROUTER_KEY not configured in .env")
 
-    message_parts = []
+    # Extract user_context and image dimensions
+    user_context = ""
+    src_w = None
+    src_h = None
+    
     for item in contents:
         if isinstance(item, str):
-            message_parts.append({"type": "text", "text": item})
+            user_context += item + " "
         elif isinstance(item, Image.Image):
-            buf = io.BytesIO()
-            item.save(buf, format="PNG")
-            b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-            message_parts.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{b64}"}
-            })
-        elif isinstance(item, types.Part):
-            inline = getattr(item, "inline_data", None)
-            if inline and getattr(inline, "data", None):
-                b64 = base64.b64encode(inline.data).decode("utf-8")
-                mime = getattr(inline, "mime_type", "image/png")
+            src_w, src_h = item.size
+        elif isinstance(item, (bytes, bytearray)):
+            # Try to get dimensions from bytes
+            try:
+                img = Image.open(io.BytesIO(item))
+                src_w, src_h = img.size
+            except:
+                pass
+    
+    user_context = user_context.strip()
+    
+    # Only use detailed prompt if we have dimensions, otherwise fall back to original behavior
+    if src_w and src_h:
+        # Use source dimensions as target for fallback behavior
+        tw = src_w
+        th = src_h
+
+        # Construct the detailed resize prompt
+        detailed_prompt = f"""TASK (read carefully):
+Redraw the input image as a NEW composition at exactly
+{tw} x {th} pixels. This is NOT a lazy stretch of one
+bitmap block and NOT "only add padding bars" unless that is truly the best way
+to keep all content visible with the same emphasis.
+
+WHAT YOU MUST PRESERVE (semantic lock):
+- The same subject matter, logos, icons, diagrams, products, people, and
+  scenery—nothing important removed or swapped out.
+- The same readable text (same words; same language). Do not change copy,
+  spelling, or branding.
+- The same color palette, contrast level, and overall graphic style (flat vs
+  photo, illustration style, etc.).
+- The same meaning: it should read as the same ad, slide, banner, or asset.
+
+WHAT YOU SHOULD DO (layout + redraw):
+- Output must look **freshly rendered** for this canvas size: clean edges,
+  appropriate typography scale for {tw}x{th}, balanced
+  margins—not a smeared upscale/downscale artifact.
+- **Preserve the main focal point** (hero, headline, primary logo, key
+  product): keep it dominant and in roughly the same visual priority as in
+  the source unless the new aspect ratio forces minor shifts.
+- If source aspect ratio ({src_w}:{src_h}) differs from target
+  ({tw}:{th}), use **intelligent rearrangement**: reflow
+  blocks, adjust spacing, stack or align elements, redistribute background—so
+  the full message still fits without cropping important content.
+- If aspect ratios are close, prefer **minimal change**: proportional scaling
+  and gentle spacing tweaks; keep composition and focus aligned with original.
+- Background may extend or simplify to fill the frame if it stays consistent
+  with the original style (no unrelated new scenes).
+
+HARD DON'TS:
+- Do not crop out logos, faces, legal text, or key product areas.
+- Do not replace elements with different objects or invent new messaging.
+- Do not apply a different art direction (e.g. photorealistic if source is flat
+  graphic), heavy filters, or "make it prettier" redesigns.
+
+OUTPUT:
+- Exactly {tw} x {th} pixels.
+- One coherent image; no collage seams or watermarks unless in source.
+
+USER CONTEXT (optional; must not contradict rules above):
+{user_context}
+""".strip()
+
+        message_parts = []
+        # Add the detailed prompt as text
+        message_parts.append({"type": "text", "text": detailed_prompt})
+        
+        # Add images
+        for item in contents:
+            if isinstance(item, Image.Image):
+                buf = io.BytesIO()
+                item.save(buf, format="PNG")
+                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
                 message_parts.append({
                     "type": "image_url",
-                    "image_url": {"url": f"data:{mime};base64,{b64}"}
+                    "image_url": {"url": f"data:image/png;base64,{b64}"}
+                })
+            elif isinstance(item, types.Part):
+                inline = getattr(item, "inline_data", None)
+                if inline and getattr(inline, "data", None):
+                    b64 = base64.b64encode(inline.data).decode("utf-8")
+                    mime = getattr(inline, "mime_type", "image/png")
+                    message_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64}"}
+                    })
+            elif isinstance(item, (bytes, bytearray)):
+                b64 = base64.b64encode(bytes(item)).decode("utf-8")
+                message_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{b64}"}
+                })
+
+        content = message_parts
+    else:
+        # Fall back to original behavior if we can't get dimensions
+        message_parts = []
+        for item in contents:
+            if isinstance(item, str):
+                message_parts.append({"type": "text", "text": item})
+            elif isinstance(item, Image.Image):
+                buf = io.BytesIO()
+                item.save(buf, format="PNG")
+                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                message_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{b64}"}
+                })
+            elif isinstance(item, types.Part):
+                inline = getattr(item, "inline_data", None)
+                if inline and getattr(inline, "data", None):
+                    b64 = base64.b64encode(inline.data).decode("utf-8")
+                    mime = getattr(inline, "mime_type", "image/png")
+                    message_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64}"}
+                    })
+                else:
+                    message_parts.append({"type": "text", "text": str(item)})
+            elif isinstance(item, (bytes, bytearray)):
+                b64 = base64.b64encode(bytes(item)).decode("utf-8")
+                message_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{b64}"}
                 })
             else:
                 message_parts.append({"type": "text", "text": str(item)})
-        elif isinstance(item, (bytes, bytearray)):
-            b64 = base64.b64encode(bytes(item)).decode("utf-8")
-            message_parts.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{b64}"}
-            })
-        else:
-            message_parts.append({"type": "text", "text": str(item)})
 
-    if all(p["type"] == "text" for p in message_parts):
-        content = " ".join(p["text"] for p in message_parts)
-    else:
-        content = message_parts
+        if all(p["type"] == "text" for p in message_parts):
+            content = " ".join(p["text"] for p in message_parts)
+        else:
+            content = message_parts
 
     payload = {
         "model": "google/gemini-3-pro-image-preview",
@@ -2460,13 +2565,71 @@ async def resize_image(
                 print(f"✅ [FALLBACK] Retrieved fallback image: {len(image_data)} bytes")
 
             except Exception as fallback_err:
-                print(f"❌ [FALLBACK] Fal.ai fallback failed: {fallback_err}")
-                # Final failure: throw the best error we had
-                base_error = vertex_error or gemini_error or fallback_err
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
-                )
+                print(f"❌ [FALLBACK] Fal.ai wrapper failed: {fallback_err}")
+
+                # Try direct SeedDream fallback if we have an input image and a SeedDream key
+                if pil_image:
+                    seedream_key = os.getenv("SEEDREAM_KEY")
+                    if seedream_key:
+                        try:
+                            print("🛟 [FALLBACK] Invoking SeedDream via fal.ai direct endpoint")
+                            b64 = base64.b64encode(image_bytes).decode("utf-8")
+                            image_data_uris = [f"data:image/png;base64,{b64}"]
+                            sd_payload = {
+                                "prompt": f"IMAGE ONLY. FULL FRAME DIGITAL CONTENT. NO physical mockups. {use_prompt}",
+                                "image_urls": image_data_uris,
+                                "sync_mode": True,
+                            }
+                            async with httpx.AsyncClient(timeout=120.0) as sd_client:
+                                sd_resp = await sd_client.post(
+                                    "https://fal.run/fal-ai/bytedance/seedream/v4.5/edit",
+                                    headers={
+                                        "Authorization": f"Key {seedream_key}",
+                                        "Content-Type": "application/json",
+                                    },
+                                    json=sd_payload,
+                                )
+                            sd_resp.raise_for_status()
+
+                            sd_result = sd_resp.json()
+                            sd_images = sd_result.get("images", [])
+                            if not sd_images:
+                                raise RuntimeError("SeedDream returned no images")
+
+                            sd_image_url = sd_images[0].get("url")
+                            if not sd_image_url:
+                                raise RuntimeError("SeedDream response contained no image URL")
+
+                            if sd_image_url.startswith("data:"):
+                                _, sd_encoded = sd_image_url.split(",", 1)
+                                image_data = base64.b64decode(sd_encoded)
+                            else:
+                                async with httpx.AsyncClient(timeout=60.0) as sd_client:
+                                    img_resp = await sd_client.get(sd_image_url)
+                                img_resp.raise_for_status()
+                                image_data = img_resp.content
+
+                            print(f"✅ [SeedDream] Retrieved fallback image: {len(image_data)} bytes")
+                        except Exception as sd_err:
+                            print(f"❌ [SeedDream] Fallback failed: {sd_err}")
+                            base_error = vertex_error or gemini_error or fallback_err
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Image generation failed (Vertex + Gemini + Fal.ai + SeedDream). Reason: {base_error}"
+                            )
+                    else:
+                        print("ℹ️ [SeedDream] SEEDREAM_KEY not configured, skipping direct SeedDream fallback")
+                        base_error = vertex_error or gemini_error or fallback_err
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
+                        )
+                else:
+                    base_error = vertex_error or gemini_error or fallback_err
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
+                    )
 
         # 5. Post-process: Resize to exact requested dimensions
         # Standard ratio → pixel mapping for consistent output
