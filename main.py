@@ -2540,13 +2540,71 @@ async def resize_image(
                 print(f"✅ [FALLBACK] Retrieved fallback image: {len(image_data)} bytes")
 
             except Exception as fallback_err:
-                print(f"❌ [FALLBACK] Fal.ai fallback failed: {fallback_err}")
-                # Final failure: throw the best error we had
-                base_error = vertex_error or gemini_error or fallback_err
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
-                )
+                print(f"❌ [FALLBACK] Fal.ai wrapper failed: {fallback_err}")
+
+                # Try direct SeedDream fallback if we have an input image and a SeedDream key
+                if pil_image:
+                    seedream_key = os.getenv("SEEDREAM_KEY")
+                    if seedream_key:
+                        try:
+                            print("🛟 [FALLBACK] Invoking SeedDream via fal.ai direct endpoint")
+                            b64 = base64.b64encode(image_bytes).decode("utf-8")
+                            image_data_uris = [f"data:image/png;base64,{b64}"]
+                            sd_payload = {
+                                "prompt": f"IMAGE ONLY. FULL FRAME DIGITAL CONTENT. NO physical mockups. {use_prompt}",
+                                "image_urls": image_data_uris,
+                                "sync_mode": True,
+                            }
+                            async with httpx.AsyncClient(timeout=120.0) as sd_client:
+                                sd_resp = await sd_client.post(
+                                    "https://fal.run/fal-ai/bytedance/seedream/v4.5/edit",
+                                    headers={
+                                        "Authorization": f"Key {seedream_key}",
+                                        "Content-Type": "application/json",
+                                    },
+                                    json=sd_payload,
+                                )
+                            sd_resp.raise_for_status()
+
+                            sd_result = sd_resp.json()
+                            sd_images = sd_result.get("images", [])
+                            if not sd_images:
+                                raise RuntimeError("SeedDream returned no images")
+
+                            sd_image_url = sd_images[0].get("url")
+                            if not sd_image_url:
+                                raise RuntimeError("SeedDream response contained no image URL")
+
+                            if sd_image_url.startswith("data:"):
+                                _, sd_encoded = sd_image_url.split(",", 1)
+                                image_data = base64.b64decode(sd_encoded)
+                            else:
+                                async with httpx.AsyncClient(timeout=60.0) as sd_client:
+                                    img_resp = await sd_client.get(sd_image_url)
+                                img_resp.raise_for_status()
+                                image_data = img_resp.content
+
+                            print(f"✅ [SeedDream] Retrieved fallback image: {len(image_data)} bytes")
+                        except Exception as sd_err:
+                            print(f"❌ [SeedDream] Fallback failed: {sd_err}")
+                            base_error = vertex_error or gemini_error or fallback_err
+                            raise HTTPException(
+                                status_code=500,
+                                detail=f"Image generation failed (Vertex + Gemini + Fal.ai + SeedDream). Reason: {base_error}"
+                            )
+                    else:
+                        print("ℹ️ [SeedDream] SEEDREAM_KEY not configured, skipping direct SeedDream fallback")
+                        base_error = vertex_error or gemini_error or fallback_err
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
+                        )
+                else:
+                    base_error = vertex_error or gemini_error or fallback_err
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Image generation failed (Vertex + Gemini + Fal.ai). Reason: {base_error}"
+                    )
 
         # 5. Post-process: Resize to exact requested dimensions
         # Standard ratio → pixel mapping for consistent output
