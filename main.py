@@ -99,50 +99,7 @@ async def call_openrouter_image(contents: list) -> _GeminiLikeImageResponse:
         th = src_h
 
         # Construct the detailed resize prompt
-        detailed_prompt = f"""TASK (read carefully):
-Redraw the input image as a NEW composition at exactly
-{tw} x {th} pixels. This is NOT a lazy stretch of one
-bitmap block and NOT "only add padding bars" unless that is truly the best way
-to keep all content visible with the same emphasis.
-
-WHAT YOU MUST PRESERVE (semantic lock):
-- The same subject matter, logos, icons, diagrams, products, people, and
-  scenery—nothing important removed or swapped out.
-- The same readable text (same words; same language). Do not change copy,
-  spelling, or branding.
-- The same color palette, contrast level, and overall graphic style (flat vs
-  photo, illustration style, etc.).
-- The same meaning: it should read as the same ad, slide, banner, or asset.
-
-WHAT YOU SHOULD DO (layout + redraw):
-- Output must look **freshly rendered** for this canvas size: clean edges,
-  appropriate typography scale for {tw}x{th}, balanced
-  margins—not a smeared upscale/downscale artifact.
-- **Preserve the main focal point** (hero, headline, primary logo, key
-  product): keep it dominant and in roughly the same visual priority as in
-  the source unless the new aspect ratio forces minor shifts.
-- If source aspect ratio ({src_w}:{src_h}) differs from target
-  ({tw}:{th}), use **intelligent rearrangement**: reflow
-  blocks, adjust spacing, stack or align elements, redistribute background—so
-  the full message still fits without cropping important content.
-- If aspect ratios are close, prefer **minimal change**: proportional scaling
-  and gentle spacing tweaks; keep composition and focus aligned with original.
-- Background may extend or simplify to fill the frame if it stays consistent
-  with the original style (no unrelated new scenes).
-
-HARD DON'TS:
-- Do not crop out logos, faces, legal text, or key product areas.
-- Do not replace elements with different objects or invent new messaging.
-- Do not apply a different art direction (e.g. photorealistic if source is flat
-  graphic), heavy filters, or "make it prettier" redesigns.
-
-OUTPUT:
-- Exactly {tw} x {th} pixels.
-- One coherent image; no collage seams or watermarks unless in source.
-
-USER CONTEXT (optional; must not contradict rules above):
-{user_context}
-""".strip()
+        detailed_prompt = build_openrouter_resize_prompt(source_dims=(src_w, src_h), target_dims=(tw, th), user_context=user_context)
 
         message_parts = []
         # Add the detailed prompt as text
@@ -1845,6 +1802,431 @@ def validate_aspect_ratio_smart(aspect_ratio: str) -> tuple:
         return "1:1", None, 1.0
 
 
+def build_openai_outpaint_prompt(
+    user_prompt: str,
+    target_width: int,
+    target_height: int,
+    source_dims: tuple = None,
+) -> str:
+    """
+    Prompt for OpenAI gpt-image-2 outpainting.
+    Core principle: CONTINUE the existing edge pixels — never invent new content.
+    The model must sample the left/right edges of the visible image and extend them
+    outward seamlessly. Kept entirely separate from all Gemini prompts.
+    """
+    ar = target_width / target_height
+    if ar >= 3.0:
+        fill_desc = "large transparent areas on both the left and right (the target is very wide)"
+    elif ar >= 1.5:
+        fill_desc = "transparent areas on the left and right"
+    elif ar <= 0.67:
+        fill_desc = "transparent areas on the top and bottom"
+    else:
+        fill_desc = "transparent areas on the sides"
+
+    src_note = ""
+    if source_dims:
+        sw, sh = source_dims
+        src_note = (
+            f"The source image ({sw}×{sh}px) has been scaled and centred on this canvas. "
+        )
+
+    brand_line = f"\n\nBRAND / STYLE CONTEXT (use only to inform tone — do NOT add new content): {user_prompt}" if user_prompt and user_prompt.strip() else ""
+
+    return f"""TASK: Intelligent layout adaptation and seamless outpainting.
+PRIMARY TARGET: {target_width}×{target_height}px.
+RATIO TARGET: {target_width/target_height:.4f}:1 (must be matched as closely as possible in composition).
+IMPORTANT: Preserve ALL source content with zero loss. No cropping of meaningful content.
+
+Your job is not simple side padding. You must intelligently re-balance layout so text, logos, CTA and hero elements read clearly in the final wide canvas.
+Extend this image to fill {target_width}×{target_height}px by filling the {fill_desc}.
+
+{src_note}
+
+HOW TO FILL THE TRANSPARENT AREAS:
+1. Look at the leftmost visible column of pixels in the existing image. Note the exact colour, texture, gradient, brightness, and any partial shapes or patterns present there. Extend that content leftward, following the same visual logic.
+2. Look at the rightmost visible column of pixels. Do the same extending rightward.
+3. Preserve every perspective line, horizon line, gradient direction, and lighting angle from the original through into the extended area.
+4. The join between the original image and the extension must be completely invisible — no colour shift, no brightness jump, no edge artefact.
+
+THE MOST IMPORTANT RULE:
+Only continue what is already visually present at the image edges. If the edge is a plain colour gradient, extend that gradient. If it is a studio backdrop, continue the backdrop. If it is a product on white, extend the white. Never introduce a scene, environment, landscape, sky, building, or background element that is not already visible at that edge.
+
+INTELLIGENT CONTENT PLACEMENT RULES:
+1) Keep every original text block, logo and brand mark present exactly once.
+2) Reposition spacing and margins so text remains readable at billboard distance.
+3) Keep the primary message and hero element dominant, not tiny and not centered as a narrow strip.
+4) Use the full canvas width intentionally; avoid empty dead zones.
+5) Maintain original brand colors, style and typography hierarchy.
+6) VERTICAL SAFETY ZONE: You must keep ALL text, faces, logos, and critical product elements within the vertical middle 50% of the canvas. Do NOT place text near the very top or very bottom edge, as it may be cropped.
+
+STRICT PROHIBITIONS:
+✗ Do NOT invent new background content (sky, clouds, buildings, landscapes, abstract textures) unless that exact content is visible at the image edge
+✗ Do NOT move, resize, crop, or alter the central subject in any way
+✗ Do NOT duplicate, mirror, or tile any element from the original image
+✗ Do NOT add solid colour bars, vignettes, borders, or decorative frames
+✗ Do NOT add new objects, people, logos, or text not already in the image
+✗ Do NOT change the colour temperature, saturation, or exposure of the original content{brand_line}
+
+OUTPUT: One seamless flat digital graphic at exactly {target_width}×{target_height}px. The result must look like a single image that was always this size."""
+
+
+def build_openai_banner_prompt(
+    user_prompt: str,
+    target_width: int,
+    target_height: int,
+    source_dims: tuple = None,
+) -> str:
+    """
+    Prompt for OpenAI banner-generation mode (AR > 3.5).
+
+    The source image is sent as a REFERENCE via the all-white mask technique —
+    OpenAI regenerates the full canvas while treating the attached image as the
+    complete design brief. The AI must extract elements and re-compose them as a
+    proper ultra-wide signage banner, NOT just centre the source image.
+    """
+    src_note = ""
+    if source_dims:
+        sw, sh = source_dims
+        src_note = f"The reference image attached is {sw}×{sh}px. "
+
+    ar = target_width / target_height
+    if ar >= 6:
+        width_desc = "extremely ultra-wide"
+        layout_hint = (
+            "LEFT zone: main visual / product (full height, ~25 % of width). "
+            "CENTRE-LEFT zone: headline text, large and bold (~30 % of width). "
+            "CENTRE-RIGHT zone: supporting copy or sub-headline (~25 % of width). "
+            "RIGHT zone: logo + brand name (~20 % of width). "
+            "Background: brand colour / gradient from the reference, spanning the entire width seamlessly."
+        )
+    elif ar >= 4:
+        width_desc = "ultra-wide"
+        layout_hint = (
+            "LEFT zone: main visual / product (~35 % of width). "
+            "CENTRE zone: headline text, large and clearly legible (~35 % of width). "
+            "RIGHT zone: logo + call-to-action or tagline (~30 % of width). "
+            "Background: brand colour / gradient from the reference, spanning full width."
+        )
+    else:
+        width_desc = "wide"
+        layout_hint = (
+            "LEFT zone: main visual or product (~40 % of width). "
+            "RIGHT zone: headline text + logo (~60 % of width). "
+            "Background: brand colour / gradient from reference."
+        )
+
+    brand_line = (
+        f"\n\nBRAND / CAMPAIGN CONTEXT: {user_prompt}"
+        if user_prompt and user_prompt.strip()
+        else ""
+    )
+
+    return f"""Create a professional {width_desc} digital signage banner.
+PRIMARY TARGET: {target_width}×{target_height}px.
+RATIO TARGET: {target_width/target_height:.4f}:1 (compose as close as possible to this ratio).
+MANDATORY: keep all important source content; no content loss.
+
+{src_note}The attached image is the COMPLETE DESIGN REFERENCE — it contains all brand elements: product visuals, headline text, logo, tagline, colour palette, and visual style. Do not invent anything new; extract everything from the reference.
+
+LAYOUT — divide the {target_width}px width into zones:
+{layout_hint}
+
+COMPOSITION RULES (INTELLIGENT PLACEMENT):
+• Every text element from the reference must appear in the banner at a size readable on a large digital display — never shrunken or cropped
+• The main subject (product, person, key visual) must be fully visible at a dominant size, not a thumbnail
+• Text must be razor-sharp and legible — same wording, same brand fonts and colours as the reference
+• The background must feel intentional: extend the brand gradient or colour field across the full width with no seam or empty area
+• The banner must look like a professionally art-directed piece, not a cropped or tiled photo
+• Distribute elements across zones with clear visual hierarchy; avoid placing all source content as one centered block
+• VERTICAL SAFETY ZONE: You must keep ALL text, faces, logos, and critical product elements within the vertical middle 50% of the canvas. Do NOT place text near the very top or very bottom edge, as it may be cropped.
+
+STRICT PROHIBITIONS:
+✗ Do NOT centre the source image and fill sides with generated scenery
+✗ Do NOT stretch, tile, mirror, or repeat any element
+✗ Do NOT add people, objects, text, or logos not present in the reference
+✗ Do NOT leave large empty or featureless areas — every zone must contribute
+✗ Do NOT add borders, vignettes, or watermarks{brand_line}
+
+OUTPUT: One flat, ready-to-display {target_width}×{target_height}px digital signage banner with all elements from the reference intelligently composed across the full width."""
+
+
+
+def build_layout_prompt(prompt: str, target_dims: Optional[Tuple[int, int]], validated_ratio: str) -> str:
+    """
+    PixExact v8: Ultra-Smart Intelligent Content Placement Engine.
+    If no custom dims, returns the raw prompt (standard ratios handled by GemImg).
+    """
+    if not target_dims:
+        return prompt
+
+    tw, th = target_dims
+    actual_ratio = tw / th
+
+    if actual_ratio < 0.4 or actual_ratio > 2.5:
+        safe_pct = 40
+    elif actual_ratio < 0.6 or actual_ratio > 1.8:
+        safe_pct = 50
+    else:
+        safe_pct = 60
+
+    orientation = "TALL PORTRAIT" if th > tw else "WIDE LANDSCAPE" if tw > th else "SQUARE"
+    safe_width = int(tw * (safe_pct / 100))
+    safe_height = int(th * (safe_pct / 100))
+    edge_width_px = (tw - safe_width) // 2
+    edge_height_px = (th - safe_height) // 2
+
+    layout_prefix = f"""[PIXEXACT v8 | {tw}x{th}px | {orientation}]
+STRICT RULE: PLACE CONTENT ONCE ONLY. NO DUPLICATION.
+
+1. SOURCE ISLAND: Place all logos, text, and main subjects in the CENTER safe zone.
+2. NEGATIVE SPACE: Extend the background to the edges. Do NOT put any branding in extensions.
+3. NO STACKING: The design must be a single coherent block, not a split-screen or multi-tier layout.
+
+NEGATIVE CONSTRAINTS: NO duplicated logos, NO stacked text, NO mirrored subjects, NO footer branding.
+
+USER REQUEST:
+{prompt}
+
+DELIVERY: Pixel-perfect {tw}×{th} output."""
+
+    return layout_prefix
+
+
+
+def build_image_adaptation_prompt(
+    prompt: Optional[str],
+    target_dims: Optional[Tuple[int, int]],
+    validated_ratio: str,
+) -> str:
+    """
+    PixExact v10 — IMAGE ADAPTATION mode.
+    Concise, front-loaded prompt: most critical rule first.
+    Prevents content duplication on tall portrait and wide landscape outputs.
+    """
+    tw, th = target_dims or get_native_resolution(validated_ratio)
+    actual_ratio = tw / th
+
+    is_tall         = th > tw * 1.2
+    is_extreme_tall = th > tw * 1.5  # Lowered from 1.8 to capture 9:16 and 1:2
+    is_wide         = tw > th * 1.2
+    is_extreme_wide = tw > th * 2.0  # Lowered from 2.5 to capture 1472x480 (3.07) and 2640x288 (9.17)
+    orientation     = "TALL PORTRAIT" if is_tall else "WIDE LANDSCAPE" if is_wide else "SQUARE"
+
+    user_note = f" Additional instruction: {prompt}." if prompt else ""
+
+    # How much extra space needs filling
+    extra_h = max(0, th - tw)
+    extra_w = max(0, tw - th)
+
+    if is_extreme_tall:
+        # Ultra-surgical Zonal Prompting for 1:2+ ratios
+        fill_note = (
+            f"SURGICAL TASK: The 1:2+ ratio canvas is {tw}x{th}px. "
+            "You MUST divide the layout into 3 VERTICAL ZONES:\n"
+            f"1. TOP ZONE (rows 0 to {extra_h // 2}): BACKGROUND EXTENSION. Fill this area by natively extending the background colors, gradients, and textures from the source image. DO NOT leave it black. NO NEW OBJECTS. NO LOGOS.\n"
+            f"2. MIDDLE ZONE (rows {extra_h // 2} to {th - (extra_h // 2)}): SOURCE CONTENT. Place the ENTIRE design here as a SINGLE LOCKED RECTANGLE. Do NOT break apart logos or text.\n"
+            f"3. BOTTOM ZONE (rows {th - (extra_h // 2)} to {th}): BACKGROUND EXTENSION. Fill this area by natively extending the background colors, gradients, and textures from the source image. DO NOT leave it black. NO NEW OBJECTS. NO LOGOS.\n"
+            "PROHIBITION: Zero content duplication. Branding, logos, and subject matter MUST stay together in the MIDDLE ZONE."
+        )
+    elif is_extreme_wide:
+        # Ultra-surgical Horizontal Zonal Prompting for ultra-wide signs (ratio > 2.0)
+        # More explicit pixel math to prevent Gemini from ignoring the instructions
+        fill_note = (
+            f"ULTRA-WIDE SIGNAGE TASK: Canvas is {tw}x{th}px (ratio {tw/th:.2f}:1).\n"
+            f"This is an extreme wide-format digital sign.\n"
+            f"The source image content occupies the CENTER {th}px-high zone.\n"
+            f"LEFT EXTENSION: {extra_w // 2}px — fill by continuing the background color/gradient from the left edge of the source. NO logos, NO text, NO subjects.\n"
+            f"RIGHT EXTENSION: {extra_w - extra_w // 2}px — fill by continuing the background color/gradient from the right edge of the source. NO logos, NO text, NO subjects.\n"
+            f"RESULT: A single wide graphic where the original content sits centered, flanked by clean background extensions.\n"
+            f"PROHIBITION: Do NOT mirror or tile the source image. Do NOT repeat any element."
+        )
+    elif is_wide:
+        # Wide landscape (ratio 1.2-2.0)
+        fill_note = (
+            f"WIDE SIGNAGE TASK: Canvas is {tw}x{th}px (ratio {tw/th:.2f}:1).\n"
+            f"Scale the source to exactly {th}px height. Centre it horizontally.\n"
+            f"Fill the {extra_w}px of empty space (split left/right) by extending the background ONLY — use the edge colors/gradients from the source image.\n"
+            f"Do NOT use edge mirroring. Do NOT repeat any content. Blend naturally."
+        )
+    elif is_tall:
+        fill_note = (
+            f"The canvas is {tw}x{th}px ({orientation}). "
+            f"Place the source image as a single composition, centred vertically. "
+            f"The ~{extra_h}px gap above and below must be NATIVELY FILLED by extending the "
+            "background textures, colors, and gradients from the source image. Ensure a seamless blend."
+        )
+    else:
+        fill_note = (
+            f"The canvas is {tw}x{th}px. "
+            "Scale and recompose the source image to fill it exactly while maintaining all text and logos."
+        )
+
+    return (
+        f"TASK: ADAPT IMAGE TO {tw}x{th}px ({orientation})\n"
+        "ABSORUTE CONSTRAINT: LOGOS AND TEXT MUST APPEAR EXACTLY ONCE.\n"
+        "\n"
+        "COLOR FIDELITY LOCK (MANDATORY):\n"
+        "- Use the EXACT color palette from the source image.\n"
+        "- Do NOT shift the hue, saturation, or white balance.\n"
+        "- The background extension MUST be a pixel-perfect color match to the source edges.\n"
+        "\n"
+        "ARRANGEMENT LOCK (LAYOUT FIDELITY):\n"
+        "- Keep the original spacing and alignment between the person, the text, and the logos.\n"
+        "- Do NOT move elements relative to each other within the source block.\n"
+        "\n"
+        "WHAT YOU MUST PRESERVE (SEMANTIC LOCK - ZERO LOSS):\n"
+        "- The SAME subject matter, logos, icons, and scenery—NOTHING removed or swapped.\n"
+        "- The SAME people and faces—100% identical to the source.\n"
+        "- EVERY SINGLE word of text (same font, same placement).\n"
+        "- EVERY logo and icon (do NOT omit the Mastercard logo, the QR code, or any brand marks).\n"
+        "- The SAME color palette and overall graphic style.\n"
+        "\n"
+        "1. CENTER THE DESIGN: Place the entire source image content as a single locked block in the center of the canvas.\n"
+        "2. NATIVE BACKGROUND FILL: Outpaint and extend the background ONLY. Use the existing colors and patterns to fill the gaps. NO BLACK BARS.\n"
+        "3. NO CONTENT CLONES: Avoid repeating the subject, logo, or text in the extension zones.\n"
+        "\n"
+        f"FILL NOTE: {fill_note}\n"
+        "\n"
+        "HARD PROHIBITIONS:\n"
+        "❌ Do NOT redraw, redesign, or artistically reinterpret the content.\n"
+        "❌ Do NOT change the person's face or clothing.\n"
+        "❌ Do NOT remove any text, logos, people, or products from the original design.\n"
+        "❌ Do NOT shift the background colors or apply a different theme.\n"
+        "❌ Do NOT break the design into separate stacked pieces.\n"
+        "\n"
+        "PROVISION: Output must be a single, non-mirrored, non-stacked digital graphic.\n"
+        f"Source additional task: {user_note}"
+    )
+
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# IMAGE EXTENSION HELPERS
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def build_outpaint_prompt(user_prompt: str, target_dims: tuple, source_dims: tuple = None) -> str:
+    """
+    Prompt for Gemini outpainting on a pre-composited canvas.
+    The source content is centred and sharp; surrounding areas are blurred placeholders.
+    """
+    tw, th = target_dims
+    is_wide = tw > th * 1.3
+    is_tall = th > tw * 1.3
+    if is_wide:
+        extend_dir = "left and right sides"
+    elif is_tall:
+        extend_dir = "top and bottom"
+    else:
+        extend_dir = "all sides"
+
+    ratio_context = ""
+    if source_dims:
+        sw, sh = source_dims
+        ratio_context = (
+            f"\nINPUT: source image {sw}x{sh}px ({sw/sh:.2f}:1 ratio) → "
+            f"target canvas {tw}x{th}px ({tw/th:.2f}:1 ratio). "
+            f"You must extend content to fill the additional {abs(tw-sw)}x{abs(th-sh)}px of space."
+        )
+
+    extra = f"\nAdditional instruction: {user_prompt}" if user_prompt and user_prompt.strip() else ""
+    return f"""[OUTPAINT | {tw}x{th}px]{ratio_context}
+The attached image is a pre-composited {tw}x{th}px canvas. The original content is centred and sharp. The {extend_dir} contain a blurred colour approximation showing the background to extend.
+
+YOUR TASK — replace the blurred {extend_dir} with seamless, intelligent content:
+• Architecture / buildings → extend walls, facades, windows with correct vanishing-point perspective. Do NOT tile or repeat building sections.
+• Sky / outdoor / atmosphere → continue clouds, gradients, ambient light naturally.
+• Ground / road / floor → follow the horizon line and surface texture to the edges.
+• Solid or gradient studio background → blend the colour smoothly, no seam, no tone jump.
+• The full result must read as ONE seamless wide-format digital sign — no visible join anywhere.
+
+PRESERVE the centred content (logos, text, products, subjects) exactly as placed. Do not move, scale, or repeat any element.
+
+PROHIBITIONS:
+✗ No mirroring or flipping of any element
+✗ No tiling or copy-pasting of content blocks
+✗ No black bars, white bars, or solid-colour padding
+✗ No hard colour jump at the seam between original and extension{extra}
+
+OUTPUT: One seamless flat digital graphic at exactly {tw}x{th}px."""
+
+
+
+def build_openrouter_resize_prompt(
+    source_dims: Tuple[int, int],
+    target_dims: Optional[Tuple[int, int]],
+    user_context: Optional[str] = None,
+    validated_ratio: str = "1:1"
+) -> str:
+    """
+    Build OpenRouter resize prompt using the robust template style requested
+    by the user (from the provided FastAPI reference implementation).
+    """
+    src_w, src_h = source_dims
+    tw, th = target_dims or get_native_resolution(validated_ratio)
+    context = (user_context or "").strip()
+
+    prompt = f"""TASK (read carefully):
+Redraw the input image as a NEW composition at exactly
+{tw} x {th} pixels. 
+
+CORE INSTRUCTIONS:
+Preserve the input image exactly as the visual source. Keep all logos, text, branding, objects, colors, and composition unchanged. Only adapt layout to fit the target resolution with native edge extension and zero distortion.
+
+WHAT YOU MUST PRESERVE (semantic lock):
+- The same subject matter, logos, icons, diagrams, products, people, and
+  scenery—nothing important removed or swapped out.
+- The same readable text (same words; same language). Do not change copy,
+  spelling, or branding.
+- The same color palette, contrast level, and overall graphic style (flat vs
+  photo, illustration style, etc.).
+- The same meaning: it should read as the same ad, slide, banner, or asset.
+
+WHAT YOU SHOULD DO (layout + redraw):
+- Output must look **freshly rendered** for this canvas size: clean edges,
+  appropriate typography scale for {tw}x{th}, balanced
+  margins—not a smeared upscale/downscale artifact.
+- **Preserve the main focal point** (hero, headline, primary logo, key
+  product): keep it dominant and in roughly the same visual priority as in
+  the source unless the new aspect ratio forces minor shifts.
+- If source aspect ratio ({src_w}:{src_h}) differs from target
+  ({tw}:{th}), use **intelligent rearrangement**: reflow
+  blocks, adjust spacing, stack or align elements, redistribute background—so
+  the full message still fits without cropping important content.
+- If aspect ratios are close, prefer **minimal change**: proportional scaling
+  and gentle spacing tweaks; keep composition and focus aligned with original.
+- Background may extend or simplify to fill the frame if it stays consistent
+  with the original style (no unrelated new scenes).
+
+INTELLIGENT CANVAS MAPPING RULES (MANDATORY):
+- Intelligently place existing elements so the final design covers the FULL {tw}x{th} canvas with no dead zones.
+- Do NOT stretch or squeeze logos, people, products, or text. Keep original proportions.
+- Do NOT add new elements, and do NOT remove required elements.
+- Do NOT duplicate semantic elements (no repeated logos, CTA, subject, or text blocks).
+- Avoid obvious leftover empty side/top/bottom spaces; fill naturally with source-consistent continuation only.
+- Keep all element relationships coherent so the result feels intentionally laid out for this canvas.
+
+HARD DON'TS:
+- Do not crop out logos, faces, legal text, or key product areas.
+- Do not replace elements with different objects or invent new messaging.
+- Do not apply a different art direction (e.g. photorealistic if source is flat
+  graphic), heavy filters, or "make it prettier" redesigns.
+- Do not leave unused blank regions or artificial padding bands.
+
+OUTPUT:
+- Exactly {tw} x {th} pixels.
+- One coherent image; no collage seams or watermarks unless in source.
+
+USER CONTEXT (optional; must not contradict rules above):
+{context}
+""".strip()
+
+    return prompt
+
+
+
 def build_ai_recompose_prompt(user_prompt: str, target_dims: tuple, validated_ratio: str) -> str:
     """
     Build a highly-detailed AI prompt that instructs Gemini to ADAPT the
@@ -1881,6 +2263,7 @@ WHAT YOU ARE ALLOWED TO DO:
 ✅ Extend the existing background color/gradient/pattern to fill new space
 ✅ Adjust spacing and margins around existing content
 ✅ Scale the composition proportionally if needed
+✅ VERTICAL SAFETY ZONE: You must keep ALL text, faces, logos, and critical product elements within the vertical middle 50% of the canvas. Do NOT place text near the very top or very bottom edge, as it may be cropped.
 
 OUTPUT REQUIREMENTS:
 - Resolution: exactly {tw}x{th} pixels
@@ -1908,6 +2291,7 @@ def build_vertex_resize_prompt(validated_ratio: str) -> str:
         "to fit the new aspect ratio, ensuring a clean and balanced composition.\n\n"
         "Do not crop out or remove any existing content. Do not introduce any new elements.\n\n"
         "Logos, QR codes, and critical brand elements must remain pixel-accurate and unmodified.\n\n"
+        "VERTICAL SAFETY ZONE: You must keep ALL text, faces, logos, and critical product elements within the vertical middle 50% of the canvas. Do NOT place text near the very top or very bottom edge, as it may be cropped.\n\n"
         "The final output should look like a natural, professionally adapted version of the original "
         "image for the new aspect ratio, not a distorted or stretched transformation."
     )
@@ -2076,19 +2460,35 @@ async def resize_image(
             else:
                 tw, th = get_native_resolution(gemini_aspect_ratio)
             
-            # ── Glenn-specific resize prompt ──────────────────────────────
-            orientation = "TALL VERTICAL" if th > tw else "WIDE HORIZONTAL" if tw > th else "SQUARE"
-            resize_prompt = (
-                f"Resize this image to exactly {tw}x{th} pixels ({orientation}). "
-                f"Keep all content identical — same text, same placement, same colors, same everything. "
-                f"Fill the entire {tw}x{th} canvas with no empty space, no bars, no borders. "
-                f"Output one single image only. "
-                f"ZERO DUPLICATION: Do not repeat, mirror, or create multiple instances of any text or objects; each element must appear exactly once. "
-                f"Make sure there is no changes in the content and input image should be exact as output image with changed dimensions."
-            )
-            if has_custom_prompt:
-                resize_prompt += f" {prompt}"
-            print(f"[GLENN] Prompt: {resize_prompt}")
+
+            # ── Glenn-specific resize prompt (Smart Routing) ────────────────
+            is_wide_landscape = tw > th * 1.5
+            is_extreme_portrait = th > tw * 1.5
+            
+            if is_wide_landscape:
+                # Use OpenRouter resize prompt for wide landscapes (best for reflow)
+                resize_prompt = build_openrouter_resize_prompt(
+                    source_dims=(src_w, src_h),
+                    target_dims=(tw, th),
+                    user_context=prompt if has_custom_prompt else "",
+                    validated_ratio=gemini_aspect_ratio
+                )
+                print(f"[GLENN] Wide landscape: using build_openrouter_resize_prompt")
+            elif is_extreme_portrait:
+                resize_prompt = build_image_adaptation_prompt(
+                    prompt=prompt if has_custom_prompt else "",
+                    target_dims=(tw, th),
+                    validated_ratio=gemini_aspect_ratio
+                )
+                print(f"[GLENN] Portrait: using build_image_adaptation_prompt")
+            else:
+                resize_prompt = build_ai_recompose_prompt(
+                    user_prompt=prompt if has_custom_prompt else "",
+                    target_dims=(tw, th),
+                    validated_ratio=gemini_aspect_ratio
+                )
+                print(f"[GLENN] Moderate ratio: using build_ai_recompose_prompt")
+
             
             # Log all key counters at start of each request
             glenn_log_all_counters()
@@ -2403,14 +2803,38 @@ async def resize_image(
                 return getattr(inline, "data", None)
             return None
 
-        # Construct the structured prompt
-        if prompt:
-            use_prompt = prompt
+
+        # Construct the structured prompt (Smart Routing)
+        is_wide_landscape = (target_dims[0] > target_dims[1] * 1.5) if target_dims else False
+        is_extreme_portrait = (target_dims[1] > target_dims[0] * 1.5) if target_dims else False
+
+        if has_image:
+            if is_wide_landscape:
+                use_prompt = build_openrouter_resize_prompt(
+                    source_dims=pil_image.size,
+                    target_dims=target_dims,
+                    user_context=prompt or "",
+                    validated_ratio=gemini_aspect_ratio
+                )
+            elif is_extreme_portrait:
+                use_prompt = build_image_adaptation_prompt(
+                    prompt=prompt or "",
+                    target_dims=target_dims,
+                    validated_ratio=gemini_aspect_ratio
+                )
+            else:
+                use_prompt = build_ai_recompose_prompt(
+                    user_prompt=prompt or "",
+                    target_dims=target_dims,
+                    validated_ratio=gemini_aspect_ratio
+                )
         else:
-            use_prompt = (
-                f"recreate this image in {gemini_aspect_ratio} ratio format and keep all the the information of image intact . "
-                "you can rearrange the elements to ensure it is perfect."
+            use_prompt = build_layout_prompt(
+                prompt=prompt or "Generate a professional digital graphic.",
+                target_dims=target_dims,
+                validated_ratio=gemini_aspect_ratio
             )
+
 
         # --- Primary: Vertex AI via google-genai SDK (High Priority) ---
         # Uses genai.Client(vertexai=True) with service account credentials
@@ -2854,6 +3278,86 @@ async def custom_resize_image(
 
     requested_ratio = f"{width}:{height}"
     mapped_ratio, _, _ = validate_aspect_ratio_smart(requested_ratio)
+
+
+    ratio_val = width / height if height > 0 else 1.0
+    EXTREME_WIDE_AR = 2.5
+
+    # If it's an extreme wide image, intercept and try OpenAI first!
+    if file and ratio_val > EXTREME_WIDE_AR and effective_engine == "transformation":
+        print(f"🚀 [CUSTOM-RESIZE] Ultra-wide detected (AR {ratio_val:.2f} > 2.5). Routing to OpenAI Intelligent Reflow pipeline.")
+        try:
+            from openai_service import call_openai_image_edit
+            
+            # Cost logic (same as resize_image for transformation)
+            is_postpaid = current_user.get("is_postpaid", False)
+            cost = 1.0 if is_postpaid else 4.0
+            user_id = str(current_user["_id"])
+            
+            # Credit check
+            if not is_postpaid:
+                engine_data = current_user.get("engine_data", {})
+                target_engine_info = engine_data.get(effective_engine, {})
+                engine_credits = target_engine_info.get("credits", {}) if target_engine_info else {}
+                if not engine_credits and current_user.get("engineType") == effective_engine:
+                    engine_credits = current_user.get("credits", {})
+                remaining = float(engine_credits.get("remaining_units", 0.0))
+                if remaining < cost:
+                    raise HTTPException(status_code=429, detail=f"Insufficient credits. Need {cost}, have {remaining}")
+
+            # Read file bytes
+            file_bytes = await file.read()
+            # Reset file pointer so resize_image fallback can still read it
+            await file.seek(0)
+            
+            pil_img = await run_blocking(Image.open, io.BytesIO(file_bytes))
+            src_w, src_h = pil_img.size
+
+            if ratio_val >= 3.5:
+                ai_prompt = build_openai_banner_prompt(prompt_text, width, height, source_dims=(src_w, src_h))
+            else:
+                ai_prompt = build_openai_outpaint_prompt(prompt_text, width, height, source_dims=(src_w, src_h))
+
+            print(f"🤖 [CUSTOM-RESIZE] Calling OpenAI gpt-image-2 for {width}x{height} banner...")
+            openai_image_bytes = await call_openai_image_edit(
+                image_bytes=file_bytes,
+                prompt=ai_prompt,
+                target_width=width,
+                target_height=height
+            )
+            
+            print(f"✅ [CUSTOM-RESIZE] OpenAI success! Uploading to Digital Ocean...")
+            import uuid
+            filename = f"custom-resized/{uuid.uuid4().hex}.png"
+            await run_blocking(
+                s3_client.put_object,
+                Bucket=DO_SPACES_BUCKET_NAME,
+                Key=filename,
+                Body=openai_image_bytes,
+                ACL="public-read",
+                ContentType="image/png",
+            )
+            uploaded_url = f"https://{DO_SPACES_BUCKET_NAME}.{DO_SPACES_ENDPOINT.replace('https://','')}/{filename}"
+            
+            # Consume units
+            if cost > 0:
+                consume_units(user_id, cost, effective_engine)
+            
+            log_usage(user_id, "custom_resize", requested_ratio, True, uploaded_url, prompt_text, (width, height), model="gpt-image-2")
+            
+            return JSONResponse(content={
+                "url": uploaded_url, 
+                "credits_used": cost,
+                "width": width,
+                "height": height,
+                "gemini_ratio": mapped_ratio,
+                "requested_ratio": requested_ratio,
+                "engine_type": effective_engine,
+                "provider": "openai/gpt-image-2"
+            })
+            
+        except Exception as openai_err:
+            print(f"⚠️ [CUSTOM-RESIZE] OpenAI failed for wide, falling back to standard pipeline: {openai_err}")
 
     # Reuse existing resize pipeline to keep all checks and post-processing consistent.
     base_response = await resize_image(
