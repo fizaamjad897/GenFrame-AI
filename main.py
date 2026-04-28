@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header, Request, Body
 from fastapi.responses import Response, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Optional, Tuple, Any
+from typing import List, Optional, Tuple, Any, Dict
 import os
 from dotenv import load_dotenv
 from google import genai
@@ -1803,11 +1803,61 @@ def validate_aspect_ratio_smart(aspect_ratio: str) -> tuple:
         return "1:1", None, 1.0
 
 
+# --- Gemini Helper Constants & Functions ---
+GEMINI_RATIOS: Dict[str, float] = {
+    "1:1": 1.0,   "16:9": 16/9, "9:16": 9/16, "4:3": 4/3,
+    "3:4": 3/4,   "3:2": 3/2,   "2:3": 2/3,   "21:9": 21/9,
+    "4:5": 0.8,   "5:4": 1.25
+}
+
+GEMINI_NATIVE_RESOLUTIONS: Dict[str, Tuple[int, int]] = {
+    "1:1":   (1024, 1024),
+    "16:9":  (1344, 768),
+    "9:16":  (768, 1344),
+    "4:3":   (1152, 896),
+    "3:4":   (896, 1152),
+    "3:2":   (1216, 832),
+    "2:3":   (832, 1216),
+    "21:9":  (1536, 640),
+}
+
+def get_native_resolution(gemini_ratio: str) -> Tuple[int, int]:
+    """Return optimized native resolution for a Gemini ratio string."""
+    return GEMINI_NATIVE_RESOLUTIONS.get(gemini_ratio, (1024, 1024))
+
+def get_aspect_ratio_data(ratio_str: str) -> Tuple[str, Optional[Tuple[int, int]], float]:
+    """
+    Parse a ratio string (e.g., '16:9' or '864:288') into 
+    (gemini_ratio, target_dims, float_ratio).
+    """
+    try:
+        if ":" in ratio_str:
+            parts = ratio_str.split(":")
+            w, h = int(parts[0]), int(parts[1])
+            val = w / h
+            # Find closest Gemini ratio
+            closest_ratio = "1:1"
+            min_diff = float("inf")
+            for r, v in GEMINI_RATIOS.items():
+                diff = abs(v - val)
+                if diff < min_diff:
+                    min_diff = diff
+                    closest_ratio = r
+            
+            # If it's a standard Gemini ratio (within 5%), use its name
+            if min_diff < 0.05:
+                return closest_ratio, (w, h), val
+            return closest_ratio, (w, h), val
+        return "1:1", None, 1.0
+    except (ValueError, ZeroDivisionError):
+        return "1:1", None, 1.0
+
+
 def build_openai_outpaint_prompt(
     user_prompt: str,
     target_width: int,
     target_height: int,
-    source_dims: tuple = None,
+    source_dims: Optional[Tuple[int, int]] = None,
 ) -> str:
     """
     Prompt for OpenAI gpt-image-2 outpainting.
@@ -1876,7 +1926,7 @@ def build_openai_banner_prompt(
     user_prompt: str,
     target_width: int,
     target_height: int,
-    source_dims: tuple = None,
+    source_dims: Optional[Tuple[int, int]] = None,
 ) -> str:
     """
     Prompt for OpenAI banner-generation mode (AR > 3.5).
