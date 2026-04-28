@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header, Request, Body
 from fastapi.responses import Response, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List, Optional, Tuple, Any
 import os
 from dotenv import load_dotenv
 from google import genai
