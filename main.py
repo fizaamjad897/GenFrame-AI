@@ -3716,6 +3716,9 @@ async def resize_image(
 
 
         # Construct the structured prompt (Smart Routing)
+        # Ensure target_dims is available for prompt routing
+        # (In the Glenn path above, validate_aspect_ratio is called; here we call it for the fallback path)
+        gemini_aspect_ratio, target_dims, gemini_ratio_val = validate_aspect_ratio(aspect_ratio)
         is_wide_landscape = (target_dims[0] > target_dims[1] * 1.5) if target_dims else False
         is_extreme_portrait = (target_dims[1] > target_dims[0] * 1.5) if target_dims else False
 
