@@ -1699,115 +1699,10 @@ GEMINI_RATIOS = {
     "21:9": 21/9,    # 2.3333
 }
 
-GEMINI_NATIVE_RESOLUTIONS = {
-    "1:1":   (1024, 1024),
-    "16:9":  (1344, 768),
-    "9:16":  (768, 1344),
-    "4:3":   (1152, 896),
-    "3:4":   (896, 1152),
-    "3:2":   (1216, 832),
-    "2:3":   (832, 1216),
-    "21:9":  (1536, 640),
-}
-
-
-def _find_closest_gemini_ratio(target_ratio: float) -> tuple:
-    """Map an arbitrary aspect ratio value to the nearest Gemini-supported ratio."""
-    if target_ratio < 0.5:
-        return "9:16", 9/16
-    if target_ratio > 2.5:
-        return "21:9", 21/9
-
-    closest_ratio = "1:1"
-    closest_val = 1.0
-    min_diff = float('inf')
-    for ratio_str, ratio_val in GEMINI_RATIOS.items():
-        diff = abs(target_ratio - ratio_val)
-        if diff < min_diff:
-            min_diff = diff
-            closest_ratio = ratio_str
-            closest_val = ratio_val
-    return closest_ratio, closest_val
-
-
-def get_native_resolution(ratio_str: str) -> tuple:
-    """Return the native Gemini resolution for a given ratio string."""
-    return GEMINI_NATIVE_RESOLUTIONS.get(ratio_str, (1024, 1024))
-
-
-def validate_aspect_ratio_smart(aspect_ratio: str) -> tuple:
-    """
-    Validate and map custom aspect ratios / dimensions to Gemini-supported
-    formats.  Accepts multiple input formats:
-      - Direct Gemini ratio:  "16:9", "1:1"
-      - Named preset:        "landscape", "story", "square" …
-      - pWxH format:         "p288x608"
-      - WxH format:          "1920x1080"
-      - W:H arbitrary:       "288:608"
-
-    Returns (gemini_ratio_str, target_dims | None, gemini_ratio_val)
-    """
-    # 1. Direct Gemini ratio pass-through
-    if aspect_ratio in GEMINI_RATIOS:
-        return aspect_ratio, None, GEMINI_RATIOS[aspect_ratio]
-
-    # 2. Named semantic presets
-    named_presets = {
-        "landscape":   ("16:9", (1920, 1080), 16/9),
-        "story":       ("9:16", (1080, 1920), 9/16),
-        "square":      ("1:1",  (1024, 1024), 1.0),
-        "portrait":    ("3:4",  (768,  1024), 3/4),
-        "ultrawide":   ("21:9", (2560, 1080), 21/9),
-        "billboard":   ("16:9", (1920, 1080), 16/9),
-        "poster":      ("2:3",  (800,  1200), 2/3),
-        "banner":      ("21:9", (2100, 900),  21/9),
-        "kiosk":       ("9:16", (1080, 1920), 9/16),
-        "menu_board":  ("16:9", (1920, 1080), 16/9),
-    }
-    if aspect_ratio.lower() in named_presets:
-        return named_presets[aspect_ratio.lower()]
-
-    # 3. pWxH format (e.g. "p288x608") — used by pixel-specific presets
-    if aspect_ratio.lower().startswith("p") and "x" in aspect_ratio.lower():
-        try:
-            dims_part = aspect_ratio[1:]
-            w_str, h_str = dims_part.lower().split("x")
-            width, height = int(w_str), int(h_str)
-            actual_ratio = width / height
-            closest_ratio, closest_val = _find_closest_gemini_ratio(actual_ratio)
-            return closest_ratio, (width, height), closest_val
-        except (ValueError, ZeroDivisionError):
-            pass
-
-    # 4. WxH format (e.g. "800x600") — from custom dimension inputs
-    if "x" in aspect_ratio.lower() and not aspect_ratio.lower().startswith("p"):
-        try:
-            w_str, h_str = aspect_ratio.lower().split("x")
-            width, height = int(w_str), int(h_str)
-            actual_ratio = width / height
-            closest_ratio, closest_val = _find_closest_gemini_ratio(actual_ratio)
-            return closest_ratio, (width, height), closest_val
-        except (ValueError, ZeroDivisionError):
-            pass
-
-    # 5. Fallback: W:H colon format (e.g. "288:608")
-    try:
-        width, height = map(int, aspect_ratio.split(':'))
-        target_ratio = width / height
-        closest_ratio, closest_val = _find_closest_gemini_ratio(target_ratio)
-        # If both values are >= 100 treat them as pixel dimensions
-        if width >= 100 and height >= 100:
-            return closest_ratio, (width, height), closest_val
-        return closest_ratio, None, closest_val
-    except (ValueError, ZeroDivisionError):
-        return "1:1", None, 1.0
-
-
-# --- Gemini Helper Constants & Functions ---
 GEMINI_RATIOS: Dict[str, float] = {
     "1:1": 1.0,   "16:9": 16/9, "9:16": 9/16, "4:3": 4/3,
     "3:4": 3/4,   "3:2": 3/2,   "2:3": 2/3,   "21:9": 21/9,
-    "4:5": 0.8,   "5:4": 1.25
+    "4:5": 0.8,   "5:4": 1.25,  "8:1": 8.0,   "1:8": 0.125
 }
 
 GEMINI_NATIVE_RESOLUTIONS: Dict[str, Tuple[int, int]] = {
@@ -1819,45 +1714,527 @@ GEMINI_NATIVE_RESOLUTIONS: Dict[str, Tuple[int, int]] = {
     "3:2":   (1216, 832),
     "2:3":   (832, 1216),
     "21:9":  (1536, 640),
+    "8:1":   (1536, 192),
+    "1:8":   (192, 1536),
 }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FMCTV SITE DIMENSIONS (95 production sites)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+
+OOH_MEDIA_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
+    "OOH_1060X360":  (1060, 360),
+    "OOH_1232X672":  (1232, 672),
+    "OOH_1344X432":  (1344, 432),
+    "OOH_1836X432":  (1836, 432),
+    "OOH_1952X896":  (1952, 896),
+    "OOH_2072X252":  (2072, 252),
+    "OOH_3924X972":  (3924, 972),
+    "OOH_504X1008":  (504,  1008),
+    "OOH_768X1152":  (768,  1152),
+    "OOH_792X216":   (792,   216),
+    "OOH_800X400":   (800,   400),
+    "OOH_840X360":   (840,   360),
+    "OOH_1280X384":  (1280,  384),
+    "OOH_1024X320":  (1024,  320),
+    "OOH_960X576":   (960,   576),
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════
 
 def get_native_resolution(gemini_ratio: str) -> Tuple[int, int]:
     """Return optimized native resolution for a Gemini ratio string."""
     return GEMINI_NATIVE_RESOLUTIONS.get(gemini_ratio, (1024, 1024))
 
-def get_aspect_ratio_data(ratio_str: str) -> Tuple[str, Optional[Tuple[int, int]], float]:
+
+def normalize_image_to_bytes(image_input) -> bytes:
     """
-    Parse a ratio string (e.g., '16:9' or '864:288') into 
-    (gemini_ratio, target_dims, float_ratio).
+    Convert various image input types to bytes.
+    Handles: bytes, PIL Image objects (including JpegImageFile from GemImg),
+    and response objects with .image or .data attributes.
     """
+    if isinstance(image_input, bytes):
+        return image_input
+    elif isinstance(image_input, Image.Image):
+        # PIL Image object (includes JpegImageFile)
+        buffer = io.BytesIO()
+        # Ensure RGB format for PNG save
+        pil_img = image_input.convert("RGB") if image_input.mode != "RGB" else image_input
+        pil_img.save(buffer, format="PNG")
+        return buffer.getvalue()
+    else:
+        # Try response-like objects with .image or .data attributes
+        raw = getattr(image_input, "image", None) or getattr(image_input, "data", None)
+        if raw is None:
+            raise ValueError(f"Cannot normalize image of type {type(image_input)}")
+        return normalize_image_to_bytes(raw)  # Recursive call
+
+
+def _find_closest_gemini_ratio(target_ratio: float) -> Tuple[str, float]:
+    """Find the Gemini-supported ratio closest to a numeric ratio."""
+    if target_ratio < 0.125:
+        return "1:8", 0.125
+    if target_ratio > 7.0:
+        return "8:1", 8.0
+    if target_ratio < 0.5:
+        return "9:16", 9/16
+    if target_ratio > 2.5:
+        return "21:9", 21/9
+    closest_ratio, closest_val, min_diff = "1:1", 1.0, float('inf')
+    for ratio_str, ratio_val in GEMINI_RATIOS.items():
+        diff = abs(target_ratio - ratio_val)
+        if diff < min_diff:
+            min_diff = diff
+            closest_ratio = ratio_str
+            closest_val = ratio_val
+    return closest_ratio, closest_val
+
+
+
+
+def validate_aspect_ratio(aspect_ratio: str) -> Tuple[str, Optional[Tuple[int, int]], float]:
+    """
+    Validate and map custom aspect ratios/dimensions to Gemini-supported formats.
+    Returns (gemini_ratio_str, target_dims, gemini_ratio_val).
+    Supports: FMCTV site codes, direct Gemini ratios, named presets,
+              pWxH format, W:H pixel dims, WxH pixel dims.
+    """
+    # OOH site-code pass-through
+    site_code = (aspect_ratio or "").strip().upper()
+
+    if site_code in OOH_MEDIA_SITE_DIMENSIONS:
+        width, height = OOH_MEDIA_SITE_DIMENSIONS[site_code]
+        actual_ratio = width / height
+        
+        # For ultra-wide sites (ratio > 5.0), force 8:1
+        if actual_ratio > 5.0:
+            closest_ratio, closest_val = "8:1", 8.0
+            print(f"[OOH] Site {site_code} -> {width}x{height} (Gemini 8:1 ULTRA-WIDE FORCED for ratio {actual_ratio:.2f})")
+        # For wide landscape sites (ratio > 2.5), force 21:9
+        elif actual_ratio > 2.5:
+            closest_ratio, closest_val = "21:9", 21/9
+            print(f"[OOH] Site {site_code} -> {width}x{height} (Gemini 21:9 WIDE FORCED for ratio {actual_ratio:.2f})")
+        else:
+            closest_ratio, closest_val = _find_closest_gemini_ratio(actual_ratio)
+            print(f"[OOH] Site {site_code} -> {width}x{height} (Gemini {closest_ratio})")
+        
+        return closest_ratio, (width, height), closest_val
+
+    # Direct Gemini ratio
+    if aspect_ratio in GEMINI_RATIOS:
+        return aspect_ratio, None, GEMINI_RATIOS[aspect_ratio]
+
+    # Named semantic presets
+    named_presets = {
+        "landscape":  ("16:9", (1920, 1080), 16/9),
+        "story":      ("9:16", (1080, 1920), 9/16),
+        "square":     ("1:1",  (1024, 1024), 1.0),
+        "portrait":   ("3:4",  (768,  1024), 3/4),
+        "ultrawide":  ("21:9", (2560, 1080), 21/9),
+        "billboard":  ("16:9", (1920, 1080), 16/9),
+        "poster":     ("2:3",  (800,  1200), 2/3),
+        "banner":     ("21:9", (2100, 900),  21/9),
+        "kiosk":      ("9:16", (1080, 1920), 9/16),
+        "menu_board": ("16:9", (1920, 1080), 16/9),
+    }
+    if aspect_ratio.lower() in named_presets:
+        return named_presets[aspect_ratio.lower()]
+
+    # pWxH preset format (e.g. "p288x608")
+    if aspect_ratio.lower().startswith("p") and "x" in aspect_ratio.lower():
+        try:
+            dims_part = aspect_ratio[1:]
+            w_str, h_str = dims_part.lower().split("x")
+            width, height = int(w_str), int(h_str)
+            actual_ratio = width / height
+            closest_ratio, closest_val = _find_closest_gemini_ratio(actual_ratio)
+            return closest_ratio, (width, height), closest_val
+        except (ValueError, ZeroDivisionError):
+            pass
+
+    # Dimension "WIDTH:HEIGHT" format (e.g. "648:216")
     try:
-        if ":" in ratio_str:
-            parts = ratio_str.split(":")
-            w, h = int(parts[0]), int(parts[1])
-            val = w / h
-            # Find closest Gemini ratio
-            closest_ratio = "1:1"
-            min_diff = float("inf")
-            for r, v in GEMINI_RATIOS.items():
-                diff = abs(v - val)
-                if diff < min_diff:
-                    min_diff = diff
-                    closest_ratio = r
-            
-            # If it's a standard Gemini ratio (within 5%), use its name
-            if min_diff < 0.05:
-                return closest_ratio, (w, h), val
-            return closest_ratio, (w, h), val
-        return "1:1", None, 1.0
+        width, height = map(int, aspect_ratio.split(':'))
+        if width > 0 and height > 0:
+            target_ratio = width / height
+            closest_ratio, closest_val = _find_closest_gemini_ratio(target_ratio)
+            print(f"[RESIZE] Custom {aspect_ratio} (ratio={target_ratio:.4f}) -> Gemini {closest_ratio}")
+            return closest_ratio, (width, height), closest_val
     except (ValueError, ZeroDivisionError):
-        return "1:1", None, 1.0
+        pass
+
+    # "WIDTHxHEIGHT" format (e.g. "1920x1080")
+    if "x" in aspect_ratio.lower():
+        try:
+            w_str, h_str = aspect_ratio.lower().split("x")
+            width, height = int(w_str), int(h_str)
+            if width > 0 and height > 0:
+                target_ratio = width / height
+                closest_ratio, closest_val = _find_closest_gemini_ratio(target_ratio)
+                return closest_ratio, (width, height), closest_val
+        except (ValueError, ZeroDivisionError):
+            pass
+
+    return "1:1", None, 1.0
+
+
+def build_flash_extreme_wide_prompt(
+    user_prompt: str,
+    target_width: int,
+    target_height: int,
+    source_dims: tuple,
+) -> str:
+    """
+    PixExact v16 — Gemini 3.1 Flash Extreme Wide Prompt.
+    Forbids duplication and "picture-in-picture" blurred backdrops.
+    """
+    src_w, src_h = source_dims
+    tgt_ar = target_width / target_height
+    # Estimate how wide the source content will be when scaled to fill target height
+    scaled_src_w = int(src_w * (target_height / src_h))
+    side_ext = max(0, (target_width - scaled_src_w) // 2)
+    style_context = f"\n\nAdditional context: {user_prompt}" if user_prompt and user_prompt.strip() else ""
+
+    return f"""TASK: ADAPT IMAGE TO ULTRA-WIDE {target_width}x{target_height}px.
+STRICT RULE: NO "PICTURE-IN-PICTURE". NO BLURRED BACKDROPS. NO GHOSTING.
+
+1. PANORAMIC OUTPAINTING:
+   - Treat this as a SEAMLESS outpainting task, not a pasting task.
+   - The original image content (logos, subjects, text) must sit in the central {scaled_src_w}px zone.
+   - The LEFT and RIGHT extensions (~{side_ext}px each) must be a NATIVE continuation of the environment.
+   - The extension must look like more of the same scene, not a blurred overlay.
+   - NO GHOSTING: Do not use blurred or faded versions of the original image as a background.
+
+2. CONTENT LOCK:
+   - Every element (logo, person, product) appears EXACTLY ONCE in the center.
+   - NO CLONING: Do not repeat any subject or text to fill the wide space.
+   - The extensions must be clean negative space or environment continuation only.
+
+3. CLEAN EXECUTION:
+   - One unified, sharp image from edge to edge.
+   - No frames, no visible seams, no padding bars (no black/white bars).
+   - No "floating island" effect — the center content must flow perfectly into the sides.
+
+HARD PROHIBITIONS:
+✗ NO duplicate logos or products
+✗ NO blurred background "fills" or blurred replicas of the source
+✗ NO "picture-in-picture" or "floating window" appearance
+✗ NO white or black letterbox padding
+
+OUTPUT: One seamless {target_width}x{target_height} panoramic graphic. Crystal sharp.{style_context}"""
+
+
+
+def build_vertex_resize_prompt(validated_ratio: str) -> str:
+    """Vertex AI-specific prompt for the resize/transformation use case."""
+    return (
+        f"Recreate the provided image in the target aspect ratio: {validated_ratio}.\n\n"
+        "Preserve all original visual elements exactly as they are, including shapes, objects, "
+        "text, logos, QR codes, and design components. Do not alter, redesign, or restyle any element.\n\n"
+        "Maintain the original color scheme, typography, proportions of elements, and visual identity.\n\n"
+        "You may intelligently reposition, scale, or adjust spacing between elements only as needed "
+        "to fit the new aspect ratio, ensuring a clean and balanced composition.\n\n"
+        "Do not crop out or remove any existing content. Do not introduce any new elements.\n\n"
+        "Logos, QR codes, and critical brand elements must remain pixel-accurate and unmodified.\n\n"
+        "The final output should look like a natural, professionally adapted version of the original "
+        "image for the new aspect ratio, not a distorted or stretched transformation."
+    )
+
+
+def _fill_wide_canvas_from_source(
+    ai_content: Image.Image,
+    source_bytes: bytes,
+    target_width: int,
+    target_height: int,
+) -> Image.Image:
+    """
+    Fill a wide canvas without mirroring or tiling.
+    Strategy: stretch both the AI output and the original source to full target size,
+    blur them heavily, blend together, then paste the fitted AI content centred on top.
+    No edge-strip sampling means no mirror artifacts.
+    """
+    import numpy as np
+
+    ai_w, ai_h = ai_content.size
+    left_pad  = (target_width - ai_w) // 2
+    right_pad = target_width - ai_w - left_pad
+
+    # Background layer A: AI output stretched to full target + heavy blur
+    bg_ai = ai_content.resize((target_width, target_height), Image.Resampling.LANCZOS)
+    bg_ai = bg_ai.filter(ImageFilter.GaussianBlur(radius=40))
+
+    # Background layer B: original source stretched to full target + heavy blur
+    # Blending A+B keeps AI's outpainted atmosphere while anchoring brand colours.
+    bg = bg_ai
+    if source_bytes:
+        try:
+            src_img = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+            bg_src = src_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            bg_src = bg_src.filter(ImageFilter.GaussianBlur(radius=40))
+            a = np.array(bg_ai).astype(np.float32)
+            b = np.array(bg_src).astype(np.float32)
+            bg = Image.fromarray((a * 0.55 + b * 0.45).clip(0, 255).astype(np.uint8))
+        except Exception:
+            pass
+
+    canvas = bg.copy()
+    canvas.paste(ai_content, (left_pad, 0))
+
+    print(
+        f"[SCALE] Blur-fill: left={left_pad}px content={ai_w}px right={right_pad}px (no mirrors)"
+    )
+    return canvas
+
+
+def safe_scale_to_exact(image_input, target_width: int, target_height: int, source_image_bytes: bytes = None) -> bytes:
+    """
+    Scale AI output to exact target dimensions using LANCZOS.
+    No cropping, no padding - progressive upscaling for quality.
+    Handles both bytes and PIL Image objects (including JpegImageFile from GemImg).
+    """
+    # Parse input: handle bytes, PIL Images, and response objects
+    if isinstance(image_input, bytes):
+        img = Image.open(io.BytesIO(image_input)).convert("RGB")
+        image_bytes = image_input
+    elif isinstance(image_input, Image.Image):
+        img = image_input.convert("RGB")
+        # Convert back to bytes for later reference
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        image_bytes = buffer.getvalue()
+    else:
+        # Try to extract image from response-like objects
+        raw = getattr(image_input, "image", None) or getattr(image_input, "data", None)
+        if raw is None:
+            raise ValueError(f"Cannot process image source of type {type(image_input)}")
+        if isinstance(raw, Image.Image):
+            img = raw.convert("RGB")
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            image_bytes = buffer.getvalue()
+        elif isinstance(raw, bytes):
+            img = Image.open(io.BytesIO(raw)).convert("RGB")
+            image_bytes = raw
+        else:
+            raise ValueError(f"Cannot process image source with raw type {type(raw)}")
+    
+    src_w, src_h = img.size
+    if src_w <= 0 or src_h <= 0:
+        raise ValueError("Invalid source image dimensions")
+
+    if src_w == target_width and src_h == target_height:
+        return image_bytes
+
+    src_ar = src_w / src_h
+    tgt_ar = target_width / target_height
+    is_wide_landscape = target_width > target_height * 1.5
+    is_ultra_wide = tgt_ar >= 8.0  # Ultra-extreme like 2072×252 (8.22:1)
+
+    if is_ultra_wide:
+        if abs(src_ar - tgt_ar) / tgt_ar < 0.05:
+            # ARs within 5% — direct scale (no crop, imperceptible stretch)
+            print(
+                f"[SCALE] 🟢 ULTRA-WIDE {tgt_ar:.2f}:1 -> near-match ({src_ar:.2f}:1) -> Direct Resize (No Crop)"
+            )
+            scale_factor = target_width / src_w
+            img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        else:
+            # Ultra-wide: scale-fit then center-crop (never stretch)
+            scale_factor = max(target_width / src_w, target_height / src_h)
+            fit_w = int(src_w * scale_factor)
+            fit_h = int(src_h * scale_factor)
+            print(
+                f"[SCALE] 🔴 ULTRA-WIDE {tgt_ar:.2f}:1 (2072x252-class) | "
+                f"scale-fit {src_w}x{src_h} -> {fit_w}x{fit_h} -> center-crop -> {target_width}x{target_height}"
+            )
+            img = img.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+            # Center-crop to exact dimensions — no stretching whatsoever
+            x = (fit_w - target_width) // 2
+            y = (fit_h - target_height) // 2
+            img = img.crop((x, y, x + target_width, y + target_height))
+
+    elif is_wide_landscape:
+        if abs(src_ar - tgt_ar) / tgt_ar < 0.05:
+            # ARs within 5% — direct scale, distortion is imperceptible
+            scale_factor = target_width / src_w
+            print(
+                f"[SCALE] Wide AR-match resize {src_w}x{src_h} -> {target_width}x{target_height} "
+                f"(AR diff {abs(src_ar - tgt_ar)/tgt_ar*100:.1f}%)"
+            )
+            img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        else:
+            # Scale-to-fill then center-crop — never stretches
+            scale_factor = max(target_width / src_w, target_height / src_h)
+            fill_w = max(target_width, int(src_w * scale_factor))
+            fill_h = max(target_height, int(src_h * scale_factor))
+            print(
+                f"[SCALE] Wide scale-fill {src_w}x{src_h} -> {fill_w}x{fill_h} -> "
+                f"center-crop -> {target_width}x{target_height} (scale={scale_factor:.2f}x)"
+            )
+            img = img.resize((fill_w, fill_h), Image.Resampling.LANCZOS)
+            x = (fill_w - target_width) // 2
+            y = (fill_h - target_height) // 2
+            img = img.crop((x, y, x + target_width, y + target_height))
+
+    elif abs(src_ar - tgt_ar) / tgt_ar < 0.05:
+        # ARs within 5% — scale directly, distortion is imperceptible
+        scale_factor = max(target_width / src_w, target_height / src_h)
+        print(
+            f"[SCALE] {src_w}x{src_h} -> {target_width}x{target_height} (direct, scale={scale_factor:.2f}x)"
+        )
+        img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+    else:
+        # Standard fit-inside-then-extend approach for non-wide-landscape
+        scale = min(target_width / src_w, target_height / src_h)
+        scale_factor = scale
+        fit_w = int(src_w * scale)
+        fit_h = int(src_h * scale)
+        print(
+            f"[SCALE] {src_w}x{src_h} -> fit {fit_w}x{fit_h} -> extend -> {target_width}x{target_height}"
+        )
+        # Progressive upscaling if large jump
+        if scale > 1.6:
+            current_w, current_h = src_w, src_h
+            step = 1.5
+            while True:
+                next_w = int(current_w * step)
+                next_h = int(current_h * step)
+                if next_w >= fit_w or next_h >= fit_h:
+                    break
+                img = img.resize((next_w, next_h), Image.Resampling.LANCZOS)
+                current_w, current_h = next_w, next_h
+                print(f"[SCALE] Progressive step: {current_w}x{current_h}")
+        img = img.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+        if fit_w < target_width:
+            img = extend_image_horizontal(img, target_width)
+        if fit_h < target_height:
+            img = extend_image_vertical(img, target_height)
+        # Safety clamp to exact dims in case extend overshoots by 1px
+        if img.size != (target_width, target_height):
+            img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+    if scale_factor > 2.0:
+        sharpness_amount = 1.4
+    elif scale_factor > 1.5:
+        sharpness_amount = 1.3
+    elif scale_factor > 1.0:
+        sharpness_amount = 1.2
+    else:
+        sharpness_amount = 1.1
+
+    img = ImageEnhance.Sharpness(img).enhance(sharpness_amount)
+
+    if scale_factor > 1.3:
+        img = img.filter(ImageFilter.DETAIL)
+
+    if scale_factor > 1.5:
+        img = ImageEnhance.Contrast(img).enhance(1.05)
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    print(f"[SCALE] Final output: {target_width}x{target_height}, sharpness={sharpness_amount}")
+    return buffer.getvalue()
+
+
+def build_openrouter_resize_prompt(
+    source_dims: Tuple[int, int],
+    target_dims: Optional[Tuple[int, int]],
+    user_context: Optional[str] = None,
+    validated_ratio: str = "1:1"
+) -> str:
+    """
+    Build OpenRouter resize prompt using the robust template style requested
+    by the user (from the provided FastAPI reference implementation).
+    """
+    src_w, src_h = source_dims
+    tw, th = target_dims or get_native_resolution(validated_ratio)
+    context = (user_context or "").strip()
+
+    prompt = f"""Adapt this image to exactly {tw}×{th}px by intelligently resizing and edge-extending — no stretching, no framing.
+
+━━ CORE METHOD ━━
+Scale the source so it fills the {th}px HEIGHT completely (do not shrink or letterbox it).
+Then extend the LEFT and RIGHT edges outward by continuing the exact colors, textures, gradients,
+and lighting from the source edge pixels — until the canvas is {tw}px wide.
+The output is ONE continuous image. The source content must flow into the extensions invisibly.
+
+━━ WHAT TO PRESERVE ━━
+• All logos, text, products, people — rendered exactly as in the source (same words, same style)
+• Color palette, contrast, and graphic style unchanged
+• Primary focal point stays dominant and sharp
+
+━━ FILLING THE EXTRA CANVAS ━━
+• Extend from the VISIBLE EDGE PIXELS of the source — do not invent new content
+• Match the existing background exactly: if it is a gradient, continue it; if plain studio white, extend white; if outdoor, continue the scene naturally
+• No color jumps, brightness shifts, or seam artifacts at the join point
+• Fill dead zones with continuation of the source edges — never solid fills or blurred pads
+
+━━ HARD PROHIBITIONS ━━
+✗ No framing — the source must NOT appear as a photo placed on a background
+✗ No letterboxing or pillarboxing (no black/white/colored bars)
+✗ No duplicate elements — each logo, face, product appears exactly once
+✗ No stretch or squash — preserve all proportions
+✗ No new objects, text, or backgrounds not in the source
+✗ No collage seams, watermarks, or decorative borders
+
+OUTPUT: Exactly {tw}×{th}px. One coherent image that looks native at this size.
+{f"Additional context: {context}" if context else ""}""".strip()
+
+    return prompt
+
+
+def build_ai_recompose_prompt(user_prompt: str, target_dims: tuple, validated_ratio: str) -> str:
+    """
+    Build a highly-detailed AI prompt that instructs Gemini to ADAPT the
+    source image into a new aspect ratio while preserving ALL content.
+    """
+    tw, th = target_dims
+    orientation = "TALL VERTICAL" if th > tw else "WIDE HORIZONTAL" if tw > th else "SQUARE"
+
+    recompose_prompt = f"""Adapt this image to {tw}×{th}px ({validated_ratio}, {orientation}) — intelligent resize, no stretching, no framing.
+
+━━ METHOD ━━
+Scale the source to fill the target dimensions as much as possible while preserving its proportions.
+For any remaining canvas area: extend from the VISIBLE EDGE PIXELS of the source — continue the exact
+colors, gradients, textures, and lighting outward until the full {tw}×{th} canvas is covered.
+The output must be ONE continuous image that looks like it was always this size.
+
+━━ PRESERVE EXACTLY ━━
+• All logos, text, products, subjects — same words, same colors, same style
+• No element is stretched, squashed, or distorted
+• The primary focal point stays sharp and dominant
+
+━━ FILLING REMAINING SPACE ━━
+• Continue from the source edges — if edges are gradient, continue the gradient; if plain, continue the plain; if background scene, continue the scene
+• No color jumps or visible seams at the join
+• Fill completely — no empty zones, no dead space
+
+━━ STRICT PROHIBITIONS ━━
+✗ Do NOT place the source as a photo on a background (no picture-in-picture)
+✗ Do NOT letterbox or pillarbox — no bars of any color
+✗ Do NOT add frames, borders, shadows, or 3D effects
+✗ Do NOT rotate, tilt, skew, or add perspective
+✗ Do NOT duplicate any element — logos, text, subjects appear exactly once
+✗ Do NOT add new objects, text, or scenes not in the source
+✗ Do NOT add solid color fills or blurred padding zones
+
+OUTPUT: Exactly {tw}×{th}px. Flat, rectangular, filled edge-to-edge, crystal sharp."""
+
+    if user_prompt and user_prompt.strip():
+        recompose_prompt += f"\n\nAdditional context: {user_prompt}"
+
+    return recompose_prompt
 
 
 def build_openai_outpaint_prompt(
     user_prompt: str,
     target_width: int,
     target_height: int,
-    source_dims: Optional[Tuple[int, int]] = None,
+    source_dims: tuple = None,
 ) -> str:
     """
     Prompt for OpenAI gpt-image-2 outpainting.
@@ -1909,7 +2286,6 @@ INTELLIGENT CONTENT PLACEMENT RULES:
 3) Keep the primary message and hero element dominant, not tiny and not centered as a narrow strip.
 4) Use the full canvas width intentionally; avoid empty dead zones.
 5) Maintain original brand colors, style and typography hierarchy.
-6) VERTICAL SAFETY ZONE: You must keep ALL text, faces, logos, and critical product elements within the vertical middle 50% of the canvas. Do NOT place text near the very top or very bottom edge, as it may be cropped.
 
 STRICT PROHIBITIONS:
 ✗ Do NOT invent new background content (sky, clouds, buildings, landscapes, abstract textures) unless that exact content is visible at the image edge
@@ -1926,7 +2302,7 @@ def build_openai_banner_prompt(
     user_prompt: str,
     target_width: int,
     target_height: int,
-    source_dims: Optional[Tuple[int, int]] = None,
+    source_dims: tuple = None,
 ) -> str:
     """
     Prompt for OpenAI banner-generation mode (AR > 3.5).
@@ -1990,7 +2366,6 @@ COMPOSITION RULES (INTELLIGENT PLACEMENT):
 • The background must feel intentional: extend the brand gradient or colour field across the full width with no seam or empty area
 • The banner must look like a professionally art-directed piece, not a cropped or tiled photo
 • Distribute elements across zones with clear visual hierarchy; avoid placing all source content as one centered block
-• VERTICAL SAFETY ZONE: You must keep ALL text, faces, logos, and critical product elements within the vertical middle 50% of the canvas. Do NOT place text near the very top or very bottom edge, as it may be cropped.
 
 STRICT PROHIBITIONS:
 ✗ Do NOT centre the source image and fill sides with generated scenery
@@ -2001,6 +2376,211 @@ STRICT PROHIBITIONS:
 
 OUTPUT: One flat, ready-to-display {target_width}×{target_height}px digital signage banner with all elements from the reference intelligently composed across the full width."""
 
+
+def build_outpaint_canvas(source_bytes: bytes, target_width: int, target_height: int) -> bytes:
+    """
+    Pre-composites source onto a target-sized canvas for Gemini outpainting.
+
+    Strategy depends on whether source is wider or taller than the target:
+
+    WIDE SOURCE → PORTRAIT TARGET (e.g. landscape ad → story reel):
+      Scale source to fill the full TARGET WIDTH, center-crop a vertical strip
+      from the source, paste it full-width. Gemini only needs to extend
+      above/below — no picture-in-picture, no tiny stamp.
+
+    PORTRAIT SOURCE → WIDE TARGET (e.g. portrait photo → banner):
+      Scale source to fill the full TARGET HEIGHT, center-crop a horizontal
+      strip, paste it full-height. Gemini extends left/right.
+
+    SIMILAR AR:
+      Scale to fit (original behaviour) — minimal extension needed.
+    """
+    source_img = Image.open(io.BytesIO(source_bytes)).convert("RGB")
+    src_w, src_h = source_img.size
+    src_ar = src_w / src_h
+    tgt_ar = target_width / target_height
+
+    if src_ar > tgt_ar * 1.2:
+        # ── Wide source → portrait/narrower target ────────────────────────
+        # Scale so source WIDTH fills target width, then crop center vertical strip
+        scale = target_width / src_w
+        scaled_w = target_width
+        scaled_h = max(1, int(src_h * scale))
+        scaled_img = source_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+
+        # Center-crop to target height (keep focal center of source vertically)
+        y_crop_start = max(0, (scaled_h - target_height) // 2)
+        y_crop_end   = y_crop_start + min(scaled_h, target_height)
+        cropped      = scaled_img.crop((0, y_crop_start, scaled_w, y_crop_end))
+        cropped_h    = cropped.size[1]
+
+        # Place the cropped strip centered vertically in the target canvas
+        top_pad = (target_height - cropped_h) // 2
+
+        # Background: source stretched to target + heavy blur (supplies color context)
+        bg = source_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        bg = bg.filter(ImageFilter.GaussianBlur(radius=45))
+
+        canvas = bg.copy()
+        canvas.paste(cropped, (0, top_pad))
+
+        print(
+            f"[OUTPAINT] Wide→portrait: {src_w}x{src_h} → strip {scaled_w}x{cropped_h} "
+            f"at y={top_pad} in {target_width}x{target_height}"
+        )
+
+    elif tgt_ar > src_ar * 1.2:
+        # ── Portrait source → wide/wider target ──────────────────────────
+        # Scale so source HEIGHT fills target height, then crop center horizontal strip
+        scale = target_height / src_h
+        scaled_w = max(1, int(src_w * scale))
+        scaled_h = target_height
+        scaled_img = source_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+
+        x_crop_start = max(0, (scaled_w - target_width) // 2)
+        x_crop_end   = x_crop_start + min(scaled_w, target_width)
+        cropped      = scaled_img.crop((x_crop_start, 0, x_crop_end, scaled_h))
+        cropped_w    = cropped.size[0]
+
+        left_pad = (target_width - cropped_w) // 2
+
+        bg = source_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        bg = bg.filter(ImageFilter.GaussianBlur(radius=45))
+
+        canvas = bg.copy()
+        canvas.paste(cropped, (left_pad, 0))
+
+        print(
+            f"[OUTPAINT] Portrait→wide: {src_w}x{src_h} → strip {cropped_w}x{scaled_h} "
+            f"at x={left_pad} in {target_width}x{target_height}"
+        )
+
+    else:
+        # ── Similar AR — fill dominant dimension to avoid PIP stamp ──────
+        # Scale to fill the full width (portrait target) or full height (landscape target).
+        # Only the subordinate dimension needs extension; no centered stamp is created.
+        if target_height >= target_width:
+            scale = target_width / src_w          # fill full width
+        else:
+            scale = target_height / src_h         # fill full height
+
+        scaled_w = max(1, int(src_w * scale))
+        scaled_h = max(1, int(src_h * scale))
+        scaled_img = source_img.resize((scaled_w, scaled_h), Image.Resampling.LANCZOS)
+
+        # Center-crop if scaled overshoots in the non-dominant dimension
+        if scaled_w > target_width:
+            x_off = (scaled_w - target_width) // 2
+            scaled_img = scaled_img.crop((x_off, 0, x_off + target_width, scaled_h))
+            scaled_w = target_width
+        if scaled_h > target_height:
+            y_off = (scaled_h - target_height) // 2
+            scaled_img = scaled_img.crop((0, y_off, scaled_w, y_off + target_height))
+            scaled_h = target_height
+
+        left_pad = (target_width  - scaled_w) // 2
+        top_pad  = (target_height - scaled_h) // 2
+
+        bg = source_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        bg = bg.filter(ImageFilter.GaussianBlur(radius=45))
+
+        canvas = bg.copy()
+        canvas.paste(scaled_img, (left_pad, top_pad))
+
+        print(
+            f"[OUTPAINT] Similar AR fill: {src_w}x{src_h} → {scaled_w}x{scaled_h} "
+            f"(pad L={left_pad} T={top_pad}) in {target_width}x{target_height}"
+        )
+
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def build_outpaint_prompt(user_prompt: str, target_dims: tuple, source_dims: tuple = None) -> str:
+    """
+    Prompt for Gemini outpainting on the pre-composited canvas.
+    The canvas already shows the source content scaled to fill the dominant dimension
+    (full width for portrait targets, full height for wide targets). Gemini only needs
+    to extend in one direction from the visible edge pixels.
+    """
+    tw, th = target_dims
+    src_ar = (source_dims[0] / source_dims[1]) if source_dims else 1.0
+    tgt_ar = tw / th
+
+    if source_dims:
+        sw, sh = source_dims
+        src_note = f"Source: {sw}×{sh}px  →  Target: {tw}×{th}px\n"
+    else:
+        src_note = ""
+
+    if src_ar > tgt_ar * 1.2:
+        # Landscape source → portrait/narrower target
+        # Canvas has source strip spanning full width, needs vertical extension
+        extend_instruction = (
+            f"The source content already spans the full {tw}px width. "
+            f"Extend the scene UPWARD and DOWNWARD from the top and bottom edges of the source content "
+            f"until the full {th}px height is filled. "
+            f"Continue the exact background — ceiling, walls, floor, sky — following the natural perspective."
+        )
+        axis = "above and below"
+    elif tgt_ar > src_ar * 1.2:
+        # Portrait source → wide target
+        # Canvas has source strip spanning full height, needs horizontal extension
+        extend_instruction = (
+            f"The source content already spans the full {th}px height. "
+            f"Extend the scene LEFT and RIGHT from the left and right edges of the source content "
+            f"until the full {tw}px width is filled. "
+            f"Continue the exact background following natural perspective and lighting."
+        )
+        axis = "left and right"
+    else:
+        # Similar AR — canvas fills the dominant dimension; only subordinate axis needs extension
+        if th >= tw:
+            extend_instruction = (
+                f"The source content already spans the full {tw}px width. "
+                f"Extend the scene ABOVE and BELOW from the top and bottom edges of the source "
+                f"until the full {th}px height is filled. "
+                f"Continue the exact background — ceiling, walls, floor, sky, gradient — following natural perspective."
+            )
+            axis = "above and below"
+        else:
+            extend_instruction = (
+                f"The source content already spans the full {th}px height. "
+                f"Extend the scene LEFT and RIGHT from the left and right edges of the source "
+                f"until the full {tw}px width is filled. "
+                f"Continue the exact background following natural perspective and lighting."
+            )
+            axis = "left and right"
+
+    extra = f"\nAdditional context: {user_prompt}" if user_prompt and user_prompt.strip() else ""
+
+    return f"""Adapt this image to {tw}×{th}px as one seamless continuous scene.
+{src_note}
+━━ WHAT TO DO ━━
+{extend_instruction}
+
+Match the source edges EXACTLY — same colors, lighting, textures, gradients at every pixel.
+The join between source and extension must be completely invisible.
+Scene continuation rules:
+• Indoor / office / architectural → extend walls, ceiling, floor with correct perspective
+• Sky / outdoor / nature → continue the sky, ground, horizon naturally
+• Studio / gradient background → blend the exact color/gradient smoothly
+• Product / branded → continue the background style; keep all branding exactly as-is
+
+━━ THE RESULT IS ONE UNIFIED IMAGE ━━
+The output must look like a single photograph or graphic that was always {tw}×{th}px.
+Not a photo placed on a background. Not letterboxed. Not a stamp on a canvas.
+The source content must merge into the extension invisibly — no visible border, no frame, no separation.
+
+━━ PROHIBITIONS ━━
+✗ No visible edge or frame around the source content
+✗ No solid fills, blurred padding, or color bars {axis}
+✗ No duplicate logos, people, or text — every element appears exactly once
+✗ No new objects or scenes not visible in the source
+✗ No mirroring, tiling, or copy-pasting{extra}
+
+OUTPUT: Exactly {tw}×{th}px. One coherent image, filled edge-to-edge, crystal sharp."""
 
 
 def build_layout_prompt(prompt: str, target_dims: Optional[Tuple[int, int]], validated_ratio: str) -> str:
@@ -2044,7 +2624,6 @@ DELIVERY: Pixel-perfect {tw}×{th} output."""
     return layout_prefix
 
 
-
 def build_image_adaptation_prompt(
     prompt: Optional[str],
     target_dims: Optional[Tuple[int, int]],
@@ -2071,26 +2650,26 @@ def build_image_adaptation_prompt(
     extra_w = max(0, tw - th)
 
     if is_extreme_tall:
-        # Ultra-surgical Zonal Prompting for 1:2+ ratios
         fill_note = (
-            f"SURGICAL TASK: The 1:2+ ratio canvas is {tw}x{th}px. "
-            "You MUST divide the layout into 3 VERTICAL ZONES:\n"
-            f"1. TOP ZONE (rows 0 to {extra_h // 2}): BACKGROUND EXTENSION. Fill this area by natively extending the background colors, gradients, and textures from the source image. DO NOT leave it black. NO NEW OBJECTS. NO LOGOS.\n"
-            f"2. MIDDLE ZONE (rows {extra_h // 2} to {th - (extra_h // 2)}): SOURCE CONTENT. Place the ENTIRE design here as a SINGLE LOCKED RECTANGLE. Do NOT break apart logos or text.\n"
-            f"3. BOTTOM ZONE (rows {th - (extra_h // 2)} to {th}): BACKGROUND EXTENSION. Fill this area by natively extending the background colors, gradients, and textures from the source image. DO NOT leave it black. NO NEW OBJECTS. NO LOGOS.\n"
-            "PROHIBITION: Zero content duplication. Branding, logos, and subject matter MUST stay together in the MIDDLE ZONE."
+            f"RECOMPOSITION TASK: Adapt this image into a {tw}x{th}px portrait format.\n"
+            "The source is a landscape/wide image. Do NOT shrink it into a small rectangle or letterbox it.\n"
+            "Instead:\n"
+            f"1. FILL THE FRAME: Scale and recompose the content so it fills the full {tw}x{th}px portrait canvas edge-to-edge.\n"
+            "2. KEEP ALL CONTENT: Preserve every element — logos, text, people, products, background — reflow their positions naturally for portrait layout.\n"
+            "3. EXTEND BACKGROUND: The background scene (office, sky, studio, etc.) should fill the full portrait height. Extend it naturally above and below the key content.\n"
+            "4. NATURAL PORTRAIT LAYOUT: Arrange headline at top, hero/subject in middle, tagline/CTA at bottom — standard portrait composition.\n"
+            "RESULT: A native portrait image that looks like it was designed for this format, NOT a landscape image placed inside a portrait frame."
         )
     elif is_extreme_wide:
-        # Ultra-surgical Horizontal Zonal Prompting for ultra-wide signs (ratio > 2.0)
-        # More explicit pixel math to prevent Gemini from ignoring the instructions
+        # PixExact v16: Ultra-surgical Horizontal Zonal Prompting for ultra-wide signs (ratio > 2.0)
+        # Forbids "picture-in-picture" (pasting source on blurred bg) and content cloning.
         fill_note = (
             f"ULTRA-WIDE SIGNAGE TASK: Canvas is {tw}x{th}px (ratio {tw/th:.2f}:1).\n"
-            f"This is an extreme wide-format digital sign.\n"
-            f"The source image content occupies the CENTER {th}px-high zone.\n"
-            f"LEFT EXTENSION: {extra_w // 2}px — fill by continuing the background color/gradient from the left edge of the source. NO logos, NO text, NO subjects.\n"
-            f"RIGHT EXTENSION: {extra_w - extra_w // 2}px — fill by continuing the background color/gradient from the right edge of the source. NO logos, NO text, NO subjects.\n"
-            f"RESULT: A single wide graphic where the original content sits centered, flanked by clean background extensions.\n"
-            f"PROHIBITION: Do NOT mirror or tile the source image. Do NOT repeat any element."
+            f"STRICT RULE: Every logo, product, and person from the source must appear EXACTLY ONCE.\n"
+            f"1. SEAMLESS EXTENSION: Do NOT create a 'picture-in-picture' or 'floating center' effect.\n"
+            f"2. CENTER ZONE: The source content occupies the center. NO CLONING allowed.\n"
+            f"3. PANORAMIC SIDES: Fill the left and right extension zones with a NATIVE continuation of the background.\n"
+            f"PROHIBITION: No blurred replicas of the source image as background. No second logos. No ghosting. Clean, unified panoramic image only."
         )
     elif is_wide:
         # Wide landscape (ratio 1.2-2.0)
@@ -2113,9 +2692,17 @@ def build_image_adaptation_prompt(
             "Scale and recompose the source image to fill it exactly while maintaining all text and logos."
         )
 
+    if is_tall:
+        step1 = f"1. FILL THE FRAME: Scale the source to fill the full {tw}×{th}px canvas edge-to-edge — do NOT shrink it into a centred block.\n"
+        step2 = f"2. BACKGROUND EXTENSION: Extend background ABOVE and BELOW by continuing the exact edge colors, gradients, and textures from the source top/bottom edges. NO BLACK BARS.\n"
+    else:
+        step1 = f"1. FILL THE WIDTH: Scale source to exactly {th}px height. Extend background LEFT and RIGHT by continuing the exact edge colors, gradients, and textures from the source sides. Do NOT centre the source as a small block.\n"
+        step2 = "2. BACKGROUND EXTENSION: Continue edge colors/gradients outward with no color jumps or visible seams. NO BLACK BARS.\n"
+    step3 = "3. NO CONTENT CLONES: Every logo, text element, and subject appears exactly once — never duplicated in the extension zones.\n"
+
     return (
         f"TASK: ADAPT IMAGE TO {tw}x{th}px ({orientation})\n"
-        "ABSORUTE CONSTRAINT: LOGOS AND TEXT MUST APPEAR EXACTLY ONCE.\n"
+        "ABSOLUTE CONSTRAINT: LOGOS AND TEXT MUST APPEAR EXACTLY ONCE.\n"
         "\n"
         "COLOR FIDELITY LOCK (MANDATORY):\n"
         "- Use the EXACT color palette from the source image.\n"
@@ -2133,13 +2720,14 @@ def build_image_adaptation_prompt(
         "- EVERY logo and icon (do NOT omit the Mastercard logo, the QR code, or any brand marks).\n"
         "- The SAME color palette and overall graphic style.\n"
         "\n"
-        "1. CENTER THE DESIGN: Place the entire source image content as a single locked block in the center of the canvas.\n"
-        "2. NATIVE BACKGROUND FILL: Outpaint and extend the background ONLY. Use the existing colors and patterns to fill the gaps. NO BLACK BARS.\n"
-        "3. NO CONTENT CLONES: Avoid repeating the subject, logo, or text in the extension zones.\n"
-        "\n"
+        + step1
+        + step2
+        + step3
+        + "\n"
         f"FILL NOTE: {fill_note}\n"
         "\n"
         "HARD PROHIBITIONS:\n"
+        "❌ Do NOT place the original image as a small centred block with background around it — NO picture-in-picture.\n"
         "❌ Do NOT redraw, redesign, or artistically reinterpret the content.\n"
         "❌ Do NOT change the person's face or clothing.\n"
         "❌ Do NOT remove any text, logos, people, or products from the original design.\n"
@@ -2157,257 +2745,431 @@ def build_image_adaptation_prompt(
 # IMAGE EXTENSION HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
 
+def extend_image_horizontal(img: Image.Image, new_width: int) -> Image.Image:
+    """Extend image horizontally using edge mirroring."""
+    import numpy as np
+    img_width, img_height = img.size
+    padding_needed = new_width - img_width
+    left_pad = padding_needed // 2
+    right_pad = padding_needed - left_pad
+    img_array = np.array(img)
+    new_array = np.zeros((img_height, new_width, img_array.shape[2]), dtype=img_array.dtype)
+    edge_width = max(1, min(50, img_width // 10))
 
-def build_outpaint_prompt(user_prompt: str, target_dims: tuple, source_dims: tuple = None) -> str:
+    if left_pad > 0:
+        left_edge = np.flip(img_array[:, :edge_width], axis=1)
+        fill = np.tile(left_edge, (1, (left_pad // edge_width) + 1, 1))[:, :left_pad]
+        new_array[:, :left_pad] = fill
+
+    new_array[:, left_pad:left_pad + img_width] = img_array
+
+    if right_pad > 0:
+        right_edge = np.flip(img_array[:, -edge_width:], axis=1)
+        fill = np.tile(right_edge, (1, (right_pad // edge_width) + 1, 1))[:, :right_pad]
+        new_array[:, left_pad + img_width:] = fill
+
+    return Image.fromarray(new_array.astype('uint8'))
+
+
+def extend_image_vertical(img: Image.Image, new_height: int) -> Image.Image:
+    """Extend image vertically using edge mirroring."""
+    import numpy as np
+    img_width, img_height = img.size
+    padding_needed = new_height - img_height
+    top_pad = padding_needed // 2
+    bottom_pad = padding_needed - top_pad
+    img_array = np.array(img)
+    new_array = np.zeros((new_height, img_width, img_array.shape[2]), dtype=img_array.dtype)
+    edge_height = max(1, min(50, img_height // 10))
+
+    if top_pad > 0:
+        top_edge = np.flip(img_array[:edge_height, :], axis=0)
+        fill = np.tile(top_edge, ((top_pad // edge_height) + 1, 1, 1))[:top_pad, :]
+        new_array[:top_pad, :] = fill
+
+    new_array[top_pad:top_pad + img_height, :] = img_array
+
+    if bottom_pad > 0:
+        bottom_edge = np.flip(img_array[-edge_height:, :], axis=0)
+        fill = np.tile(bottom_edge, ((bottom_pad // edge_height) + 1, 1, 1))[:bottom_pad, :]
+        new_array[top_pad + img_height:, :] = fill
+
+    return Image.fromarray(new_array.astype('uint8'))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PIXEXACT v11 — POST PROCESSING
+# ═══════════════════════════════════════════════════════════════════════════
+
+def post_process_image(
+    ai_image_bytes,
+    target_dims: Tuple[int, int],
+    source_image_bytes=None,
+) -> bytes:
     """
-    Prompt for Gemini outpainting on a pre-composited canvas.
-    The source content is centred and sharp; surrounding areas are blurred placeholders.
+    PixExact v12: AI-Enhanced Source Priority.
+    Uses Gemini's output as the background base but overlays the original
+    source image to guarantee 100% fidelity for text and branding.
+    
+    ANTI-STRETCHING: For ultra-wide formats (AR ≥ 8.0, e.g., 2072×252),
+    uses scale-fit + center-crop to prevent any distortion.
     """
-    tw, th = target_dims
-    is_wide = tw > th * 1.3
-    is_tall = th > tw * 1.3
-    if is_wide:
-        extend_dir = "left and right sides"
-    elif is_tall:
-        extend_dir = "top and bottom"
+    import numpy as np
+    target_width, target_height = target_dims
+    target_ar = target_width / target_height
+    is_ultra_wide = target_ar >= 8.0
+    
+    if is_ultra_wide:
+        print(f"[PIXEXACT v12] ULTRA-WIDE FORMAT DETECTED ({target_ar:.2f}:1) — ANTI-STRETCH ENABLED")
+
+    # 1. Parse AI output (Gemini's "imagination" for the background)
+    if isinstance(ai_image_bytes, bytes):
+        ai_img = Image.open(io.BytesIO(ai_image_bytes))
+    elif isinstance(ai_image_bytes, Image.Image):
+        ai_img = ai_image_bytes
     else:
-        extend_dir = "all sides"
+        raw = getattr(ai_image_bytes, "image", None) or getattr(ai_image_bytes, "data", None)
+        if raw is None:
+            raise ValueError(f"Cannot process source of type {type(ai_image_bytes)}")
+        ai_img = raw if isinstance(raw, Image.Image) else Image.open(io.BytesIO(raw))
 
-    ratio_context = ""
-    if source_dims:
-        sw, sh = source_dims
-        ratio_context = (
-            f"\nINPUT: source image {sw}x{sh}px ({sw/sh:.2f}:1 ratio) → "
-            f"target canvas {tw}x{th}px ({tw/th:.2f}:1 ratio). "
-            f"You must extend content to fill the additional {abs(tw-sw)}x{abs(th-sh)}px of space."
-        )
+    ai_img = ai_img.convert("RGB")
+    ai_w, ai_h = ai_img.size
+    print(f"[PIXEXACT v12] AI Output: {ai_w}x{ai_h} | Target: {target_width}x{target_height}")
 
-    extra = f"\nAdditional instruction: {user_prompt}" if user_prompt and user_prompt.strip() else ""
-    return f"""[OUTPAINT | {tw}x{th}px]{ratio_context}
-The attached image is a pre-composited {tw}x{th}px canvas. The original content is centred and sharp. The {extend_dir} contain a blurred colour approximation showing the background to extend.
+    # ── ANTI-STRETCHING LOGIC FOR ULTRA-WIDE (AR ≥ 8.0) ──
+    # If target is ultra-wide (like 2072×252), use scale-fit + center-crop instead of direct resize
+    is_target_ultra_wide = target_width / target_height >= 8.0
+    
+    def _resize_without_stretching(img: Image.Image, tgt_w: int, tgt_h: int) -> Image.Image:
+        """Resize image to exact target dimensions without stretching."""
+        img_w, img_h = img.size
+        tgt_ar = tgt_w / tgt_h
+        img_ar = img_w / img_h
+        
+        if is_target_ultra_wide:
+            if abs(img_ar - tgt_ar) / tgt_ar < 0.05:
+                # ARs within 5% — direct scale (no crop, imperceptible stretch)
+                img = img.resize((tgt_w, tgt_h), Image.Resampling.LANCZOS)
+                print(f"[ANTI-STRETCH] Ultra-wide ({tgt_ar:.2f}:1) -> near-match ({img_ar:.2f}:1) -> Direct Resize (No Crop)")
+            else:
+                # Ultra-wide: scale-fit then center-crop (never stretch)
+                scale = max(tgt_w / img_w, tgt_h / img_h)
+                fit_w = int(img_w * scale)
+                fit_h = int(img_h * scale)
+                img = img.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+                x = (fit_w - tgt_w) // 2
+                y = (fit_h - tgt_h) // 2
+                img = img.crop((x, y, x + tgt_w, y + tgt_h))
+                print(f"[ANTI-STRETCH] Ultra-wide ({tgt_ar:.2f}:1) → scale-fit+crop {img_w}x{img_h}→{fit_w}x{fit_h}→crop→{tgt_w}x{tgt_h}")
+        elif abs(img_ar - tgt_ar) / tgt_ar < 0.05:
+            # ARs within 5% — direct scale
+            img = img.resize((tgt_w, tgt_h), Image.Resampling.LANCZOS)
+        else:
+            # Different AR — scale-fit then extend
+            scale = min(tgt_w / img_w, tgt_h / img_h)
+            fit_w = int(img_w * scale)
+            fit_h = int(img_h * scale)
+            img = img.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+            if fit_w < tgt_w:
+                img = extend_image_horizontal(img, tgt_w)
+            if fit_h < tgt_h:
+                img = extend_image_vertical(img, tgt_h)
+        
+        return img
 
-YOUR TASK — replace the blurred {extend_dir} with seamless, intelligent content:
-• Architecture / buildings → extend walls, facades, windows with correct vanishing-point perspective. Do NOT tile or repeat building sections.
-• Sky / outdoor / atmosphere → continue clouds, gradients, ambient light naturally.
-• Ground / road / floor → follow the horizon line and surface texture to the edges.
-• Solid or gradient studio background → blend the colour smoothly, no seam, no tone jump.
-• The full result must read as ONE seamless wide-format digital sign — no visible join anywhere.
+    if source_image_bytes:
+        try:
+            print("[PIXEXACT v12] Source image detected. Using AI + Source composite mode.")
+            # Handle both bytes and PIL Image objects for source
+            if isinstance(source_image_bytes, bytes):
+                source_img = Image.open(io.BytesIO(source_image_bytes))
+            elif isinstance(source_image_bytes, Image.Image):
+                source_img = source_image_bytes
+            else:
+                # Try to extract from response-like objects
+                raw = getattr(source_image_bytes, "image", None) or getattr(source_image_bytes, "data", None)
+                if raw is None:
+                    raise ValueError(f"Cannot process source of type {type(source_image_bytes)}")
+                source_img = raw if isinstance(raw, Image.Image) else Image.open(io.BytesIO(raw))
+            
+            source_img = source_img.convert("RGB")
+            src_w, src_h = source_img.size
 
-PRESERVE the centred content (logos, text, products, subjects) exactly as placed. Do not move, scale, or repeat any element.
+            # For portrait signage, do not trust AI-only full-frame layout directly.
+            # It often causes flat flood-fill backgrounds or weak semantic placement.
+            # Force source+AI composite path for stable single-instance composition.
+            use_portrait_ai_layout_mode = False
 
-PROHIBITIONS:
-✗ No mirroring or flipping of any element
-✗ No tiling or copy-pasting of content blocks
-✗ No black bars, white bars, or solid-colour padding
-✗ No hard colour jump at the seam between original and extension{extra}
+            # Scale AI image to FILL target (this will be our background) — use anti-stretch
+            ai_bg = _resize_without_stretching(ai_img, target_width, target_height)
+            
+            # Optional: Add a slight blur to AI background to make source pop
+            # ai_bg = ai_bg.filter(ImageFilter.GaussianBlur(radius=2))
 
-OUTPUT: One seamless flat digital graphic at exactly {tw}x{th}px."""
+            use_portrait_safe_background = target_height > target_width and target_height >= target_width * 1.2
+            canvas = _build_portrait_safe_background(source_img, target_width, target_height) if use_portrait_safe_background else ai_bg
+            if use_portrait_safe_background:
+                print("[PIXEXACT v12] Portrait-safe background mode enabled.")
+                # Keep full source semantics; previous aggressive center-band logic
+                # made portrait outputs look like tiny middle strips.
+                semantic_img = source_img
+                sem_w, sem_h = semantic_img.size
+                if target_height >= target_width * 2.2:
+                    max_center_height = int(target_height * 0.82)
+                elif target_height >= target_width * 1.8:
+                    max_center_height = int(target_height * 0.86)
+                else:
+                    max_center_height = int(target_height * 0.90)
+                scale = min(target_width / sem_w, max_center_height / sem_h)
+                scaled_src_w = max(1, int(sem_w * scale))
+                scaled_src_h = max(1, int(sem_h * scale))
+                source_overlay = semantic_img.resize((scaled_src_w, scaled_src_h), Image.Resampling.LANCZOS)
+            else:
+                # Scale full source to FIT (preserve aspect ratio/fidelity)
+                scale = min(target_width / src_w, target_height / src_h)
+                scaled_src_w = int(src_w * scale)
+                scaled_src_h = int(src_h * scale)
+                source_overlay = source_img.resize((scaled_src_w, scaled_src_h), Image.Resampling.LANCZOS)
 
+            x_offset = (target_width - scaled_src_w) // 2
+            y_offset = (target_height - scaled_src_h) // 2
+            
+            # Paste the original source precisely on top
+            canvas.paste(source_overlay, (x_offset, y_offset))
+            result_img = canvas
+            print(f"[PIXEXACT v12] Blended Source ({scaled_src_w}x{scaled_src_h}) onto AI background.")
 
-
-def build_openrouter_resize_prompt(
-    source_dims: Tuple[int, int],
-    target_dims: Optional[Tuple[int, int]],
-    user_context: Optional[str] = None,
-    validated_ratio: str = "1:1"
-) -> str:
-    """
-    Build OpenRouter resize prompt using the robust template style requested
-    by the user (from the provided FastAPI reference implementation).
-    """
-    src_w, src_h = source_dims
-    tw, th = target_dims or get_native_resolution(validated_ratio)
-    context = (user_context or "").strip()
-
-    prompt = f"""TASK (read carefully):
-Redraw the input image as a NEW composition at exactly
-{tw} x {th} pixels. 
-
-CORE INSTRUCTIONS:
-Preserve the input image exactly as the visual source. Keep all logos, text, branding, objects, colors, and composition unchanged. Only adapt layout to fit the target resolution with native edge extension and zero distortion.
-
-WHAT YOU MUST PRESERVE (semantic lock):
-- The same subject matter, logos, icons, diagrams, products, people, and
-  scenery—nothing important removed or swapped out.
-- The same readable text (same words; same language). Do not change copy,
-  spelling, or branding.
-- The same color palette, contrast level, and overall graphic style (flat vs
-  photo, illustration style, etc.).
-- The same meaning: it should read as the same ad, slide, banner, or asset.
-
-WHAT YOU SHOULD DO (layout + redraw):
-- Output must look **freshly rendered** for this canvas size: clean edges,
-  appropriate typography scale for {tw}x{th}, balanced
-  margins—not a smeared upscale/downscale artifact.
-- **Preserve the main focal point** (hero, headline, primary logo, key
-  product): keep it dominant and in roughly the same visual priority as in
-  the source unless the new aspect ratio forces minor shifts.
-- If source aspect ratio ({src_w}:{src_h}) differs from target
-  ({tw}:{th}), use **intelligent rearrangement**: reflow
-  blocks, adjust spacing, stack or align elements, redistribute background—so
-  the full message still fits without cropping important content.
-- If aspect ratios are close, prefer **minimal change**: proportional scaling
-  and gentle spacing tweaks; keep composition and focus aligned with original.
-- Background may extend or simplify to fill the frame if it stays consistent
-  with the original style (no unrelated new scenes).
-
-INTELLIGENT CANVAS MAPPING RULES (MANDATORY):
-- Intelligently place existing elements so the final design covers the FULL {tw}x{th} canvas with no dead zones.
-- Do NOT stretch or squeeze logos, people, products, or text. Keep original proportions.
-- Do NOT add new elements, and do NOT remove required elements.
-- Do NOT duplicate semantic elements (no repeated logos, CTA, subject, or text blocks).
-- Avoid obvious leftover empty side/top/bottom spaces; fill naturally with source-consistent continuation only.
-- Keep all element relationships coherent so the result feels intentionally laid out for this canvas.
-
-HARD DON'TS:
-- Do not crop out logos, faces, legal text, or key product areas.
-- Do not replace elements with different objects or invent new messaging.
-- Do not apply a different art direction (e.g. photorealistic if source is flat
-  graphic), heavy filters, or "make it prettier" redesigns.
-- Do not leave unused blank regions or artificial padding bands.
-
-OUTPUT:
-- Exactly {tw} x {th} pixels.
-- One coherent image; no collage seams or watermarks unless in source.
-
-USER CONTEXT (optional; must not contradict rules above):
-{context}
-""".strip()
-
-    return prompt
-
-
-
-def build_ai_recompose_prompt(user_prompt: str, target_dims: tuple, validated_ratio: str) -> str:
-    """
-    Build a highly-detailed AI prompt that instructs Gemini to ADAPT the
-    source image into a new aspect ratio while preserving ALL content.
-    """
-    tw, th = target_dims
-    orientation = "TALL VERTICAL" if th > tw else "WIDE HORIZONTAL" if tw > th else "SQUARE"
-
-    recompose_prompt = f"""TASK: Resize the attached image to {tw}x{th} pixels ({validated_ratio}, {orientation}).
-
-You are performing a SIMPLE RESIZE/CANVAS EXTENSION operation. This is NOT a creative task.
-
-WHAT TO DO:
-- Take the source image and fit it into a {tw}x{th} canvas
-- If the aspect ratio changes, extend the background edges to fill the new space
-- Keep the image FLAT, STRAIGHT, and FRONT-FACING — exactly as the original
-- Maintain every pixel of the original content
-
-ABSOLUTE PROHIBITIONS (DO NOT DO ANY OF THESE):
-❌ Do NOT rotate, tilt, skew, or apply ANY perspective transform
-❌ Do NOT place the image at an angle
-❌ Do NOT add ANY background pattern, texture, or decoration
-❌ Do NOT create a "photo on a surface" or "card on a table" effect
-❌ Do NOT add frames, borders, shadows, or 3D effects
-❌ Do NOT regenerate, redraw, or artistically reinterpret the content
-❌ Do NOT change ANY text — keep exact same words, spelling, font, size, color
-❌ Do NOT duplicate, mirror, or repeat any foreground subject, logo, or text. Each element must appear exactly once.
-❌ Do NOT add black bars, white bars, or colored padding
-❌ Do NOT crop or remove any part of the image
-❌ Do NOT add physical mockups, screens, monitors, kiosks
-❌ Do NOT add watermarks or signatures
-
-WHAT YOU ARE ALLOWED TO DO:
-✅ Extend the existing background color/gradient/pattern to fill new space
-✅ Adjust spacing and margins around existing content
-✅ Scale the composition proportionally if needed
-✅ VERTICAL SAFETY ZONE: You must keep ALL text, faces, logos, and critical product elements within the vertical middle 50% of the canvas. Do NOT place text near the very top or very bottom edge, as it may be cropped.
-
-OUTPUT REQUIREMENTS:
-- Resolution: exactly {tw}x{th} pixels
-- The image must be FLAT and RECTANGULAR — no 3D, no angles, no perspective
-- Content must fill the entire canvas edge-to-edge
-- Crystal clear, sharp output — no blur, no pixelation, no artifacts
-- All text must be razor-sharp and fully legible"""
-
-    if user_prompt and user_prompt.strip():
-        recompose_prompt += f"\n\nADDITIONAL INSTRUCTIONS: {user_prompt}"
-
-    return recompose_prompt
-
-def build_vertex_resize_prompt(validated_ratio: str) -> str:
-    """
-    Vertex AI-specific prompt for the resize/transformation use case.
-    Used when the Vertex AI fallback is activated during resize operations.
-    """
-    return (
-        f"Recreate the provided image in the target aspect ratio: {validated_ratio}.\n\n"
-        "Preserve all original visual elements exactly as they are, including shapes, objects, "
-        "text, logos, QR codes, and design components. Do not alter, redesign, or restyle any element.\n\n"
-        "Maintain the original color scheme, typography, proportions of elements, and visual identity.\n\n"
-        "You may intelligently reposition, scale, or adjust spacing between elements only as needed "
-        "to fit the new aspect ratio, ensuring a clean and balanced composition.\n\n"
-        "Do not crop out or remove any existing content. Do not introduce any new elements.\n\n"
-        "Logos, QR codes, and critical brand elements must remain pixel-accurate and unmodified.\n\n"
-        "VERTICAL SAFETY ZONE: You must keep ALL text, faces, logos, and critical product elements within the vertical middle 50% of the canvas. Do NOT place text near the very top or very bottom edge, as it may be cropped.\n\n"
-        "The final output should look like a natural, professionally adapted version of the original "
-        "image for the new aspect ratio, not a distorted or stretched transformation."
-    )
-def safe_scale_to_exact(image_bytes: bytes, target_width: int, target_height: int) -> bytes:
-    """
-    Scale AI output to exact target dimensions using LANCZOS.
-    No cropping, no padding — progressive upscaling for quality.
-    """
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    src_w, src_h = img.size
-    if src_w <= 0 or src_h <= 0:
-        raise ValueError("Invalid source image dimensions")
-
-    # Skip if already exact
-    if src_w == target_width and src_h == target_height:
-        return image_bytes
-
-    scale_factor = max(target_width / src_w, target_height / src_h)
-    print(f"📏 [SCALE] Source: {src_w}x{src_h} → Target: {target_width}x{target_height} (scale: {scale_factor:.2f}x)")
-
-    # Progressive upscaling: scale in 1.5x steps for better quality
-    # This preserves detail much better than one giant jump
-    if scale_factor > 1.6:
-        current_w, current_h = src_w, src_h
-        step = 1.5
-        while True:
-            next_w = int(current_w * step)
-            next_h = int(current_h * step)
-            # If the next step would overshoot, just go to final target
-            if next_w >= target_width or next_h >= target_height:
-                break
-            img = img.resize((next_w, next_h), Image.Resampling.LANCZOS)
-            current_w, current_h = next_w, next_h
-            print(f"  📐 [SCALE] Progressive step: {current_w}x{current_h}")
-
-    # Final resize to exact target
-    img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
-
-    # Adaptive sharpening: stronger for larger upscales
-    if scale_factor > 2.0:
-        sharpness_amount = 1.4
-    elif scale_factor > 1.5:
-        sharpness_amount = 1.3
-    elif scale_factor > 1.0:
-        sharpness_amount = 1.2
+        except Exception as e:
+            print(f"[PIXEXACT v12] Source blending failed ({e}). Falling back to AI-only.")
+            result_img = _resize_without_stretching(ai_img, target_width, target_height)
     else:
-        sharpness_amount = 1.1  # Downscale: very gentle
+        # No source: Use AI image to FILL the target dimensions completely
+        print("[PIXEXACT v12] No source image. Using full AI output as base.")
+        result_img = _resize_without_stretching(ai_img, target_width, target_height)
 
-    enhancer = ImageEnhance.Sharpness(img)
-    img = enhancer.enhance(sharpness_amount)
-
-    # Subtle detail enhancement for upscaled images
-    if scale_factor > 1.3:
-        detail_filter = ImageFilter.DETAIL
-        img = img.filter(detail_filter)
-
-    # Preserve contrast (scaling can wash out colors)
-    if scale_factor > 1.5:
-        contrast_enhancer = ImageEnhance.Contrast(img)
-        img = contrast_enhancer.enhance(1.05)
+    # Final sharpening pass
+    result_img = ImageEnhance.Sharpness(result_img).enhance(1.1)
 
     buffer = io.BytesIO()
-    img.save(buffer, format="PNG", optimize=True)
-    print(f"  ✅ [SCALE] Final output: {target_width}x{target_height}, sharpness={sharpness_amount}")
+    result_img.save(buffer, format="PNG", optimize=True)
+    print(f"[PIXEXACT v12] Completed processing: {target_width}x{target_height}")
     return buffer.getvalue()
+
+
+def _build_portrait_safe_background(
+    source_img: Image.Image,
+    target_width: int,
+    target_height: int,
+) -> Image.Image:
+    """
+    Build a portrait-safe background from the source image itself.
+    The goal is to preserve brand color/motif continuity while suppressing
+    repeated semantic content such as logos, prices, products, and CTAs.
+    """
+    # Fill the target with a blurred, source-derived base so the extension
+    # inherits color and visual language without showing duplicate hero content.
+    fill_scale = max(target_width / source_img.width, target_height / source_img.height)
+    fill_w = max(1, int(source_img.width * fill_scale))
+    fill_h = max(1, int(source_img.height * fill_scale))
+    bg_fill = source_img.resize((fill_w, fill_h), Image.Resampling.LANCZOS)
+
+    left = max(0, (fill_w - target_width) // 2)
+    top = max(0, (fill_h - target_height) // 2)
+    bg_fill = bg_fill.crop((left, top, left + target_width, top + target_height))
+
+    # Heavy blur removes repeated text/product detail while keeping palette and shapes.
+    bg_fill = bg_fill.filter(ImageFilter.GaussianBlur(radius=22))
+    bg_fill = ImageEnhance.Color(bg_fill).enhance(1.05)
+    bg_fill = ImageEnhance.Contrast(bg_fill).enhance(0.92)
+    bg_fill = ImageEnhance.Brightness(bg_fill).enhance(0.98)
+
+    # Add subtle vertical lighting variation so solid brand colors do not look like
+    # a flat flood-fill when extended in tall portrait formats.
+    import numpy as np
+    arr = np.array(bg_fill).astype(np.float32)
+    h = arr.shape[0]
+    if h > 1:
+        y = np.linspace(0.0, 1.0, h, dtype=np.float32)
+        curve = 0.94 + 0.08 * (1.0 - ((y - 0.5) ** 2) * 4.0)
+        curve = np.clip(curve, 0.90, 1.02)
+        arr *= curve[:, None, None]
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+        bg_fill = Image.fromarray(arr, mode="RGB")
+
+    return bg_fill
+
+
+def _extract_portrait_semantic_island(
+    source_img: Image.Image,
+    target_width: int,
+    target_height: int,
+) -> Image.Image:
+    """
+    Extract the center semantic block from the source image for portrait layouts.
+    This suppresses decorative corner copy and repeated promo badges that would
+    otherwise survive when the full source is pasted back over a tall canvas.
+    """
+    src_w, src_h = source_img.size
+    portrait_ratio = target_height / max(1, target_width)
+
+    if portrait_ratio >= 2.2:
+        crop_top_pct = 0.22
+        crop_bottom_pct = 0.22
+    elif portrait_ratio >= 1.8:
+        crop_top_pct = 0.18
+        crop_bottom_pct = 0.18
+    elif portrait_ratio >= 1.5:
+        crop_top_pct = 0.14
+        crop_bottom_pct = 0.14
+    else:
+        crop_top_pct = 0.10
+        crop_bottom_pct = 0.10
+
+    top = int(src_h * crop_top_pct)
+    bottom = int(src_h * (1 - crop_bottom_pct))
+
+    # Safety floor so we don't overcrop smaller designs.
+    min_height = max(1, int(src_h * 0.45))
+    if bottom - top < min_height:
+        center = src_h // 2
+        half = min_height // 2
+        top = max(0, center - half)
+        bottom = min(src_h, top + min_height)
+
+    return source_img.crop((0, top, src_w, bottom))
+
+
+def build_layout_prompt(prompt: str, target_dims: Optional[Tuple[int, int]], validated_ratio: str) -> str:
+    """
+    Active override: stronger portrait-aware prompt builder.
+    Portrait and tall FMCTV canvases get a single-composition layout contract
+    so the model stops filling height by duplicating content blocks.
+    """
+    if not target_dims:
+        return prompt
+
+    tw, th = target_dims
+    is_portrait = th > tw
+    is_tall_portrait = th >= tw * 1.6
+    is_extreme_tall = th >= tw * 2.0
+    is_extreme_wide = tw > th * 2.0
+    orientation = "TALL PORTRAIT" if is_portrait else "WIDE LANDSCAPE" if tw > th else "SQUARE"
+
+    if is_extreme_tall:
+        content_height_pct = 36
+    elif is_tall_portrait:
+        content_height_pct = 44
+    elif is_portrait:
+        content_height_pct = 56
+    else:
+        content_height_pct = 60
+
+    center_block_height = max(1, int(th * (content_height_pct / 100)))
+    top_bg = max(0, (th - center_block_height) // 2)
+    bottom_bg = max(0, th - center_block_height - top_bg)
+
+    if is_extreme_wide or tw > th * 1.3:
+        # All wide landscape ratios — one strong unified outpaint template
+        extra = f"\nAdditional instruction: {prompt}" if prompt and prompt.strip() else ""
+        return f"""[WIDE OUTPAINT | {tw}x{th}px | {tw/th:.2f}:1]
+You are outpainting a {tw}x{th}px wide-format digital signage canvas.
+The attached image is a pre-composited draft: the original content is centred and sharp; the side areas are blurred placeholder fill showing the approximate background colour.
+
+YOUR JOB — replace the blurred side areas with seamless, intelligent content extension:
+
+SCENE EXTENSION RULES (apply whichever fits the source image):
+• Architecture / buildings → extend walls, facades, and windows with correct vanishing-point perspective. Do NOT repeat or tile building sections.
+• Sky / outdoor atmosphere → continue clouds, gradients, and ambient light naturally across the full width.
+• Ground / road / floor → follow the horizon and surface texture to both edges.
+• Studio / solid / gradient background → blend colour edge-to-edge; no seam, no tone jump.
+• Interior scenes → extend walls, ceiling, and floor naturally.
+
+CONTENT RULES:
+• The centred content (logos, text, products, subjects) must stay exactly where it is — same position, scale, colour. Do NOT move or repeat it.
+• Extension areas must contain ONLY environment/background — no new branding, no new subjects.
+• The final image must read as ONE seamless wide photograph or digital graphic.
+
+HARD PROHIBITIONS — violating any of these is a failure:
+✗ NO mirroring or flipping of any element
+✗ NO tiling or copy-pasting of building sections, textures, or pattern blocks
+✗ NO black bars, white bars, or solid-colour padding on either side
+✗ NO duplicated logos, text, or foreground subjects
+✗ NO hard seam or colour jump at the join between original and extension{extra}
+
+OUTPUT: Single flat digital graphic, exactly {tw}x{th}px, seamless edge to edge, no perspective mockup, no frame."""
+
+    if is_portrait:
+        return f"""[PIXEXACT v9 | {tw}x{th}px | {orientation}]
+STRICT RULE: A PORTRAIT SIGNAGE DESIGN MUST APPEAR AS ONE SINGLE COMPOSITION ONLY.
+DO NOT PRESERVE THE ORIGINAL HORIZONTAL BANNER AS A STRIP.
+YOU MUST RE-LAYOUT THE INTERNAL ELEMENTS FOR A TALL DIGITAL POSTER.
+
+PORTRAIT LAYOUT BLUEPRINT:
+1. REBUILD THE DESIGN FOR PORTRAIT READING FLOW:
+   - Treat the source as a library of semantic elements, not as a locked horizontal strip.
+   - Recompose those elements into a portrait layout with intentional hierarchy from top to bottom.
+   - Keep all semantic elements single-instance only.
+2. INTERNAL CONTENT PLACEMENT MUST BE INTELLIGENT:
+   - Brand/logo should sit in the upper portion with breathing room.
+   - Primary offer/price should sit in the visual center or upper-middle as the main focal point.
+   - Hero product should sit in the lower-middle or lower-third, large and readable.
+   - CTA/supporting badge may sit near the primary offer or lower area, but only once.
+   - The main semantic composition should occupy roughly the middle {content_height_pct}% to 72% of canvas height, not a tiny band.
+2. USE THE FULL HEIGHT INTELLIGENTLY (NO DEAD SPACE):
+   - Keep visual occupancy high: semantic design should span about 72% to 90% of canvas height.
+   - Large empty top/bottom voids are not allowed.
+   - Background continuation is allowed only as support, not as dominant filler.
+   - Never produce a flat single-color flood background.
+   - Extend environmental cues from source (perspective lines, floor/ground cues, soft texture, gradients, lighting) so the canvas feels intentionally designed.
+   - Top and bottom can include layout breathing room, but must remain visually purposeful.
+3. TOP/MIDDLE/BOTTOM HIERARCHY (SINGLE INSTANCE):
+   - Top zone: brand or short supporting line.
+   - Middle zone: primary offer/price as strongest focal point.
+   - Lower zone: hero product/packshot and CTA support.
+   - Each semantic element appears exactly once.
+4. NEVER TURN THE DESIGN INTO A VERTICAL SERIES:
+   - No stacked panels.
+   - No top version plus bottom version.
+   - No mirrored layout.
+   - No duplicate footer/header branding.
+
+NEGATIVE CONSTRAINTS:
+- NO duplicated logos
+- NO duplicated headline
+- NO repeated CTA
+- NO repeated product cutouts
+- NO centered horizontal source strip
+- NO leaving the entire composition compressed into one narrow middle band
+- NO giant empty red areas that look like placeholder background fill
+- NO flat monotone flood-fill background dominating the frame
+- NO tiled content
+- NO split-screen layout
+
+USER REQUEST:
+{prompt}
+
+DELIVERY:
+- Pixel-perfect {tw}x{th} portrait output
+- Single composition only
+- Re-laid-out internal content for portrait readability
+- High visual occupancy across portrait height (no dead zones)
+- Background extension used minimally, intelligently, and with source-derived structure"""
+
+    return f"""[PIXEXACT v9 | {tw}x{th}px | {orientation}]
+STRICT RULE: PLACE CONTENT ONCE ONLY. NO DUPLICATION.
+
+1. SOURCE ISLAND: Place all logos, text, and main subjects in the center safe zone.
+2. NEGATIVE SPACE: Extend the background to the edges. Do NOT put any branding in extensions.
+3. NO STACKING: The design must be a single coherent block, not a split-screen or multi-tier layout.
+
+NEGATIVE CONSTRAINTS: NO duplicated logos, NO stacked text, NO mirrored subjects, NO footer branding.
+
+USER REQUEST:
+{prompt}
+
+DELIVERY: Pixel-perfect {tw}x{th} output."""
+
 
 
 @app.post("/api/resize", response_class=JSONResponse)
@@ -2469,7 +3231,7 @@ async def resize_image(
             "gemini-3.1-flash-image-preview",
         ]
         
-        gemini_aspect_ratio, target_dims, gemini_ratio_val = validate_aspect_ratio_smart(aspect_ratio)
+        gemini_aspect_ratio, target_dims, gemini_ratio_val = validate_aspect_ratio(aspect_ratio)
         
         user_id = str(current_user["_id"])
         is_postpaid = current_user.get("is_postpaid", False)
@@ -2516,7 +3278,16 @@ async def resize_image(
             is_wide_landscape = tw > th * 1.5
             is_extreme_portrait = th > tw * 1.5
             
-            if is_wide_landscape:
+            if gemini_aspect_ratio == "8:1":
+                # Use Flash extreme wide prompt for 8:1 (best for OOH ultra-wide)
+                resize_prompt = build_flash_extreme_wide_prompt(
+                    user_prompt=prompt if has_custom_prompt else "",
+                    target_width=tw,
+                    target_height=th,
+                    source_dims=(src_w, src_h)
+                )
+                print(f"[GLENN] Ultra-wide 8:1 detected: using build_flash_extreme_wide_prompt")
+            elif is_wide_landscape:
                 # Use OpenRouter resize prompt for wide landscapes (best for reflow)
                 resize_prompt = build_openrouter_resize_prompt(
                     source_dims=(src_w, src_h),
@@ -2547,8 +3318,97 @@ async def resize_image(
             image_data = None
             provider_used = "none"
             
-            # ── PROVIDER: GOOGLE (multi-key rotation) ────────────────────
-            if GLENN_PROVIDER == "google":
+            # ── PROVIDER 1: GEMINI FLASH for wide AR > 2.5 ─────────────────
+            # Flash handles wide ratios natively — no OpenAI dependency needed
+            # NOTE: Use actual tw/th ratio, NOT gemini_ratio_val (which is the closest Gemini ratio)
+            _actual_ratio = tw / th
+            if _actual_ratio > 2.5:
+                print(f"[GLENN] Wide AR {_actual_ratio:.2f} > 2.5 detected. Routing to Gemini 3.1 Flash.")
+                _flash_prompt = build_flash_extreme_wide_prompt(
+                    user_prompt=prompt if has_custom_prompt else "",
+                    target_width=tw,
+                    target_height=th,
+                    source_dims=(src_w, src_h),
+                )
+                # Use actual ratio to pick the best Flash aspect ratio config
+                if _actual_ratio >= 4.0:
+                    _flash_ar = "8:1"
+                else:
+                    _flash_ar = "21:9"
+                flash_config = types.GenerateContentConfig(
+                    response_modalities=["Image"],
+                    image_config=types.ImageConfig(aspect_ratio=_flash_ar),
+                )
+                # Try all Google keys with Flash
+                if GLENN_PROVIDER == "google":
+                    active_client, key_label = glenn_get_google_client()
+                    for try_key in [key_label] + [k for k in ["key_1", "key_2", "key_3"] if k != key_label and _glenn_clients.get(k) and _glenn_get_counter(k).get("count", 0) < GLENN_KEY_LIMIT]:
+                        try:
+                            print(f"[GLENN] Trying gemini-3.1-flash-image-preview with {try_key} (AR: {_flash_ar})...")
+                            response = await call_gemini_with_retry(
+                                model_name="gemini-3.1-flash-image-preview",
+                                contents=[_flash_prompt, pil_image],
+                                config=flash_config,
+                                max_retries=2,
+                                api_client=_glenn_clients.get(try_key, active_client),
+                            )
+                            if response.parts:
+                                for part in response.parts:
+                                    if part.inline_data:
+                                        image_data = part.inline_data.data
+                                        break
+                            if image_data:
+                                glenn_increment_counter(try_key)
+                                provider_used = f"google/{try_key}/gemini-3.1-flash-image-preview"
+                                print(f"[GLENN] ✅ Flash succeeded with {try_key}")
+                                break
+                        except Exception as flash_err:
+                            print(f"[GLENN] ❌ Flash {try_key} failed: {flash_err}")
+                            glenn_mark_key_exhausted(try_key)
+
+                # Also try Vertex Flash
+                if not image_data:
+                    try:
+                        print(f"[GLENN] Trying Vertex gemini-3.1-flash-image-preview...")
+                        response = await call_gemini_with_retry(
+                            model_name="gemini-3.1-flash-image-preview",
+                            contents=[_flash_prompt, pil_image],
+                            config=flash_config,
+                            max_retries=2,
+                            api_client=glenn_client,
+                        )
+                        if response.parts:
+                            for part in response.parts:
+                                if part.inline_data:
+                                    image_data = part.inline_data.data
+                                    break
+                        if image_data:
+                            glenn_increment_counter("vertex")
+                            provider_used = "vertex/gemini-3.1-flash-image-preview"
+                            print(f"[GLENN] ✅ Vertex Flash succeeded")
+                    except Exception as vf_err:
+                        print(f"[GLENN] ❌ Vertex Flash failed: {vf_err}")
+
+            # ── Composite-first outpainting (matches BE logic) ────────────
+            # Pre-compose canvas when source and target share orientation
+            # but AR differs significantly
+            if not image_data:
+                _src_ar = src_w / src_h
+                _tgt_ar = tw / th
+                _wider_to_portrait = _src_ar > _tgt_ar * 1.3 and _tgt_ar < 1.0
+                if abs(_src_ar - _tgt_ar) / _tgt_ar > 0.05 and not is_wide_landscape and not _wider_to_portrait:
+                    try:
+                        composite_bytes = await run_blocking(
+                            build_outpaint_canvas, image_bytes, tw, th
+                        )
+                        pil_image = Image.open(io.BytesIO(composite_bytes))
+                        resize_prompt = build_outpaint_prompt(prompt if has_custom_prompt else "", (tw, th), source_dims=(src_w, src_h))
+                        print(f"[GLENN] Composite-first outpaint: {src_w}x{src_h} ({_src_ar:.2f}:1) -> {tw}x{th} ({_tgt_ar:.2f}:1)")
+                    except Exception as comp_err:
+                        print(f"[GLENN] Composite-first failed: {comp_err}")
+
+            # ── PROVIDER 3: GOOGLE Gemini Pro (multi-key rotation) ────────
+            if not image_data and GLENN_PROVIDER == "google":
                 active_client, key_label = glenn_get_google_client()
                 actual_key = _glenn_keys_map.get(key_label, {}).get("api_key", "?")
                 key_suffix = f"...{actual_key[-8:]}" if actual_key and actual_key != "?" and actual_key != "not-set" else "exhausted"
@@ -2653,7 +3513,7 @@ async def resize_image(
             if not image_data:
                 raise RuntimeError("All Glenn resize providers failed")
             
-            image_data = await run_blocking(safe_scale_to_exact, image_data, tw, th)
+            image_data = await run_blocking(safe_scale_to_exact, image_data, tw, th, image_bytes)
             print(f"[GLENN] Resize complete via {provider_used}: {tw}x{th}")
             
             # Upload to DO Spaces
@@ -3328,18 +4188,16 @@ async def custom_resize_image(
         effective_engine = "creation"
 
     requested_ratio = f"{width}:{height}"
-    mapped_ratio, _, _ = validate_aspect_ratio_smart(requested_ratio)
+    mapped_ratio, _, _ = validate_aspect_ratio(requested_ratio)
 
 
     ratio_val = width / height if height > 0 else 1.0
     EXTREME_WIDE_AR = 2.5
 
-    # If it's an extreme wide image, intercept and try OpenAI first!
+    # If it's an extreme wide image, intercept and try Gemini Flash first!
     if file and ratio_val > EXTREME_WIDE_AR and effective_engine == "transformation":
-        print(f"🚀 [CUSTOM-RESIZE] Ultra-wide detected (AR {ratio_val:.2f} > 2.5). Routing to OpenAI Intelligent Reflow pipeline.")
+        print(f"🚀 [CUSTOM-RESIZE] Ultra-wide detected (AR {ratio_val:.2f} > 2.5). Routing to Gemini 3.1 Flash.")
         try:
-            from openai_service import call_openai_image_edit
-            
             # Cost logic (same as resize_image for transformation)
             is_postpaid = current_user.get("is_postpaid", False)
             cost = 1.0 if is_postpaid else 4.0
@@ -3364,51 +4222,96 @@ async def custom_resize_image(
             pil_img = await run_blocking(Image.open, io.BytesIO(file_bytes))
             src_w, src_h = pil_img.size
 
-            if ratio_val >= 3.5:
-                ai_prompt = build_openai_banner_prompt(prompt_text, width, height, source_dims=(src_w, src_h))
-            else:
-                ai_prompt = build_openai_outpaint_prompt(prompt_text, width, height, source_dims=(src_w, src_h))
-
-            print(f"🤖 [CUSTOM-RESIZE] Calling OpenAI gpt-image-2 for {width}x{height} banner...")
-            openai_image_bytes = await call_openai_image_edit(
-                image_bytes=file_bytes,
-                prompt=ai_prompt,
+            _flash_prompt = build_flash_extreme_wide_prompt(
+                user_prompt=prompt_text,
                 target_width=width,
-                target_height=height
+                target_height=height,
+                source_dims=(src_w, src_h),
             )
-            
-            print(f"✅ [CUSTOM-RESIZE] OpenAI success! Uploading to Digital Ocean...")
-            import uuid
-            filename = f"custom-resized/{uuid.uuid4().hex}.png"
-            await run_blocking(
-                s3_client.put_object,
-                Bucket=DO_SPACES_BUCKET_NAME,
-                Key=filename,
-                Body=openai_image_bytes,
-                ACL="public-read",
-                ContentType="image/png",
+            _flash_ar = "8:1" if ratio_val >= 7.0 else "21:9"
+            flash_config = types.GenerateContentConfig(
+                response_modalities=["Image"],
+                image_config=types.ImageConfig(aspect_ratio=_flash_ar),
             )
-            uploaded_url = f"https://{DO_SPACES_BUCKET_NAME}.{DO_SPACES_ENDPOINT.replace('https://','')}/{filename}"
+
+            print(f"🤖 [CUSTOM-RESIZE] Calling Gemini 3.1 Flash for {width}x{height} (AR: {_flash_ar})...")
             
-            # Consume units
-            if cost > 0:
-                consume_units(user_id, cost, effective_engine)
+            # Try Google keys first
+            flash_image_data = None
+            GLENN_PROVIDER = os.getenv("GLENN_PROVIDER", "google").lower().strip()
+            if GLENN_PROVIDER == "google":
+                active_client, key_label = glenn_get_google_client()
+                try:
+                    response = await call_gemini_with_retry(
+                        model_name="gemini-3.1-flash-image-preview",
+                        contents=[_flash_prompt, pil_img],
+                        config=flash_config,
+                        max_retries=2,
+                        api_client=active_client,
+                    )
+                    if response.parts:
+                        for part in response.parts:
+                            if part.inline_data:
+                                flash_image_data = part.inline_data.data
+                                break
+                    if flash_image_data:
+                        glenn_increment_counter(key_label)
+                except Exception as gk_err:
+                    print(f"⚠️ [CUSTOM-RESIZE] Google key failed: {gk_err}")
             
-            log_usage(user_id, "custom_resize", requested_ratio, True, uploaded_url, prompt_text, (width, height), model="gpt-image-2")
+            # Vertex fallback
+            if not flash_image_data:
+                response = await call_gemini_with_retry(
+                    model_name="gemini-3.1-flash-image-preview",
+                    contents=[_flash_prompt, pil_img],
+                    config=flash_config,
+                    max_retries=2,
+                    api_client=glenn_client,
+                )
+                if response.parts:
+                    for part in response.parts:
+                        if part.inline_data:
+                            flash_image_data = part.inline_data.data
+                            break
+                if flash_image_data:
+                    glenn_increment_counter("vertex")
+
+            if flash_image_data:
+                # Scale to exact dimensions
+                flash_image_data = await run_blocking(safe_scale_to_exact, flash_image_data, width, height, file_bytes)
+                
+                print(f"✅ [CUSTOM-RESIZE] Flash success! Uploading to Digital Ocean...")
+                import uuid
+                filename = f"custom-resized/{uuid.uuid4().hex}.png"
+                await run_blocking(
+                    s3_client.put_object,
+                    Bucket=DO_SPACES_BUCKET_NAME,
+                    Key=filename,
+                    Body=flash_image_data,
+                    ACL="public-read",
+                    ContentType="image/png",
+                )
+                uploaded_url = f"https://{DO_SPACES_BUCKET_NAME}.{DO_SPACES_ENDPOINT.replace('https://','')}/{filename}"
+                
+                # Consume units
+                if cost > 0:
+                    consume_units(user_id, cost, effective_engine)
+                
+                log_usage(user_id, "custom_resize", requested_ratio, True, uploaded_url, prompt_text, (width, height))
+                
+                return JSONResponse(content={
+                    "url": uploaded_url, 
+                    "credits_used": cost,
+                    "width": width,
+                    "height": height,
+                    "gemini_ratio": mapped_ratio,
+                    "requested_ratio": requested_ratio,
+                    "engine_type": effective_engine,
+                    "provider": "gemini-3.1-flash-image-preview"
+                })
             
-            return JSONResponse(content={
-                "url": uploaded_url, 
-                "credits_used": cost,
-                "width": width,
-                "height": height,
-                "gemini_ratio": mapped_ratio,
-                "requested_ratio": requested_ratio,
-                "engine_type": effective_engine,
-                "provider": "openai/gpt-image-2"
-            })
-            
-        except Exception as openai_err:
-            print(f"⚠️ [CUSTOM-RESIZE] OpenAI failed for wide, falling back to standard pipeline: {openai_err}")
+        except Exception as flash_err:
+            print(f"⚠️ [CUSTOM-RESIZE] Flash failed for wide, falling back to standard pipeline: {flash_err}")
 
     # Reuse existing resize pipeline to keep all checks and post-processing consistent.
     base_response = await resize_image(
