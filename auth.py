@@ -885,7 +885,7 @@ def user_doc_to_response(user_doc):
         remaining = float(remaining)
 
     engine_data = user_doc.get("engine_data", {}) or {}
-    org_context = user_doc.get("_org_context", {}) or {}
+    org_context = user_doc.get("org_context", {}) or {}
     selected_engines = org_context.get("selected_engines") or []
     available_engines = selected_engines if selected_engines else ["transformation", "creation"]
     
@@ -928,7 +928,7 @@ def user_doc_to_response(user_doc):
         "stripeSubscriptionId": user_doc.get("stripeSubscriptionId"),
         "is_postpaid": user_doc.get("is_postpaid", False),
         "createdAt": user_doc.get("createdAt"),
-        "_org_context": org_context,
+        "org_context": org_context,
     }
 
 def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, image_url: str = None, prompt: str = None, target_dims: list = None):
