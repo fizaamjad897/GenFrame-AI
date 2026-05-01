@@ -885,7 +885,7 @@ def user_doc_to_response(user_doc):
         remaining = float(remaining)
 
     engine_data = user_doc.get("engine_data", {}) or {}
-    org_context = user_doc.get("_org_context", {}) or {}
+    org_context = user_doc.get("org_context", {}) or {}
     selected_engines = org_context.get("selected_engines") or []
     available_engines = selected_engines if selected_engines else ["transformation", "creation"]
     
@@ -928,25 +928,36 @@ def user_doc_to_response(user_doc):
         "stripeSubscriptionId": user_doc.get("stripeSubscriptionId"),
         "is_postpaid": user_doc.get("is_postpaid", False),
         "createdAt": user_doc.get("createdAt"),
-        "_org_context": org_context,
+        "org_context": org_context,
     }
 
 def log_usage(user_id: str, operation: str, aspect_ratio: str, success: bool, image_url: str = None, prompt: str = None, target_dims: list = None):
-    """Log a usage operation for billing purposes"""
+    """Log a usage operation for billing purposes. Returns the inserted document _id as a string."""
     usage_doc = {
         "userId": user_id,
         "operation": operation,
         "aspectRatio": aspect_ratio,
         "timestamp": datetime.utcnow(),
         "success": success,
-        "imageUrl": image_url
+        "imageUrl": image_url,
+        "feedback": None,
     }
     if prompt:
         usage_doc["prompt"] = prompt
     if target_dims:
         usage_doc["targetDims"] = target_dims
-    usage_logs_collection.insert_one(usage_doc)
-    return True
+    result = usage_logs_collection.insert_one(usage_doc)
+    return str(result.inserted_id)
+
+def update_feedback(log_id: str, user_id: str, feedback: str):
+    """Update the feedback field on a usage log document. Returns True if updated."""
+    from bson import ObjectId
+    result = usage_logs_collection.update_one(
+        {"_id": ObjectId(log_id), "userId": user_id},
+        {"$set": {"feedback": feedback}},
+    )
+    return result.modified_count > 0
+
 
 def get_user_usage_stats(user_id: str, engine_type: str = None):
     """Get usage statistics for a user, optionally for a specific engine."""

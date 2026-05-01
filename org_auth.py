@@ -197,7 +197,7 @@ def validate_org_module_jwt(token: str) -> dict:
                 print(f"[ORG_AUTH] Failed to query org document for parentOrgId: {e}")
         
         # Enrich user object with org context from JWT payload
-        visual_engine_user["_org_context"] = {
+        visual_engine_user["org_context"] = {
             "org_id": org_id,
             "parent_org_id": parent_org_id,
             "role": user_role,
@@ -416,4 +416,4 @@ def get_org_context_from_user(user: dict) -> dict:
         dict: Organisation context (org_id, role, org_name, org_type)
               Empty dict if no org context (legacy JWT auth)
     """
-    return user.get("_org_context", {})
+    return user.get("org_context", {})

@@ -49,6 +49,7 @@ class UserResponse(BaseModel):
     stripeCustomerId: Optional[str] = None
     stripeSubscriptionId: Optional[str] = None
     createdAt: datetime
+    org_context: Optional[Dict[str, Any]] = None
 
 class TokenResponse(BaseModel):
     access_token: str

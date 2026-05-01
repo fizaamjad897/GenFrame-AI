@@ -25,7 +25,7 @@ from auth import (
     create_password_reset_token, reset_password_by_token, 
     send_password_reset_email, user_doc_to_response,
     get_all_plans, get_user_usage_stats, get_billing_history,
-    generate_monthly_bill, log_usage,
+    generate_monthly_bill, log_usage, update_feedback,
     consume_units, cancel_user_plan, update_user_plan,
     simulate_month_end_rollover, perform_all_postpaid_rollovers
 )
@@ -694,7 +694,6 @@ def _can_use_custom_resize(current_user: dict) -> bool:
     """Allow custom-resize for Glen/HamzaFaisal orgs and their sub-orgs using org-id-based checks."""
     # Allowed org UUIDs
     ALLOWED_ORG_IDS = {
-        "d9f031dc-ba8f-4397-9534-81612cc8a686",  # Glen's org ID
         "35cd976c-d4ac-4e76-8dde-d8065334fa42",  # HamzaFaisal's org ID
     }
     
@@ -706,10 +705,9 @@ def _can_use_custom_resize(current_user: dict) -> bool:
     if org_id in ALLOWED_ORG_IDS or parent_org_id in ALLOWED_ORG_IDS:
         return True
     
-    # Email/domain fallback for testing
+    # Strict owner email fallback for testing
     email = str(current_user.get("email") or "").strip().lower()
-    domain = email.split("@")[-1] if "@" in email else ""
-    if email == "muhammadhamzafaisal146@gmail.com" or domain == "fmctv.co.nz":
+    if email == "muhammadhamzafaisal146@gmail.com":
         return True
     
     return False
@@ -2140,6 +2138,66 @@ def safe_scale_to_exact(image_input, target_width: int, target_height: int, sour
     return buffer.getvalue()
 
 
+def old_safe_scale_to_exact(image_input, target_width: int, target_height: int) -> bytes:
+    """
+    The original, simple scaling logic from the old Visual Engine.
+    Used for standard presets to ensure 100% parity with previous behavior.
+    """
+    if isinstance(image_input, bytes):
+        img = Image.open(io.BytesIO(image_input)).convert("RGB")
+    elif isinstance(image_input, Image.Image):
+        img = image_input.convert("RGB")
+    else:
+        raw = getattr(image_input, "image", None) or getattr(image_input, "data", None)
+        if raw is None:
+            raise ValueError(f"Cannot process image source of type {type(image_input)}")
+        img = raw if isinstance(raw, Image.Image) else Image.open(io.BytesIO(raw))
+    
+    img = img.convert("RGB")
+    src_w, src_h = img.size
+    
+    if src_w == target_width and src_h == target_height:
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    scale_factor = max(target_width / src_w, target_height / src_h)
+
+    # Progressive upscaling in 1.5x steps for quality (from old code)
+    if scale_factor > 1.6:
+        current_w, current_h = src_w, src_h
+        step = 1.5
+        while True:
+            next_w = int(current_w * step)
+            next_h = int(current_h * step)
+            if next_w >= target_width or next_h >= target_height:
+                break
+            img = img.resize((next_w, next_h), Image.Resampling.LANCZOS)
+            current_w, current_h = next_w, next_h
+
+    # Final resize to exact target (this may stretch/squash slightly, which is what the old code did)
+    img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+    # Adaptive sharpening (from old code)
+    if scale_factor > 2.0: sharpness_amount = 1.4
+    elif scale_factor > 1.5: sharpness_amount = 1.3
+    elif scale_factor > 1.0: sharpness_amount = 1.2
+    else: sharpness_amount = 1.1
+
+    from PIL import ImageEnhance, ImageFilter
+    img = ImageEnhance.Sharpness(img).enhance(sharpness_amount)
+
+    if scale_factor > 1.3:
+        img = img.filter(ImageFilter.DETAIL)
+
+    if scale_factor > 1.5:
+        img = ImageEnhance.Contrast(img).enhance(1.05)
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
+
+
 def build_openrouter_resize_prompt(
     source_dims: Tuple[int, int],
     target_dims: Optional[Tuple[int, int]],
@@ -3275,10 +3333,25 @@ async def resize_image(
             
 
             # ── Glenn-specific resize prompt (Smart Routing) ────────────────
+            is_standard_preset = target_dims is None  # Standard presets (1:1, 16:9, 9:16, etc.) have no custom dims
             is_wide_landscape = tw > th * 1.5
             is_extreme_portrait = th > tw * 1.5
             
-            if gemini_aspect_ratio == "8:1":
+            if is_standard_preset:
+                # Standard presets use the proven simple prompt
+                orientation = "TALL VERTICAL" if th > tw else "WIDE HORIZONTAL" if tw > th else "SQUARE"
+                resize_prompt = (
+                    f"TASK: Adapt this image to exactly {tw}x{th}px ({orientation}).\n"
+                    f"STRICT RULE: Every element (logo, text, person, product) must appear EXACTLY ONCE. NO DUPLICATION, mirroring, or tiling.\n"
+                    f"1. Preserve 100% fidelity: identical colors, fonts, and subjects. No changes to the content.\n"
+                    f"2. Fill the entire canvas edge-to-edge. No bars, no borders, no empty space.\n"
+                    f"3. Do not add any new objects or AI-generated elements not present in the source.\n"
+                    f"Result must be a single, coherent, professionally adapted graphic."
+                )
+                if has_custom_prompt:
+                    resize_prompt += f"\n\nAdditional Instruction: {prompt}"
+                print(f"[GLENN] Standard preset ({gemini_aspect_ratio}): using simple resize prompt")
+            elif gemini_aspect_ratio == "8:1":
                 # Use Flash extreme wide prompt for 8:1 (best for OOH ultra-wide)
                 resize_prompt = build_flash_extreme_wide_prompt(
                     user_prompt=prompt if has_custom_prompt else "",
@@ -3396,7 +3469,7 @@ async def resize_image(
                 _src_ar = src_w / src_h
                 _tgt_ar = tw / th
                 _wider_to_portrait = _src_ar > _tgt_ar * 1.3 and _tgt_ar < 1.0
-                if abs(_src_ar - _tgt_ar) / _tgt_ar > 0.05 and not is_wide_landscape and not _wider_to_portrait:
+                if abs(_src_ar - _tgt_ar) / _tgt_ar > 0.05 and not is_wide_landscape and not _wider_to_portrait and not is_standard_preset:
                     try:
                         composite_bytes = await run_blocking(
                             build_outpaint_canvas, image_bytes, tw, th
@@ -3513,7 +3586,10 @@ async def resize_image(
             if not image_data:
                 raise RuntimeError("All Glenn resize providers failed")
             
-            image_data = await run_blocking(safe_scale_to_exact, image_data, tw, th, image_bytes)
+            if is_standard_preset:
+                image_data = await run_blocking(old_safe_scale_to_exact, image_data, tw, th)
+            else:
+                image_data = await run_blocking(safe_scale_to_exact, image_data, tw, th, image_bytes)
             print(f"[GLENN] Resize complete via {provider_used}: {tw}x{th}")
             
             # Upload to DO Spaces
@@ -3538,7 +3614,7 @@ async def resize_image(
             increment_user_units(user_id)
             
             # Log to archive for history page
-            log_usage(
+            _log_id = log_usage(
                 user_id=user_id,
                 operation="resize",
                 aspect_ratio=gemini_aspect_ratio,
@@ -3555,6 +3631,7 @@ async def resize_image(
                 "height": th,
                 "ratio": gemini_aspect_ratio,
                 "provider": provider_used,
+                "logId": _log_id,
             })
         except HTTPException:
             raise
@@ -4108,7 +4185,7 @@ async def resize_image(
         increment_user_units(user_id)
 
         # Log usage (include prompt and target dims for archive)
-        log_usage(
+        _log_id = log_usage(
             user_id=user_id,
             operation="resize",
             aspect_ratio=aspect_ratio,
@@ -4117,6 +4194,7 @@ async def resize_image(
             prompt=prompt,
             target_dims=[target_width, target_height] if target_width and target_height else None
         )
+        response_data["logId"] = _log_id
 
         return JSONResponse(content=response_data, status_code=200)
 
@@ -4161,7 +4239,7 @@ async def custom_resize_image(
     if not _can_use_custom_resize(current_user):
         raise HTTPException(
             status_code=403,
-            detail="Custom resize is only enabled for the Glen account and approved sub-org users.",
+            detail="Custom resize is only enabled for the Hamza organization and approved sub-org users.",
         )
 
     MIN_DIM, MAX_DIM = 64, 4096
@@ -4300,7 +4378,7 @@ async def custom_resize_image(
                 if cost > 0:
                     consume_units(user_id, cost, effective_engine)
                 
-                log_usage(user_id, "custom_resize", requested_ratio, True, uploaded_url, prompt_text, (width, height))
+                _log_id = log_usage(user_id, "custom_resize", requested_ratio, True, uploaded_url, prompt_text, (width, height))
                 
                 return JSONResponse(content={
                     "url": uploaded_url, 
@@ -4310,7 +4388,8 @@ async def custom_resize_image(
                     "gemini_ratio": mapped_ratio,
                     "requested_ratio": requested_ratio,
                     "engine_type": effective_engine,
-                    "provider": "gemini-3.1-flash-image-preview"
+                    "provider": "gemini-3.1-flash-image-preview",
+                    "logId": _log_id,
                 })
             
         except Exception as flash_err:
@@ -4372,12 +4451,34 @@ async def get_history(current_user = Depends(get_current_user)):
                 "targetDims": doc.get("targetDims", None),
                 "timestamp": doc.get("timestamp", "").isoformat() if doc.get("timestamp") else "",
                 "operation": doc.get("operation", "resize"),
+                "feedback": doc.get("feedback", None),
             })
         
         return JSONResponse(content={"history": history}, status_code=200)
     except Exception as e:
         print(f"❌ [HISTORY] Error fetching history: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
+
+@app.post("/api/feedback")
+async def submit_feedback(
+    logId: str = Body(...),
+    feedback: str = Body(...),
+    current_user = Depends(get_current_user),
+):
+    """Submit like/dislike feedback for a generated image."""
+    if feedback not in ("like", "dislike"):
+        raise HTTPException(status_code=400, detail="Feedback must be 'like' or 'dislike'")
+    try:
+        user_id = str(current_user["_id"])
+        updated = update_feedback(logId, user_id, feedback)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Log entry not found")
+        return JSONResponse(content={"success": True, "feedback": feedback})
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [FEEDBACK] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save feedback: {str(e)}")
 
 from urllib.parse import urlparse
 
