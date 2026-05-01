@@ -294,6 +294,11 @@ async def ooh_resize(
         logger.error("[OOH_PIPELINE] Cannot open source image: %s", exc)
         return None
 
+    # 2072×252 is handled exclusively by banner_2072x252.py via main.py routing.
+    if target_w == 2072 and target_h == 252:
+        logger.info("[OOH_PIPELINE] 2072×252 routed to banner_2072x252 — skipping ooh_resize.")
+        return None
+
     logger.info(
         "[OOH_PIPELINE] %d×%d → %d×%d",
         source.width, source.height, target_w, target_h,
@@ -383,7 +388,68 @@ async def ooh_resize(
         return None
 
 
-# ── 6. Internal decomposition helper ──────────────────────────────────────────
+# ── 6. Cache-only helper (used by external recomposers like banner_2072x252) ───
+
+async def ensure_cache_decomposed(image_bytes: bytes) -> Optional[Path]:
+    """
+    Run the decomposition pipeline for image_bytes and return the cache dir path.
+    Does NOT perform recomposition — callers supply their own recomposer.
+    Returns None on failure.
+    """
+    try:
+        funcs = _load_decomp_imports()
+    except ImportError as exc:
+        logger.error("[OOH_PIPELINE] %s", exc)
+        return None
+
+    try:
+        source = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        logger.error("[OOH_PIPELINE] Cannot open source image: %s", exc)
+        return None
+
+    file_hash = hashlib.sha256(image_bytes).hexdigest()
+    cache_root = Path(__file__).resolve().parent / "ooh_decomposition_cache"
+    cache_root.mkdir(exist_ok=True)
+    cache_dir = cache_root / file_hash
+
+    decomp_lock = await _get_decomp_lock(file_hash)
+
+    if _is_cache_valid(cache_dir):
+        logger.info("[OOH_PIPELINE] ensure_cache: hit (local) for %s.", file_hash[:8])
+        _touch_sentinel(cache_dir)
+    else:
+        async with decomp_lock:
+            if _is_cache_valid(cache_dir):
+                logger.info("[OOH_PIPELINE] ensure_cache: hit (local, post-lock) for %s.", file_hash[:8])
+                _touch_sentinel(cache_dir)
+            else:
+                s3_synced = sync_cache_from_s3(file_hash, cache_dir)
+                if s3_synced and _is_cache_valid(cache_dir):
+                    logger.info("[OOH_PIPELINE] ensure_cache: hit (S3) for %s.", file_hash[:8])
+                    _touch_sentinel(cache_dir)
+                else:
+                    logger.info("[OOH_PIPELINE] ensure_cache: miss for %s. Running decomposition.", file_hash[:8])
+                    cache_dir.mkdir(exist_ok=True, parents=True)
+                    success = await _decompose_and_save(
+                        source,
+                        cache_dir,
+                        funcs["analyze_components"],
+                        funcs["isolate_component_png"],
+                    )
+                    if not success:
+                        shutil.rmtree(cache_dir, ignore_errors=True)
+                        return None
+                    _touch_sentinel(cache_dir)
+                    sync_cache_to_s3(file_hash, cache_dir)
+
+    asyncio.get_event_loop().run_in_executor(
+        None, _cleanup_old_cache, cache_root, 48, file_hash
+    )
+    return cache_dir
+
+
+# ── 7. Internal decomposition helper ──────────────────────────────────────────
 
 async def _decompose_and_save(
     source: Image.Image,

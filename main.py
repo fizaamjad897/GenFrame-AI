@@ -3393,24 +3393,52 @@ async def resize_image(
             # Routes directly to ooh_pipeline.ooh_resize() — no fallback providers.
             # The pipeline handles decomposition, isolation, recomposition, and
             # exact PIL resize internally. Output is returned as-is.
+            # Exception: 2072×252 is routed to banner_2072x252.py for recomposition.
             if _is_ooh:
-                try:
-                    from ooh_pipeline import ooh_resize as _ooh_resize
-                    _ooh_result = await _ooh_resize(
-                        image_bytes=image_bytes,
-                        target_w=tw,
-                        target_h=th,
-                    )
-                    if _ooh_result:
-                        image_data = _ooh_result
-                        provider_used = "ooh_pipeline"
-                        _ooh_pipeline_succeeded = True
-                        print(f"[GLENN] OOH pipeline ✅: {src_w}x{src_h} → {tw}x{th}")
-                    else:
-                        raise RuntimeError("OOH pipeline returned None")
-                except Exception as _ooh_err:
-                    print(f"[GLENN] OOH pipeline failed: {_ooh_err}")
-                    raise HTTPException(status_code=500, detail=f"OOH pipeline failed: {_ooh_err}")
+                if tw == 2072 and th == 252:
+                    try:
+                        from pathlib import Path as _Path
+                        from ooh_pipeline import ensure_cache_decomposed as _ensure_cache
+                        from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
+                        _cache_dir = await _ensure_cache(image_bytes=image_bytes)
+                        if not _cache_dir:
+                            raise RuntimeError("Decomposition failed for 2072×252")
+                        _orig_path = _cache_dir / "00_original.png"
+                        _ooh_result = await _banner_recompose(
+                            output_dir=_cache_dir,
+                            target_w=2072,
+                            target_h=252,
+                            original_image_path=_orig_path,
+                            temperature=0.10,
+                        )
+                        if _ooh_result:
+                            image_data = _ooh_result
+                            provider_used = "banner_2072x252"
+                            _ooh_pipeline_succeeded = True
+                            print(f"[GLENN] banner_2072x252 ✅: {src_w}x{src_h} → 2072×252")
+                        else:
+                            raise RuntimeError("banner_2072x252 returned None")
+                    except Exception as _ooh_err:
+                        print(f"[GLENN] banner_2072x252 failed: {_ooh_err}")
+                        raise HTTPException(status_code=500, detail=f"OOH pipeline failed: {_ooh_err}")
+                else:
+                    try:
+                        from ooh_pipeline import ooh_resize as _ooh_resize
+                        _ooh_result = await _ooh_resize(
+                            image_bytes=image_bytes,
+                            target_w=tw,
+                            target_h=th,
+                        )
+                        if _ooh_result:
+                            image_data = _ooh_result
+                            provider_used = "ooh_pipeline"
+                            _ooh_pipeline_succeeded = True
+                            print(f"[GLENN] OOH pipeline ✅: {src_w}x{src_h} → {tw}x{th}")
+                        else:
+                            raise RuntimeError("OOH pipeline returned None")
+                    except Exception as _ooh_err:
+                        print(f"[GLENN] OOH pipeline failed: {_ooh_err}")
+                        raise HTTPException(status_code=500, detail=f"OOH pipeline failed: {_ooh_err}")
 
             # Non-OOH requests keep the existing Glenn prompt/provider flow.
             if not _is_ooh:
@@ -4368,13 +4396,28 @@ async def custom_resize_image(
             file_bytes = await file.read()
             await file.seek(0)
 
-            from ooh_pipeline import ooh_resize as _ooh_resize
-
-            ooh_image_data = await _ooh_resize(
-                image_bytes=file_bytes,
-                target_w=width,
-                target_h=height,
-            )
+            if width == 2072 and height == 252:
+                from pathlib import Path as _Path
+                from ooh_pipeline import ensure_cache_decomposed as _ensure_cache
+                from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
+                _cache_dir = await _ensure_cache(image_bytes=file_bytes)
+                if not _cache_dir:
+                    raise RuntimeError("Decomposition failed for 2072×252")
+                _orig_path = _cache_dir / "00_original.png"
+                ooh_image_data = await _banner_recompose(
+                    output_dir=_cache_dir,
+                    target_w=2072,
+                    target_h=252,
+                    original_image_path=_orig_path,
+                    temperature=0.10,
+                )
+            else:
+                from ooh_pipeline import ooh_resize as _ooh_resize
+                ooh_image_data = await _ooh_resize(
+                    image_bytes=file_bytes,
+                    target_w=width,
+                    target_h=height,
+                )
             if not ooh_image_data:
                 raise RuntimeError("OOH pipeline returned None")
 

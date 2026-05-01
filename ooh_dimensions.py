@@ -52,64 +52,24 @@ class DimProfile(TypedDict):
 
 OOH_PROFILES: dict[tuple[int, int], DimProfile] = {
 
-    # ── 2072 × 252 ── AR 8.2:1  EXTREME THIN WIDE STRIP ──────────────────────
-    (2072, 252): DimProfile(
-        label="Extreme thin wide strip (2072×252)",
-        canvas_description=(
-            "an extremely thin, ultra-wide horizontal strip banner (2072×252 px, ~8:1 ratio). "
-            "This is one of the thinnest ad formats — the canvas is 252 px tall and 2072 px wide."
-        ),
-        ratio_str="8:1",
-        orientation="landscape_extreme",
-        layout_direction="left-to-right",
-        arrangement_order=["background", "logo", "photo", "headline", "body_text", "cta", "fine_print"],
-        element_max_height=0.95,
-        element_guidance=(
-            "The exact output image generated MUST be the 2072×252 banner itself. "
-            "Fill the 2072×252 pixel space completely, edge-to-edge. "
-            "SCALE ALL COMPONENTS LARGER. Spread them across the ENTIRE 2072 pixel width, touching the far left and right edges. "
-            "CRITICAL: The background MUST paint the outer edges of the 2072×252 canvas. "
-            "Photos/persons: pull them so large they are 220–252 px tall, filling the height of the banner. "
-            "Headlines: scale up to 140–200 px tall. Body text: 60–90 px tall. "
-            "Do NOT cluster elements in the middle. Spread them horizontally."),
-        fill_direction="horizontally",
-        fill_description=(
-            "Empty horizontal space MUST be filled by extending the background color/gradient "
-            "seamlessly left and right — never add new imagery, scenes, or duplicate elements."
-        ),
-        layout_rules=[
-            "CRITICAL: Never change, redraw, or reimagine any component.",
-            "CRITICAL: Human images must stay exactly as they are without any modifications — same face, body, clothing, pose.",
-            "CRITICAL: Every single component must appear exactly once — zero duplication.",
-            "EVERY component must appear — none omitted",
-            "The background component fills the entire 2072×252 canvas",
-            "The background MUST fill the exact edge of the 2072×252 output canvas.",
-            "DO NOT uniformly scale the entire original ad down to fit; re-layout components instead",
-            "Arrange strictly left-to-right: logo/brand → photo → headline → body text → CTA → fine print",
-            "ALL elements must fit within y: 0–252 px (hard height limit)",
-            "Photo/person element: SCALE TO FILL — target height 220–252 px, preserve original aspect ratio, "
-            "DO NOT render the person small or miniaturized",
-            "Primary headline: 140–200 px tall. Secondary text: 60–90 px. Fine print: max 24 px",
-            "QR codes: minimum 80×80 px, placed just left of fine print",
-            "16 px horizontal padding between adjacent elements",
-            "Center elements vertically: y = (252 - element_height) / 2",
-            "NEVER stack elements vertically — everything must be on a single horizontal row",
-        ],
-        dimension_warnings=[
-            "CRITICAL: DO NOT alter, redraw, or reinvent ANY component.",
-            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
-            "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos).",
-            "CRITICAL: SPREAD elements across the full 2072px width! Elements MUST be laid out horizontally touching the far left and far right edges.",
-            "CRITICAL: DO NOT shrink the whole source composition to fit. Re-layout individual components across full width.",
-            "CRITICAL: DO NOT shrink elements — every element must be as LARGE as possible within 252 px height.",
-            "DO NOT render the person/photo as a small thumbnail — scale it UP to fill the strip.",
-            "Scale the photo so it is almost the full 252px height of the canvas.",
-            "DO NOT stack elements vertically — this is a single horizontal row layout",
-            "DO NOT distort or stretch any element — maintain original aspect ratios while scaling up",
-            "DO NOT leave large blank areas on either side — extend background to fill",
-            "DO NOT output a portrait or square image — output must be 2072 px wide × 252 px tall",
-        ],
-    ),
+    # ── 2072 × 252 ── handled by banner_2072x252.py — disabled here ─────────────
+    # This dimension is routed to banner_2072x252.py in main.py.
+    # The profile below is intentionally commented out.
+    #
+    # (2072, 252): DimProfile(
+    #     label="Extreme thin wide strip (2072×252)",
+    #     canvas_description=("an extremely thin, ultra-wide horizontal strip banner..."),
+    #     ratio_str="8:1",
+    #     orientation="landscape_extreme",
+    #     layout_direction="left-to-right",
+    #     arrangement_order=["background", "logo", "photo", "headline", "body_text", "cta", "fine_print"],
+    #     element_max_height=0.95,
+    #     element_guidance=("..."),
+    #     fill_direction="horizontally",
+    #     fill_description=("..."),
+    #     layout_rules=[],
+    #     dimension_warnings=[],
+    # ),
 
     # ── 792 × 216 ── AR 3.67:1  THIN WIDE STRIP ──────────────────────────────
     (792, 216): DimProfile(
