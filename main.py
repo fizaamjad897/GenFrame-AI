@@ -694,7 +694,6 @@ def _can_use_custom_resize(current_user: dict) -> bool:
     """Allow custom-resize for Glen/HamzaFaisal orgs and their sub-orgs using org-id-based checks."""
     # Allowed org UUIDs
     ALLOWED_ORG_IDS = {
-        "d9f031dc-ba8f-4397-9534-81612cc8a686",  # Glen's org ID
         "35cd976c-d4ac-4e76-8dde-d8065334fa42",  # HamzaFaisal's org ID
     }
     
@@ -706,10 +705,9 @@ def _can_use_custom_resize(current_user: dict) -> bool:
     if org_id in ALLOWED_ORG_IDS or parent_org_id in ALLOWED_ORG_IDS:
         return True
     
-    # Email/domain fallback for testing
+    # Strict owner email fallback for testing
     email = str(current_user.get("email") or "").strip().lower()
-    domain = email.split("@")[-1] if "@" in email else ""
-    if email == "muhammadhamzafaisal146@gmail.com" or domain == "fmctv.co.nz":
+    if email == "muhammadhamzafaisal146@gmail.com":
         return True
     
     return False
@@ -4241,7 +4239,7 @@ async def custom_resize_image(
     if not _can_use_custom_resize(current_user):
         raise HTTPException(
             status_code=403,
-            detail="Custom resize is only enabled for the Glen account and approved sub-org users.",
+            detail="Custom resize is only enabled for the Hamza organization and approved sub-org users.",
         )
 
     MIN_DIM, MAX_DIM = 64, 4096
