@@ -25,7 +25,7 @@ from auth import (
     create_password_reset_token, reset_password_by_token, 
     send_password_reset_email, user_doc_to_response,
     get_all_plans, get_user_usage_stats, get_billing_history,
-    generate_monthly_bill, log_usage,
+    generate_monthly_bill, log_usage, update_feedback,
     consume_units, cancel_user_plan, update_user_plan,
     simulate_month_end_rollover, perform_all_postpaid_rollovers
 )
@@ -3616,7 +3616,7 @@ async def resize_image(
             increment_user_units(user_id)
             
             # Log to archive for history page
-            log_usage(
+            _log_id = log_usage(
                 user_id=user_id,
                 operation="resize",
                 aspect_ratio=gemini_aspect_ratio,
@@ -3633,6 +3633,7 @@ async def resize_image(
                 "height": th,
                 "ratio": gemini_aspect_ratio,
                 "provider": provider_used,
+                "logId": _log_id,
             })
         except HTTPException:
             raise
@@ -4186,7 +4187,7 @@ async def resize_image(
         increment_user_units(user_id)
 
         # Log usage (include prompt and target dims for archive)
-        log_usage(
+        _log_id = log_usage(
             user_id=user_id,
             operation="resize",
             aspect_ratio=aspect_ratio,
@@ -4195,6 +4196,7 @@ async def resize_image(
             prompt=prompt,
             target_dims=[target_width, target_height] if target_width and target_height else None
         )
+        response_data["logId"] = _log_id
 
         return JSONResponse(content=response_data, status_code=200)
 
@@ -4378,7 +4380,7 @@ async def custom_resize_image(
                 if cost > 0:
                     consume_units(user_id, cost, effective_engine)
                 
-                log_usage(user_id, "custom_resize", requested_ratio, True, uploaded_url, prompt_text, (width, height))
+                _log_id = log_usage(user_id, "custom_resize", requested_ratio, True, uploaded_url, prompt_text, (width, height))
                 
                 return JSONResponse(content={
                     "url": uploaded_url, 
@@ -4388,7 +4390,8 @@ async def custom_resize_image(
                     "gemini_ratio": mapped_ratio,
                     "requested_ratio": requested_ratio,
                     "engine_type": effective_engine,
-                    "provider": "gemini-3.1-flash-image-preview"
+                    "provider": "gemini-3.1-flash-image-preview",
+                    "logId": _log_id,
                 })
             
         except Exception as flash_err:
@@ -4450,12 +4453,34 @@ async def get_history(current_user = Depends(get_current_user)):
                 "targetDims": doc.get("targetDims", None),
                 "timestamp": doc.get("timestamp", "").isoformat() if doc.get("timestamp") else "",
                 "operation": doc.get("operation", "resize"),
+                "feedback": doc.get("feedback", None),
             })
         
         return JSONResponse(content={"history": history}, status_code=200)
     except Exception as e:
         print(f"❌ [HISTORY] Error fetching history: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
+
+@app.post("/api/feedback")
+async def submit_feedback(
+    logId: str = Body(...),
+    feedback: str = Body(...),
+    current_user = Depends(get_current_user),
+):
+    """Submit like/dislike feedback for a generated image."""
+    if feedback not in ("like", "dislike"):
+        raise HTTPException(status_code=400, detail="Feedback must be 'like' or 'dislike'")
+    try:
+        user_id = str(current_user["_id"])
+        updated = update_feedback(logId, user_id, feedback)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Log entry not found")
+        return JSONResponse(content={"success": True, "feedback": feedback})
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [FEEDBACK] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save feedback: {str(e)}")
 
 from urllib.parse import urlparse
 
