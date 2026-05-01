@@ -1740,6 +1740,12 @@ OOH_MEDIA_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
     "OOH_960X576":   (960,   576),
 }
 
+
+def _is_ooh_dimension(tw: int, th: int) -> bool:
+    """Return True if (tw, th) exactly matches any OOH media preset."""
+    return (tw, th) in OOH_MEDIA_SITE_DIMENSIONS.values()
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1887,43 +1893,73 @@ def build_flash_extreme_wide_prompt(
     source_dims: tuple,
 ) -> str:
     """
-    PixExact v16 — Gemini 3.1 Flash Extreme Wide Prompt.
-    Forbids duplication and "picture-in-picture" blurred backdrops.
+    Source-aware OOH wide prompt for Gemini Flash.
+    Uses FIT scaling — entire source always visible, zero content cropped.
+    Extension direction is determined by which dimension has the gap after fitting.
+    Includes full scene-continuation rules to maintain visual flow through the join.
     """
     src_w, src_h = source_dims
     tgt_ar = target_width / target_height
-    # Estimate how wide the source content will be when scaled to fill target height
-    scaled_src_w = int(src_w * (target_height / src_h))
-    side_ext = max(0, (target_width - scaled_src_w) // 2)
+
+    # FIT scaling: scale so both dimensions fit within the target — no cropping ever
+    fit_scale = min(target_width / src_w, target_height / src_h)
+    fitted_w = int(src_w * fit_scale)
+    fitted_h = int(src_h * fit_scale)
+    gap_x = (target_width - fitted_w) // 2   # L/R gap per side
+    gap_y = (target_height - fitted_h) // 2  # T/B gap per side
+
+    if gap_x >= gap_y:
+        # Source is narrower than wide target — extend LEFT and RIGHT
+        fill_instruction = (
+            f"Source is scaled to {fitted_w}×{fitted_h}px and centered horizontally.\n"
+            f"Extend ONLY LEFT and RIGHT by ~{gap_x}px each side:\n"
+            "• Read the exact leftmost and rightmost pixel columns — note every color, gradient direction, texture pattern, brightness, and any partial shapes at the edges\n"
+            "• Continue the scene outward following its natural visual flow and perspective:\n"
+            "  – Indoor / architectural: extend walls, ceiling, floor following the vanishing-point perspective exactly\n"
+            "  – Outdoor / sky / nature: continue the sky, ground, and horizon naturally with matching atmospheric depth\n"
+            "  – Studio / gradient background: blend the exact color and gradient smoothly outward at the same rate\n"
+            "  – Product / branded: continue the background style; keep all brand elements fully intact\n"
+            "• Preserve every perspective line, horizon line, gradient direction, and lighting angle from the original through the extension\n"
+            "• Every logo, text, subject appears EXACTLY ONCE — only inside the center zone. NEVER clone or echo content into the extension zones"
+        )
+        join_note = "left and right"
+    else:
+        # Source is wider than the target's AR — extend TOP and BOTTOM
+        fill_instruction = (
+            f"Source is scaled to {fitted_w}×{fitted_h}px and centered vertically.\n"
+            f"Extend ONLY TOP and BOTTOM by ~{gap_y}px each side:\n"
+            "• Read the exact topmost and bottommost pixel rows — note every color, gradient direction, texture pattern, brightness, and any partial shapes at the edges\n"
+            "• Continue the scene outward following its natural visual flow and perspective:\n"
+            "  – Indoor / architectural: extend ceiling upward and floor/ground downward with correct vanishing-point perspective\n"
+            "  – Outdoor / sky / nature: continue the sky upward and ground downward with matching atmospheric depth\n"
+            "  – Studio / gradient background: blend the exact color and gradient smoothly outward at the same rate\n"
+            "  – Product / branded: continue the background style; keep all brand elements fully intact\n"
+            "• Preserve every perspective line, horizon line, gradient direction, and lighting angle from the original through the extension\n"
+            "• Every logo, text, subject appears EXACTLY ONCE — only inside the center zone. NEVER clone or echo content into the extension zones"
+        )
+        join_note = "top and bottom"
+
     style_context = f"\n\nAdditional context: {user_prompt}" if user_prompt and user_prompt.strip() else ""
 
-    return f"""TASK: ADAPT IMAGE TO ULTRA-WIDE {target_width}x{target_height}px.
-STRICT RULE: NO "PICTURE-IN-PICTURE". NO BLURRED BACKDROPS. NO GHOSTING.
+    return (
+        f"TASK: ADAPT IMAGE TO {target_width}×{target_height}px (ratio {tgt_ar:.2f}:1 wide signage).\n\n"
+        f"━━ WHAT TO DO ━━\n{fill_instruction}\n\n"
+        "━━ THE RESULT IS ONE UNIFIED IMAGE ━━\n"
+        f"The output must look like a single image that was always {target_width}×{target_height}px — "
+        "not the source placed on a background, not letterboxed, not a stamp on a canvas.\n"
+        "The source must merge into the extension invisibly. "
+        "The join must be undetectable at normal viewing distance.\n\n"
+        "━━ PROHIBITIONS ━━\n"
+        "✗ DO NOT crop or cut any part of the source image\n"
+        "✗ No duplicate logos, text, or subjects — every element appears exactly once\n"
+        f"✗ No solid fills, blurred padding, or color bars {join_note}\n"
+        "✗ No blurred replica of the full source used as background fill\n"
+        "✗ No 'picture-in-picture' or floating-stamp effect\n"
+        "✗ No new objects, people, or scenes not visible in the source\n"
+        "✗ No mirroring, tiling, or copy-pasting of any element\n\n"
+        f"OUTPUT: One sharp, seamless {target_width}×{target_height}px wide-format image, filled crystal-clear edge-to-edge.{style_context}"
+    )
 
-1. PANORAMIC OUTPAINTING:
-   - Treat this as a SEAMLESS outpainting task, not a pasting task.
-   - The original image content (logos, subjects, text) must sit in the central {scaled_src_w}px zone.
-   - The LEFT and RIGHT extensions (~{side_ext}px each) must be a NATIVE continuation of the environment.
-   - The extension must look like more of the same scene, not a blurred overlay.
-   - NO GHOSTING: Do not use blurred or faded versions of the original image as a background.
-
-2. CONTENT LOCK:
-   - Every element (logo, person, product) appears EXACTLY ONCE in the center.
-   - NO CLONING: Do not repeat any subject or text to fill the wide space.
-   - The extensions must be clean negative space or environment continuation only.
-
-3. CLEAN EXECUTION:
-   - One unified, sharp image from edge to edge.
-   - No frames, no visible seams, no padding bars (no black/white bars).
-   - No "floating island" effect — the center content must flow perfectly into the sides.
-
-HARD PROHIBITIONS:
-✗ NO duplicate logos or products
-✗ NO blurred background "fills" or blurred replicas of the source
-✗ NO "picture-in-picture" or "floating window" appearance
-✗ NO white or black letterbox padding
-
-OUTPUT: One seamless {target_width}x{target_height} panoramic graphic. Crystal sharp.{style_context}"""
 
 
 
@@ -3332,70 +3368,115 @@ async def resize_image(
                 tw, th = get_native_resolution(gemini_aspect_ratio)
             
 
-            # ── Glenn-specific resize prompt (Smart Routing) ────────────────
-            is_standard_preset = target_dims is None  # Standard presets (1:1, 16:9, 9:16, etc.) have no custom dims
+            # ── Glenn-specific routing ───────────────────────────────────────
+            is_standard_preset = target_dims is None
             is_wide_landscape = tw > th * 1.5
             is_extreme_portrait = th > tw * 1.5
-            
-            if is_standard_preset:
-                # Standard presets use the proven simple prompt
-                orientation = "TALL VERTICAL" if th > tw else "WIDE HORIZONTAL" if tw > th else "SQUARE"
-                resize_prompt = (
-                    f"TASK: Adapt this image to exactly {tw}x{th}px ({orientation}).\n"
-                    f"STRICT RULE: Every element (logo, text, person, product) must appear EXACTLY ONCE. NO DUPLICATION, mirroring, or tiling.\n"
-                    f"1. Preserve 100% fidelity: identical colors, fonts, and subjects. No changes to the content.\n"
-                    f"2. Fill the entire canvas edge-to-edge. No bars, no borders, no empty space.\n"
-                    f"3. Do not add any new objects or AI-generated elements not present in the source.\n"
-                    f"Result must be a single, coherent, professionally adapted graphic."
-                )
-                if has_custom_prompt:
-                    resize_prompt += f"\n\nAdditional Instruction: {prompt}"
-                print(f"[GLENN] Standard preset ({gemini_aspect_ratio}): using simple resize prompt")
-            elif gemini_aspect_ratio == "8:1":
-                # Use Flash extreme wide prompt for 8:1 (best for OOH ultra-wide)
-                resize_prompt = build_flash_extreme_wide_prompt(
-                    user_prompt=prompt if has_custom_prompt else "",
-                    target_width=tw,
-                    target_height=th,
-                    source_dims=(src_w, src_h)
-                )
-                print(f"[GLENN] Ultra-wide 8:1 detected: using build_flash_extreme_wide_prompt")
-            elif is_wide_landscape:
-                # Use OpenRouter resize prompt for wide landscapes (best for reflow)
-                resize_prompt = build_openrouter_resize_prompt(
-                    source_dims=(src_w, src_h),
-                    target_dims=(tw, th),
-                    user_context=prompt if has_custom_prompt else "",
-                    validated_ratio=gemini_aspect_ratio
-                )
-                print(f"[GLENN] Wide landscape: using build_openrouter_resize_prompt")
-            elif is_extreme_portrait:
-                resize_prompt = build_image_adaptation_prompt(
-                    prompt=prompt if has_custom_prompt else "",
-                    target_dims=(tw, th),
-                    validated_ratio=gemini_aspect_ratio
-                )
-                print(f"[GLENN] Portrait: using build_image_adaptation_prompt")
-            else:
-                resize_prompt = build_ai_recompose_prompt(
-                    user_prompt=prompt if has_custom_prompt else "",
-                    target_dims=(tw, th),
-                    validated_ratio=gemini_aspect_ratio
-                )
-                print(f"[GLENN] Moderate ratio: using build_ai_recompose_prompt")
+            _is_ooh = _is_ooh_dimension(tw, th)
+            _tgt_ar_val = tw / th
 
-            
             # Log all key counters at start of each request
             glenn_log_all_counters()
-            
+
+            # Must be initialised before the OOH block references them
             image_data = None
             provider_used = "none"
-            
+            # When the OOH pipeline succeeds it already outputs exact (tw×th) PNG bytes
+            # via its internal PIL resize step.  safe_scale_to_exact must be skipped for
+            # OOH results — running it again would do a redundant decode/re-encode and,
+            # for any AR mismatch edge-case, could distort the image a second time.
+            _ooh_pipeline_succeeded = False
+
+            # ── OOH dims: full gemini_decomposition pipeline ─────────────────
+            # Routes directly to ooh_pipeline.ooh_resize() — no fallback providers.
+            # The pipeline handles decomposition, isolation, recomposition, and
+            # exact PIL resize internally. Output is returned as-is.
+            # Exception: 2072×252 is routed to banner_2072x252.py for recomposition.
+            if _is_ooh:
+                if tw == 2072 and th == 252:
+                    try:
+                        from pathlib import Path as _Path
+                        from ooh_pipeline import ensure_cache_decomposed as _ensure_cache
+                        from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
+                        _cache_dir = await _ensure_cache(image_bytes=image_bytes)
+                        if not _cache_dir:
+                            raise RuntimeError("Decomposition failed for 2072×252")
+                        _orig_path = _cache_dir / "00_original.png"
+                        _ooh_result = await _banner_recompose(
+                            output_dir=_cache_dir,
+                            target_w=2072,
+                            target_h=252,
+                            original_image_path=_orig_path,
+                            temperature=0.10,
+                        )
+                        if _ooh_result:
+                            image_data = _ooh_result
+                            provider_used = "banner_2072x252"
+                            _ooh_pipeline_succeeded = True
+                            print(f"[GLENN] banner_2072x252 ✅: {src_w}x{src_h} → 2072×252")
+                        else:
+                            raise RuntimeError("banner_2072x252 returned None")
+                    except Exception as _ooh_err:
+                        print(f"[GLENN] banner_2072x252 failed: {_ooh_err}")
+                        raise HTTPException(status_code=500, detail=f"OOH pipeline failed: {_ooh_err}")
+                else:
+                    try:
+                        from ooh_pipeline import ooh_resize as _ooh_resize
+                        _ooh_result = await _ooh_resize(
+                            image_bytes=image_bytes,
+                            target_w=tw,
+                            target_h=th,
+                        )
+                        if _ooh_result:
+                            image_data = _ooh_result
+                            provider_used = "ooh_pipeline"
+                            _ooh_pipeline_succeeded = True
+                            print(f"[GLENN] OOH pipeline ✅: {src_w}x{src_h} → {tw}x{th}")
+                        else:
+                            raise RuntimeError("OOH pipeline returned None")
+                    except Exception as _ooh_err:
+                        print(f"[GLENN] OOH pipeline failed: {_ooh_err}")
+                        raise HTTPException(status_code=500, detail=f"OOH pipeline failed: {_ooh_err}")
+
+            # Non-OOH requests keep the existing Glenn prompt/provider flow.
+            if not _is_ooh:
+                if gemini_aspect_ratio == "8:1":
+                    resize_prompt = build_flash_extreme_wide_prompt(
+                        user_prompt=prompt if has_custom_prompt else "",
+                        target_width=tw,
+                        target_height=th,
+                        source_dims=(src_w, src_h),
+                    )
+                    print(f"[GLENN] Ultra-wide 8:1 (non-OOH): using build_flash_extreme_wide_prompt")
+                elif is_wide_landscape:
+                    resize_prompt = build_openrouter_resize_prompt(
+                        source_dims=(src_w, src_h),
+                        target_dims=(tw, th),
+                        user_context=prompt if has_custom_prompt else "",
+                        validated_ratio=gemini_aspect_ratio,
+                    )
+                    print(f"[GLENN] Wide landscape: using build_openrouter_resize_prompt")
+                elif is_extreme_portrait:
+                    resize_prompt = build_image_adaptation_prompt(
+                        prompt=prompt if has_custom_prompt else "",
+                        target_dims=(tw, th),
+                        validated_ratio=gemini_aspect_ratio,
+                    )
+                    print(f"[GLENN] Portrait: using build_image_adaptation_prompt")
+                else:
+                    resize_prompt = build_ai_recompose_prompt(
+                        user_prompt=prompt if has_custom_prompt else "",
+                        target_dims=(tw, th),
+                        validated_ratio=gemini_aspect_ratio,
+                    )
+                    print(f"[GLENN] Moderate ratio: using build_ai_recompose_prompt")
+
             # ── PROVIDER 1: GEMINI FLASH for wide AR > 2.5 ─────────────────
             # Flash handles wide ratios natively — no OpenAI dependency needed
             # NOTE: Use actual tw/th ratio, NOT gemini_ratio_val (which is the closest Gemini ratio)
+            
             _actual_ratio = tw / th
-            if _actual_ratio > 2.5:
+            if not image_data and _actual_ratio > 2.5:
                 print(f"[GLENN] Wide AR {_actual_ratio:.2f} > 2.5 detected. Routing to Gemini 3.1 Flash.")
                 _flash_prompt = build_flash_extreme_wide_prompt(
                     user_prompt=prompt if has_custom_prompt else "",
@@ -3469,13 +3550,20 @@ async def resize_image(
                 _src_ar = src_w / src_h
                 _tgt_ar = tw / th
                 _wider_to_portrait = _src_ar > _tgt_ar * 1.3 and _tgt_ar < 1.0
-                if abs(_src_ar - _tgt_ar) / _tgt_ar > 0.05 and not is_wide_landscape and not _wider_to_portrait and not is_standard_preset:
+                _use_composite = (
+                    abs(_src_ar - _tgt_ar) / _tgt_ar > 0.05
+                    and not is_wide_landscape
+                    and not _wider_to_portrait
+                )
+                if _use_composite:
                     try:
                         composite_bytes = await run_blocking(
                             build_outpaint_canvas, image_bytes, tw, th
                         )
                         pil_image = Image.open(io.BytesIO(composite_bytes))
-                        resize_prompt = build_outpaint_prompt(prompt if has_custom_prompt else "", (tw, th), source_dims=(src_w, src_h))
+                        resize_prompt = build_outpaint_prompt(
+                            prompt if has_custom_prompt else "", (tw, th), source_dims=(src_w, src_h)
+                        )
                         print(f"[GLENN] Composite-first outpaint: {src_w}x{src_h} ({_src_ar:.2f}:1) -> {tw}x{th} ({_tgt_ar:.2f}:1)")
                     except Exception as comp_err:
                         print(f"[GLENN] Composite-first failed: {comp_err}")
@@ -3588,6 +3676,11 @@ async def resize_image(
             
             if is_standard_preset:
                 image_data = await run_blocking(old_safe_scale_to_exact, image_data, tw, th)
+            elif _ooh_pipeline_succeeded:
+                # OOH pipeline output is already exact (tw×th) — skip safe_scale_to_exact.
+                # Applying it would decode/re-encode for nothing and could trigger the
+                # center-crop path if the image size was ever slightly off.
+                print(f"[GLENN] OOH pipeline output: skipping safe_scale_to_exact (already {tw}×{th})")
             else:
                 image_data = await run_blocking(safe_scale_to_exact, image_data, tw, th, image_bytes)
             print(f"[GLENN] Resize complete via {provider_used}: {tw}x{th}")
@@ -4274,9 +4367,96 @@ async def custom_resize_image(
 
     ratio_val = width / height if height > 0 else 1.0
     EXTREME_WIDE_AR = 2.5
+    is_ooh_dimension = _is_ooh_dimension(width, height)
+
+    # OOH dimensions must always route through the dedicated OOH pipeline.
+    if file and is_ooh_dimension:
+        print(f"🛣️ [CUSTOM-RESIZE] OOH dimension detected ({width}x{height}). Routing to ooh_pipeline.")
+        try:
+            is_postpaid = current_user.get("is_postpaid", False)
+            has_custom_prompt = bool(prompt_text) and effective_engine == "creation"
+            cost = 1.0 if is_postpaid else (6.0 if has_custom_prompt else 4.0)
+            user_id = str(current_user["_id"])
+
+            if not is_postpaid:
+                engine_data = current_user.get("engine_data", {})
+                target_engine_info = engine_data.get(effective_engine, {})
+                engine_credits = target_engine_info.get("credits", {}) if target_engine_info else {}
+                if not engine_credits and current_user.get("engineType") == effective_engine:
+                    engine_credits = current_user.get("credits", {})
+                remaining = float(engine_credits.get("remaining_units", 0.0))
+                if remaining < cost:
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Insufficient credits. Need {cost}, have {remaining}",
+                    )
+
+            file_bytes = await file.read()
+            await file.seek(0)
+
+            if width == 2072 and height == 252:
+                from pathlib import Path as _Path
+                from ooh_pipeline import ensure_cache_decomposed as _ensure_cache
+                from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
+                _cache_dir = await _ensure_cache(image_bytes=file_bytes)
+                if not _cache_dir:
+                    raise RuntimeError("Decomposition failed for 2072×252")
+                _orig_path = _cache_dir / "00_original.png"
+                ooh_image_data = await _banner_recompose(
+                    output_dir=_cache_dir,
+                    target_w=2072,
+                    target_h=252,
+                    original_image_path=_orig_path,
+                    temperature=0.10,
+                )
+            else:
+                from ooh_pipeline import ooh_resize as _ooh_resize
+                ooh_image_data = await _ooh_resize(
+                    image_bytes=file_bytes,
+                    target_w=width,
+                    target_h=height,
+                )
+            if not ooh_image_data:
+                raise RuntimeError("OOH pipeline returned None")
+
+            import uuid
+
+            filename = f"custom-resized/{uuid.uuid4().hex}.png"
+            await run_blocking(
+                s3_client.put_object,
+                Bucket=DO_SPACES_BUCKET_NAME,
+                Key=filename,
+                Body=ooh_image_data,
+                ACL="public-read",
+                ContentType="image/png",
+            )
+            uploaded_url = f"https://{DO_SPACES_BUCKET_NAME}.{DO_SPACES_ENDPOINT.replace('https://','')}/{filename}"
+
+            if cost > 0:
+                consume_units(user_id, cost, effective_engine)
+
+            log_usage(user_id, "custom_resize", requested_ratio, True, uploaded_url, prompt_text, (width, height))
+
+            return JSONResponse(
+                content={
+                    "url": uploaded_url,
+                    "credits_used": cost,
+                    "width": width,
+                    "height": height,
+                    "gemini_ratio": mapped_ratio,
+                    "requested_ratio": requested_ratio,
+                    "engine_type": effective_engine,
+                    "provider": "ooh_pipeline",
+                }
+            )
+        except HTTPException:
+            raise
+        except Exception as ooh_err:
+            print(f"❌ [CUSTOM-RESIZE] OOH pipeline failed: {ooh_err}")
+            raise HTTPException(status_code=500, detail=f"OOH pipeline failed: {ooh_err}")
 
     # If it's an extreme wide image, intercept and try Gemini Flash first!
-    if file and ratio_val > EXTREME_WIDE_AR and effective_engine == "transformation":
+    if file and not is_ooh_dimension and ratio_val > EXTREME_WIDE_AR and effective_engine == "transformation":
         print(f"🚀 [CUSTOM-RESIZE] Ultra-wide detected (AR {ratio_val:.2f} > 2.5). Routing to Gemini 3.1 Flash.")
         try:
             # Cost logic (same as resize_image for transformation)
