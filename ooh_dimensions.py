@@ -647,54 +647,37 @@ OOH_PROFILES: dict[tuple[int, int], DimProfile] = {
     ),
 
     # ── 504 × 1008 ── AR 1:2  TALL PORTRAIT ──────────────────────────────────
-    (504, 1008): DimProfile(
-        label="Tall portrait banner (504×1008)",
-        canvas_description=(
-            "a tall portrait banner (504×1008 px, 1:2 ratio). "
-            "This is a vertical format — content flows top-to-bottom."
-        ),
-        ratio_str="1:2",
-        orientation="portrait_tall",
-        layout_direction="top-to-bottom",
-        arrangement_order=["background", "logo", "headline", "photo", "body_text", "cta", "fine_print"],
-        element_max_height=0.45,
-        element_guidance=(
-            "Scale components to fit within 504 px width. "
-            "Photo/person: up to 460 px tall (portrait crop). "
-            "Logo: 60–100 px tall. Headline: 80–160 px tall. Body text: 60–100 px. "
-            "CTA: 60–80 px tall. Fine print: 28–40 px tall."
-        ),
-        fill_direction="vertically",
-        fill_description=(
-            "Empty vertical space must be filled by extending the background color/gradient "
-            "seamlessly up and down — never add new scene content or duplicate elements."
-        ),
-        layout_rules=[
-            "CRITICAL: Never change, redraw, or reimagine any component.",
-            "CRITICAL: Human images must stay exactly as they are without any modifications.",
-            "CRITICAL: Every single component must appear exactly once — zero duplication.", 
-            "EVERY component must appear — none omitted",
-            "The background component fills the entire 504×1008 canvas",
-            "Arrange TOP-TO-BOTTOM: logo (top) → headline → photo → body text → CTA → fine print (bottom)",
-            "ALL elements must fit within x: 0–504 px (hard limit on width)",
-            "Logo: top-center, 60–100 px tall, with 20 px top margin",
-            "Photo/person: centered, occupying the middle vertical zone (y: 200–700 px)",
-            "Headline: above photo or overlaid at top of photo",
-            "Body text and CTA: below photo",
-            "Fine print: bottom strip, full width, ~34 px tall",
-            "20 px vertical padding between stacked elements",
-            "Center all elements horizontally: x = (504 - element_width) / 2",
-        ],
-        dimension_warnings=[
-            "CRITICAL: DO NOT alter, redraw, or reinvent ANY component.",
-            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
-            "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos).",
-            "DO NOT use a horizontal left-to-right layout — this is a portrait format",
-            "DO NOT place elements side by side horizontally",
-            "DO NOT extend scene/photo content vertically into empty space — background fill only",
-            "Output must be 504 px wide × 1008 px tall — NOT landscape",
-        ],
+   (800, 400): DimProfile(
+    label="Tall portrait banner (504×1008)",
+    canvas_description="A vertical portrait canvas (504×1008 px, 1:2 ratio) requiring a strict letterbox layout.",
+    ratio_str="1:2",
+    orientation="portrait_tall",
+    layout_direction="top-to-bottom",
+    arrangement_order=["background", "logo", "headline", "photo", "body_text", "cta", "fine_print"],
+    element_max_height=1.0, 
+    element_guidance=(
+        "ABSOLUTE PRIORITY: Single instance presentation. "
+        "Place the untouched original photo exactly ONCE in the vertical center of the canvas. "
+        "The top 30% and bottom 30% of the canvas MUST be flat, solid color blocks (e.g., solid white or beige). "
+        "Photographic elements (sky, grass, trees) must absolutely STOP at the top and bottom borders of the central photo. "
+        "They must not bleed into or fill the top and bottom sections."
     ),
+    fill_direction="vertically",
+    fill_description=(
+        "Use a flat, solid color block for the areas above and below the photo. "
+        "NEVER use photographic textures, sky, or grass to fill the vertical space."
+    ),
+    layout_rules=[
+        "Rule 1: SINGLE INSTANCE ONLY. The photo appears exactly one time. No stacking, no tiling, no copying.",
+        "Rule 2: PIXEL-PERFECT ORIGINAL. Keep the original central image 100% untouched.",
+        "Rule 3: Establish flat, solid color blocks for the top and bottom background areas.",
+        "Rule 4: Place the logo, headline, body text, and CTA strictly within the solid color areas, not over the photo."
+    ],
+    dimension_warnings=[
+        "CRITICAL: Do NOT stack, tile, mirror, or duplicate the photo to fill space. It must appear only ONE time.",
+        "CRITICAL: The top and bottom sections of the canvas must be solid color blocks, completely devoid of any scenery."
+    ],
+),
 
     # ── 768 × 1152 ── AR 1:1.5  PORTRAIT ─────────────────────────────────────
     (768, 1152): DimProfile(
