@@ -3393,31 +3393,106 @@ async def resize_image(
             # exact PIL resize internally. Output is returned as-is.
             # Exception: 2072×252 is routed to banner_2072x252.py for recomposition.
             if _is_ooh:
-                if tw == 2072 and th == 252:
+                if (tw == 2072 and th == 252) or (tw == 504 and th == 1008):
                     try:
+                        import json as _json
                         from pathlib import Path as _Path
                         from ooh_pipeline import ensure_cache_decomposed as _ensure_cache
-                        from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
                         _cache_dir = await _ensure_cache(image_bytes=image_bytes)
                         if not _cache_dir:
-                            raise RuntimeError("Decomposition failed for 2072×252")
-                        _orig_path = _cache_dir / "00_original.png"
-                        _ooh_result = await _banner_recompose(
-                            output_dir=_cache_dir,
-                            target_w=2072,
-                            target_h=252,
-                            original_image_path=_orig_path,
-                            temperature=0.10,
-                        )
-                        if _ooh_result:
-                            image_data = _ooh_result
-                            provider_used = "banner_2072x252"
-                            _ooh_pipeline_succeeded = True
-                            print(f"[GLENN] banner_2072x252 ✅: {src_w}x{src_h} → 2072×252")
+                            raise RuntimeError(f"Decomposition failed for {tw}×{th}")
+                        _raw_comps = _json.loads((_cache_dir / "components.json").read_text())
+                        _components = _raw_comps["components"] if isinstance(_raw_comps, dict) else _raw_comps
+                        _n_comp = len(_components)
+                        if _n_comp < 4:
+                            _flash_ar = "8:1" if (tw == 2072 and th == 252) else "9:16"
+                            print(f"[GLENN] {tw}×{th}: {_n_comp} components < 4, routing to build_image_adaptation_prompt + Gemini Flash ({_flash_ar})")
+                            _adapt_prompt = build_image_adaptation_prompt(
+                                prompt=prompt if has_custom_prompt else "",
+                                target_dims=(tw, th),
+                                validated_ratio=_flash_ar,
+                            )
+                            _flash_config = types.GenerateContentConfig(
+                                response_modalities=["Image"],
+                                image_config=types.ImageConfig(aspect_ratio=_flash_ar),
+                            )
+                            _flash_result = None
+                            if GLENN_PROVIDER == "google":
+                                _active_client, _key_label = glenn_get_google_client()
+                                try:
+                                    _flash_resp = await call_gemini_with_retry(
+                                        model_name="gemini-3.1-flash-image-preview",
+                                        contents=[_adapt_prompt, pil_image],
+                                        config=_flash_config,
+                                        max_retries=2,
+                                        api_client=_active_client,
+                                    )
+                                    if _flash_resp.parts:
+                                        for _part in _flash_resp.parts:
+                                            if _part.inline_data:
+                                                _flash_result = _part.inline_data.data
+                                                break
+                                    if _flash_result:
+                                        glenn_increment_counter(_key_label)
+                                except Exception as _fk_err:
+                                    print(f"[GLENN] {tw}×{th} Flash Google key failed: {_fk_err}")
+                            if not _flash_result:
+                                _flash_resp = await call_gemini_with_retry(
+                                    model_name="gemini-3.1-flash-image-preview",
+                                    contents=[_adapt_prompt, pil_image],
+                                    config=_flash_config,
+                                    max_retries=2,
+                                    api_client=glenn_client,
+                                )
+                                if _flash_resp.parts:
+                                    for _part in _flash_resp.parts:
+                                        if _part.inline_data:
+                                            _flash_result = _part.inline_data.data
+                                            break
+                                if _flash_result:
+                                    glenn_increment_counter("vertex")
+                            if _flash_result:
+                                image_data = _flash_result
+                                provider_used = f"gemini-flash/image_adaptation_{tw}x{th}"
+                                print(f"[GLENN] image_adaptation ✅ ({_n_comp} components): {src_w}x{src_h} → {tw}×{th}")
+                            else:
+                                raise RuntimeError(f"Gemini Flash returned no image for {tw}×{th} adaptation")
                         else:
-                            raise RuntimeError("banner_2072x252 returned None")
+                            if tw == 2072 and th == 252:
+                                print(f"[GLENN] 2072×252: {_n_comp} components ≥ 4, routing to banner_2072x252")
+                                from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
+                                _orig_path = _cache_dir / "00_original.png"
+                                _ooh_result = await _banner_recompose(
+                                    output_dir=_cache_dir,
+                                    target_w=2072,
+                                    target_h=252,
+                                    original_image_path=_orig_path,
+                                    temperature=0.40,
+                                )
+                                if _ooh_result:
+                                    image_data = _ooh_result
+                                    provider_used = "banner_2072x252"
+                                    _ooh_pipeline_succeeded = True
+                                    print(f"[GLENN] banner_2072x252 ✅: {src_w}x{src_h} → 2072×252")
+                                else:
+                                    raise RuntimeError("banner_2072x252 returned None")
+                            else:
+                                print(f"[GLENN] {tw}×{th}: {_n_comp} components ≥ 4, routing to ooh_pipeline")
+                                from ooh_pipeline import ooh_resize as _ooh_resize
+                                _ooh_result = await _ooh_resize(
+                                    image_bytes=image_bytes,
+                                    target_w=tw,
+                                    target_h=th,
+                                )
+                                if _ooh_result:
+                                    image_data = _ooh_result
+                                    provider_used = "ooh_pipeline"
+                                    _ooh_pipeline_succeeded = True
+                                    print(f"[GLENN] OOH pipeline ✅: {src_w}x{src_h} → {tw}x{th}")
+                                else:
+                                    raise RuntimeError("OOH pipeline returned None")
                     except Exception as _ooh_err:
-                        print(f"[GLENN] banner_2072x252 failed: {_ooh_err}")
+                        print(f"[GLENN] {tw}×{th} pipeline failed: {_ooh_err}")
                         raise HTTPException(status_code=500, detail=f"OOH pipeline failed: {_ooh_err}")
                 else:
                     try:
@@ -4394,21 +4469,90 @@ async def custom_resize_image(
             file_bytes = await file.read()
             await file.seek(0)
 
-            if width == 2072 and height == 252:
+            if (width == 2072 and height == 252) or (width == 504 and height == 1008):
+                import json as _json
                 from pathlib import Path as _Path
                 from ooh_pipeline import ensure_cache_decomposed as _ensure_cache
-                from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
                 _cache_dir = await _ensure_cache(image_bytes=file_bytes)
                 if not _cache_dir:
-                    raise RuntimeError("Decomposition failed for 2072×252")
-                _orig_path = _cache_dir / "00_original.png"
-                ooh_image_data = await _banner_recompose(
-                    output_dir=_cache_dir,
-                    target_w=2072,
-                    target_h=252,
-                    original_image_path=_orig_path,
-                    temperature=0.10,
-                )
+                    raise RuntimeError(f"Decomposition failed for {width}×{height}")
+                _raw_comps = _json.loads((_cache_dir / "components.json").read_text())
+                _components = _raw_comps["components"] if isinstance(_raw_comps, dict) else _raw_comps
+                _n_comp = len(_components)
+                if _n_comp < 4:
+                    _flash_ar = "8:1" if (width == 2072 and height == 252) else "9:16"
+                    print(f"[CUSTOM-RESIZE] {width}×{height}: {_n_comp} components < 4, routing to build_image_adaptation_prompt + Gemini Flash ({_flash_ar})")
+                    _pil_img = await run_blocking(Image.open, io.BytesIO(file_bytes))
+                    _src_w, _src_h = _pil_img.size
+                    _adapt_prompt = build_image_adaptation_prompt(
+                        prompt=prompt_text,
+                        target_dims=(width, height),
+                        validated_ratio=_flash_ar,
+                    )
+                    _flash_config = types.GenerateContentConfig(
+                        response_modalities=["Image"],
+                        image_config=types.ImageConfig(aspect_ratio=_flash_ar),
+                    )
+                    _flash_result = None
+                    GLENN_PROVIDER = os.getenv("GLENN_PROVIDER", "google").lower().strip()
+                    if GLENN_PROVIDER == "google":
+                        _active_client, _key_label = glenn_get_google_client()
+                        try:
+                            _flash_resp = await call_gemini_with_retry(
+                                model_name="gemini-3.1-flash-image-preview",
+                                contents=[_adapt_prompt, _pil_img],
+                                config=_flash_config,
+                                max_retries=2,
+                                api_client=_active_client,
+                            )
+                            if _flash_resp.parts:
+                                for _part in _flash_resp.parts:
+                                    if _part.inline_data:
+                                        _flash_result = _part.inline_data.data
+                                        break
+                            if _flash_result:
+                                glenn_increment_counter(_key_label)
+                        except Exception as _fk_err:
+                            print(f"[CUSTOM-RESIZE] {width}×{height} Flash Google key failed: {_fk_err}")
+                    if not _flash_result:
+                        _flash_resp = await call_gemini_with_retry(
+                            model_name="gemini-3.1-flash-image-preview",
+                            contents=[_adapt_prompt, _pil_img],
+                            config=_flash_config,
+                            max_retries=2,
+                            api_client=glenn_client,
+                        )
+                        if _flash_resp.parts:
+                            for _part in _flash_resp.parts:
+                                if _part.inline_data:
+                                    _flash_result = _part.inline_data.data
+                                    break
+                        if _flash_result:
+                            glenn_increment_counter("vertex")
+                    if not _flash_result:
+                        raise RuntimeError(f"Gemini Flash returned no image for {width}×{height} adaptation")
+                    ooh_image_data = await run_blocking(safe_scale_to_exact, _flash_result, width, height, file_bytes)
+                    print(f"[CUSTOM-RESIZE] image_adaptation ✅ ({_n_comp} components): {_src_w}x{_src_h} → {width}×{height}")
+                else:
+                    if width == 2072 and height == 252:
+                        print(f"[CUSTOM-RESIZE] 2072×252: {_n_comp} components ≥ 4, routing to banner_2072x252")
+                        from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
+                        _orig_path = _cache_dir / "00_original.png"
+                        ooh_image_data = await _banner_recompose(
+                            output_dir=_cache_dir,
+                            target_w=2072,
+                            target_h=252,
+                            original_image_path=_orig_path,
+                            temperature=0.40,
+                        )
+                    else:
+                        print(f"[CUSTOM-RESIZE] {width}×{height}: {_n_comp} components ≥ 4, routing to ooh_pipeline")
+                        from ooh_pipeline import ooh_resize as _ooh_resize
+                        ooh_image_data = await _ooh_resize(
+                            image_bytes=file_bytes,
+                            target_w=width,
+                            target_h=height,
+                        )
             else:
                 from ooh_pipeline import ooh_resize as _ooh_resize
                 ooh_image_data = await _ooh_resize(
