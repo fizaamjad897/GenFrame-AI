@@ -70,6 +70,7 @@ STRICT RULES:
 7. If two elements overlap (e.g. a frame around a photo), give them DIFFERENT box_2d values — the frame should have a LARGER box_2d than the photo inside it
 8. Every piece of standalone text (not part of a logo) that is visually distinct (different font, size, or position) should be its own component
 9. Decorative elements (lines, dividers, borders) are type "shape" — describe their exact appearance
+10. CRITICAL — EMBEDDED vs FLOATING ELEMENTS: Do NOT separate elements that are physically part of a product or object. If a logo, text, label, or graphic is printed ON or attached TO a physical object (e.g. a label on a bottle, logo on a mug, text on packaging, print on clothing, text on a sign held by a person), it is NOT a separate component — it belongs to the product/image that contains it. Only treat logos and text as separate components if they are FLOATING freely in the design as independent overlays, not physically embedded in an object.
 
 For each component, describe its EXACT visual appearance: specific colors (hex if obvious), font style, content, and position.
 
@@ -100,6 +101,18 @@ Return ONLY this JSON (no markdown):
 Valid types: scene, background, text, image, photo, shape, button, icon, logo
 Box format: [ymin, xmin, ymax, xmax] in 0-1000 coordinates (top-left = 0,0)
 IMPORTANT: background box_2d should ALWAYS be [0, 0, 1000, 1000] unless the design area doesn't fill the image.
+
+EMBEDDED ELEMENT EXAMPLES (DO NOT separate these — keep as part of the parent object):
+- A logo printed on a vitamin bottle label → part of the bottle "image" component, NOT a separate "logo"
+- Text on a product label (e.g. "FAMILY DAILY") → part of the bottle/product "image", NOT a separate "text"
+- A brand name on a coffee mug → part of the mug "image", NOT a separate "logo"
+- Text printed on a t-shirt → part of the person/photo, NOT a separate "text"
+- A label on packaging → part of the product "image", NOT separate components
+
+FLOATING ELEMENT EXAMPLES (DO separate these — they are independent design overlays):
+- A headline text floating over a background photo → separate "text" component
+- A logo placed in the corner of an advertisement → separate "logo" component
+- A CTA button overlaid on a design → separate "button" component
 """
 
 
