@@ -3393,7 +3393,7 @@ async def resize_image(
             # exact PIL resize internally. Output is returned as-is.
             # Exception: 2072×252 is routed to banner_2072x252.py for recomposition.
             if _is_ooh:
-                if (tw == 2072 and th == 252) or (tw == 504 and th == 1008):
+                if tw == 2072 and th == 252:
                     try:
                         import json as _json
                         from pathlib import Path as _Path
@@ -3405,7 +3405,7 @@ async def resize_image(
                         _components = _raw_comps["components"] if isinstance(_raw_comps, dict) else _raw_comps
                         _n_comp = len(_components)
                         if _n_comp < 4:
-                            _flash_ar = "8:1" if (tw == 2072 and th == 252) else "9:16"
+                            _flash_ar = "8:1"
                             print(f"[GLENN] {tw}×{th}: {_n_comp} components < 4, routing to build_image_adaptation_prompt + Gemini Flash ({_flash_ar})")
                             _adapt_prompt = build_image_adaptation_prompt(
                                 prompt=prompt if has_custom_prompt else "",
