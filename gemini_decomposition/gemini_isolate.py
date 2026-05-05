@@ -599,6 +599,24 @@ async def isolate_component_png(
             logger.info(f"  [{index:02d}] Tiny element ({box_w}×{box_h} units) — using bounding-box crop")
             return _crop_component_from_image(component, image)
 
+    # PHOTO/IMAGE (non-full-canvas) — bounding-box crop to preserve exact faces.
+    # Gemini's generative image editing model regenerates content and can alter
+    # facial features (same issue that exists for text hallucination). For photos
+    # that are not full-canvas background scenes, a direct bounding-box crop gives
+    # pixel-perfect fidelity. Full-canvas photos still go through Gemini so that
+    # overlaid design elements (text, logos) are removed from the background.
+    if comp_type in ("photo", "image"):
+        b = component.get("box_2d")
+        is_full_canvas = (
+            b and len(b) == 4 and
+            b[1] <= 50 and b[0] <= 50 and
+            b[3] >= 950 and b[2] >= 950
+        )
+        if not is_full_canvas:
+            logger.info(f"  [{index:02d}] Photo/image (non-full-canvas) — bounding-box crop (preserves faces)")
+            return _crop_component_from_image(component, image)
+        # Full-canvas photos fall through to Gemini to strip overlaid design elements.
+
     # Convert source image to PNG bytes
     buf = io.BytesIO()
     image.convert("RGB").save(buf, format="PNG")

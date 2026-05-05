@@ -435,12 +435,18 @@ def _render_text_onto(canvas: Image.Image, component: dict, item: dict) -> Image
 
 # ── Layer PNG loader ───────────────────────────────────────────────────────────
 
-def _load_layer_pngs(output_dir: Path, n_components: int) -> dict[int, Path | None]:
-    """Map component index → layer PNG path (or None if missing)."""
+def _load_layer_pngs(output_dir: Path, components: list[dict]) -> dict[int, Path | None]:
+    """
+    Map component list position → layer PNG path.
+    Uses _layer_index if present (set by _merge_embedded_components) so that
+    after embedded components are removed the surviving components still point
+    to their correct on-disk PNG files.
+    """
     mapping = {}
-    for i in range(n_components):
-        matches = sorted(output_dir.glob(f"layer_{i:02d}_*.png"))
-        mapping[i] = matches[0] if matches else None
+    for new_i, comp in enumerate(components):
+        orig_i = comp.get("_layer_index", new_i)
+        matches = sorted(output_dir.glob(f"layer_{orig_i:02d}_*.png"))
+        mapping[new_i] = matches[0] if matches else None
     return mapping
 
 
@@ -529,6 +535,80 @@ def _build_component_sheet(
     return sheet
 
 
+# ── Embedded component merging ────────────────────────────────────────────────
+
+def _merge_embedded_components(components: list[dict]) -> list[dict]:
+    """
+    Detect and remove components whose bounding box is spatially contained
+    within a photo/image/scene component. These are elements physically printed
+    ON a product (logo on a bottle label, text on packaging, etc.) — they are
+    already visible inside the parent layer PNG and must NOT be placed as
+    separate independent layers by the recomposer.
+
+    A component is considered embedded if:
+      - Its type is logo, icon, text, shape, or button
+      - Its box_2d falls entirely (with 10px tolerance) inside the box_2d of
+        a photo, image, or scene component
+    """
+    CONTAINER_TYPES = {"photo", "image", "scene"}
+    EMBEDDABLE_TYPES = {"logo", "icon", "text", "shape", "button"}
+    CONTAINMENT_TOLERANCE = 20  # units in 0-1000 space
+
+    # Collect bounding boxes for all container components
+    containers = [
+        c for c in components
+        if c.get("type") in CONTAINER_TYPES and c.get("box_2d") and len(c["box_2d"]) == 4
+    ]
+
+    if not containers:
+        return components
+
+    merged_indices = set()
+    for i, comp in enumerate(components):
+        if comp.get("type") not in EMBEDDABLE_TYPES:
+            continue
+        box = comp.get("box_2d")
+        if not box or len(box) != 4:
+            continue
+        cymin, cxmin, cymax, cxmax = box
+
+        for parent in containers:
+            pymin, pxmin, pymax, pxmax = parent["box_2d"]
+            # Check if comp box is fully inside parent box (with tolerance)
+            if (cxmin >= pxmin - CONTAINMENT_TOLERANCE and
+                    cymin >= pymin - CONTAINMENT_TOLERANCE and
+                    cxmax <= pxmax + CONTAINMENT_TOLERANCE and
+                    cymax <= pymax + CONTAINMENT_TOLERANCE):
+                logger.info(
+                    f"[merge_embedded] Removing '{comp.get('type')}' "
+                    f"'{comp.get('description', '')[:50]}' — "
+                    f"spatially embedded inside '{parent.get('type')}' "
+                    f"'{parent.get('description', '')[:40]}'"
+                )
+                merged_indices.add(i)
+                break
+
+    # Always stamp _layer_index so PNG loading uses original file indices
+    # regardless of whether any merging happened.
+    if not merged_indices:
+        for i, c in enumerate(components):
+            c["_layer_index"] = i
+        return components
+
+    filtered = []
+    for i, c in enumerate(components):
+        if i not in merged_indices:
+            c = dict(c)          # shallow copy — don't mutate the original
+            c["_layer_index"] = i  # preserve original on-disk index
+            filtered.append(c)
+
+    logger.info(
+        f"[merge_embedded] Removed {len(merged_indices)} embedded component(s), "
+        f"{len(filtered)} remain."
+    )
+    return filtered
+
+
 # ── PRIMARY: Gemini-vision compositor ─────────────────────────────────────────
 
 async def recompose_with_gemini_vision(
@@ -558,7 +638,12 @@ async def recompose_with_gemini_vision(
     components = raw["components"] if isinstance(raw, dict) else raw
     logger.info(f"Loaded {len(components)} components from {output_dir}")
 
-    layer_paths = _load_layer_pngs(output_dir, len(components))
+    # Remove logos/text/icons that are physically embedded inside a photo/image
+    # (e.g. logo on a bottle label, text on packaging) — they are already part
+    # of the parent layer PNG and must not be placed as separate elements.
+    components = _merge_embedded_components(components)
+
+    layer_paths = _load_layer_pngs(output_dir, components)
 
     logger.info("Building component reference sheet...")
     sheet = _build_component_sheet(components, layer_paths, metadata=metadata)
@@ -723,6 +808,8 @@ async def recompose_banner(
     components = raw["components"] if isinstance(raw, dict) else raw
     logger.info(f"Loaded {len(components)} components from {output_dir}")
 
+    components = _merge_embedded_components(components)
+
     logger.info("Stage 1/3: Planning layout...")
     layout = await _plan_layout(components, target_w, target_h)
     layout_map = {item["id"]: item for item in layout}
@@ -736,7 +823,7 @@ async def recompose_banner(
     canvas = canvas.convert("RGBA")
 
     logger.info("Stage 3/3: Compositing elements...")
-    layer_paths = _load_layer_pngs(output_dir, len(components))
+    layer_paths = _load_layer_pngs(output_dir, components)
 
     for i, comp in enumerate(components):
         ctype = comp.get("type", "")

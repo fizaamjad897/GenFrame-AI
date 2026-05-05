@@ -358,6 +358,12 @@ async def ooh_resize(
         None, _cleanup_old_cache, cache_root, 48, file_hash
     )
 
+    # 3b. Patch photo/image layers with exact source crops.
+    # Regardless of where the cache came from (local, S3, or fresh decomposition),
+    # overwrite every non-full-canvas photo/image layer with a direct PIL crop so
+    # faces are always pixel-perfect copies of the original — never AI-regenerated.
+    _patch_photo_layers(source, cache_dir)
+
     # 4. Recompose for requested target dimensions.
     logger.info("[OOH_PIPELINE] Recomposing at %d×%d", target_w, target_h)
     orig_path = cache_dir / "00_original.png"
@@ -446,10 +452,81 @@ async def ensure_cache_decomposed(image_bytes: bytes) -> Optional[Path]:
     asyncio.get_event_loop().run_in_executor(
         None, _cleanup_old_cache, cache_root, 48, file_hash
     )
+    _patch_photo_layers(source, cache_dir)
     return cache_dir
 
 
-# ── 7. Internal decomposition helper ──────────────────────────────────────────
+# ── 7. Photo layer patch ──────────────────────────────────────────────────────
+
+def _patch_photo_layers(source: Image.Image, cache_dir: Path) -> None:
+    """
+    Overwrite every photo/image layer PNG with a direct bounding-box crop from
+    the source image — pixel-perfect, zero AI involvement.
+
+    This runs after the cache is loaded from ANY source (local disk, S3, or a
+    fresh decomposition).  The test pipeline never has face-change problems
+    because it calls isolate_component_png with the live PIL source, and for
+    non-full-canvas photos that now returns a plain crop.  This function brings
+    the same guarantee to the cached path: even if S3 stored a Gemini-generated
+    layer that changed a face, the layer on disk is replaced before recomposition.
+    """
+    components_path = cache_dir / "components.json"
+    if not components_path.exists():
+        return
+    try:
+        raw = json.loads(components_path.read_text())
+        components = raw.get("components", []) if isinstance(raw, dict) else raw
+    except Exception as exc:
+        logger.warning("[OOH_PIPELINE] _patch_photo_layers: cannot read components.json: %s", exc)
+        return
+
+    for idx, comp in enumerate(components):
+        ctype = comp.get("type", "").lower()
+        if ctype not in ("photo", "image"):
+            continue
+
+        # Full-canvas photos are background scenes that need Gemini to strip overlaid
+        # elements — leave those alone.
+        b = comp.get("box_2d")
+        is_full_canvas = (
+            b and len(b) == 4 and
+            b[1] <= 50 and b[0] <= 50 and
+            b[3] >= 950 and b[2] >= 950
+        )
+        if is_full_canvas:
+            continue
+
+        # Find the layer file for this index.
+        matches = sorted(cache_dir.glob(f"layer_{idx:02d}_*.png"))
+        if not matches:
+            continue
+        layer_path = matches[0]
+
+        # Bounding-box crop directly from source — same logic as test pipeline.
+        if not b or len(b) != 4:
+            continue
+        ymin, xmin, ymax, xmax = b
+        left   = int(max(0, xmin / 1000.0 * source.width))
+        top    = int(max(0, ymin / 1000.0 * source.height))
+        right  = int(min(source.width,  xmax / 1000.0 * source.width))
+        bottom = int(min(source.height, ymax / 1000.0 * source.height))
+        if right <= left or bottom <= top:
+            continue
+
+        try:
+            cropped = source.crop((left, top, right, bottom))
+            buf = io.BytesIO()
+            cropped.convert("RGB").save(buf, format="PNG")
+            layer_path.write_bytes(buf.getvalue())
+            logger.info(
+                "[OOH_PIPELINE] Patched layer %02d (%s) with exact crop %dx%d — face preserved",
+                idx, ctype, cropped.width, cropped.height,
+            )
+        except Exception as exc:
+            logger.warning("[OOH_PIPELINE] _patch_photo_layers: layer %02d failed: %s", idx, exc)
+
+
+# ── 8. Internal decomposition helper ──────────────────────────────────────────
 
 async def _decompose_and_save(
     source: Image.Image,
