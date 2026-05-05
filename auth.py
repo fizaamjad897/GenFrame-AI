@@ -38,10 +38,19 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "your-email@gmail.com")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "your-app-password")
 
-# Initialize MongoDB
+# MongoDB
 # Check both MONGODB_URI (production) and MONGODB_URL (fallback)
 MONGODB_URL = (os.getenv("MONGODB_URI") or os.getenv("MONGODB_URL", "mongodb://localhost:27017")).strip("'\" ")
-DB_NAME = os.getenv("DB_NAME", "visual_engine").strip("'\" ")
+ENV = os.getenv("ENVIRONMENT", "production").lower().strip()
+
+if ENV == "staging":
+    DB_NAME = os.getenv("STAGING_DB_NAME", "visual_engine_staging").strip("'\" ")
+    ORG_DB_NAME = os.getenv("STAGING_ORG_DB_NAME", "organisation_db_staging").strip("'\" ")
+    print(f"🛠️  ENVIRONMENT: STAGING (DB: {DB_NAME})")
+else:
+    DB_NAME = os.getenv("DB_NAME", "visual_engine_secure").strip("'\" ")
+    ORG_DB_NAME = os.getenv("ORG_DB_NAME", "organisation_db").strip("'\" ")
+    print(f"🚀 ENVIRONMENT: PRODUCTION (DB: {DB_NAME})")
 
 def get_db_client(url, max_retries=3):
     import time
@@ -72,9 +81,8 @@ try:
     billing_records_collection = db["billing_records"]
     stripe_events_collection = db["stripe_events"]
     glenn_key_usage_collection = client["visual_engine"]["glenn_key_usage"]  # Shared DB for both backends
-    org_db_name = os.getenv("ORG_DB_NAME", "organisation_db").strip("'\" ")
-    org_users_collection = client[org_db_name]["users"]
-    org_organisations_collection = client[org_db_name]["Organisations"]
+    org_users_collection = client[ORG_DB_NAME]["users"]
+    org_organisations_collection = client[ORG_DB_NAME]["Organisations"]
     print("Connected to MongoDB successfully")
 
     # Create indexes
