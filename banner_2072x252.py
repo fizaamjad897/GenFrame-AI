@@ -429,6 +429,75 @@ def _load_layer_pngs(output_dir: Path, n_components: int) -> dict[int, Path | No
     return mapping
 
 
+def _is_photo_consistency_mode(components: list[dict]) -> bool:
+    """
+    Photo mode: preserve a coherent real-world scene as one hero visual.
+    Avoid cutout-style recomposition when there are no strong ad assets.
+    """
+    visual_types = {"photo", "image", "scene"}
+    structured_types = {"logo", "icon", "qr_code", "product", "packshot", "sticker", "badge"}
+
+    def _box_area_norm(comp: dict) -> float:
+        box = comp.get("box_2d")
+        if not box or len(box) < 4:
+            return 0.0
+        ymin, xmin, ymax, xmax = box[:4]
+        try:
+            w = max(0.0, (float(xmax) - float(xmin)) / 1000.0)
+            h = max(0.0, (float(ymax) - float(ymin)) / 1000.0)
+            return w * h
+        except Exception:
+            return 0.0
+
+    visual_count = sum(1 for c in components if c.get("type") in visual_types)
+    # Ignore tiny embedded logos/icons (e.g., logo on a cup) when deciding mode.
+    significant_structured = sum(
+        1 for c in components
+        if c.get("type") in structured_types and _box_area_norm(c) >= 0.02
+    )
+    return visual_count >= 2 and significant_structured == 0
+
+
+def _build_photo_hero_scene(
+    components: list[dict],
+    layer_paths: dict[int, Path | None],
+    orig_w: int,
+    orig_h: int,
+) -> Image.Image | None:
+    """
+    Reconstruct one coherent scene from all photographic layers at original coordinates.
+    This keeps people/objects exactly once and preserves realism.
+    """
+    scene = Image.new("RGBA", (orig_w, orig_h), (0, 0, 0, 0))
+    found = False
+    for i, comp in enumerate(components):
+        if comp.get("type") not in {"photo", "image", "scene"}:
+            continue
+        lp = layer_paths.get(i)
+        if not lp or not lp.exists():
+            continue
+        try:
+            layer_img = Image.open(lp).convert("RGBA")
+            cx, cy, cw, ch, cropped = get_alpha_bbox(layer_img)
+            if cw <= 1 or ch <= 1:
+                continue
+            scene.paste(cropped, (cx, cy), cropped)
+            found = True
+        except Exception:
+            continue
+
+    if not found:
+        return None
+
+    alpha = np.asarray(scene.split()[-1])
+    ys, xs = np.where(alpha > 0)
+    if len(xs) == 0 or len(ys) == 0:
+        return None
+    x0, x1 = int(xs.min()), int(xs.max()) + 1
+    y0, y1 = int(ys.min()), int(ys.max()) + 1
+    return scene.crop((x0, y0, x1, y1))
+
+
 # ── Component sheet builder ────────────────────────────────────────────────────
 
 def _crop_by_box2d(img: Image.Image, box_2d: list, orig_w: int, orig_h: int) -> Image.Image:
@@ -684,6 +753,7 @@ async def recompose_banner(
         raise FileNotFoundError(f"components.json not found in {output_dir}")
 
     raw = json.loads(components_file.read_text())
+    metadata = raw.get("metadata", {}) if isinstance(raw, dict) else {}
     components = raw["components"] if isinstance(raw, dict) else raw
     logger.info(f"Loaded {len(components)} components from {output_dir}")
 
@@ -701,10 +771,30 @@ async def recompose_banner(
 
     logger.info("Stage 3/3: Compositing elements...")
     layer_paths = _load_layer_pngs(output_dir, len(components))
+    photo_mode = _is_photo_consistency_mode(components)
+
+    if photo_mode:
+        orig_w = int(metadata.get("original_width", 1080) or 1080)
+        orig_h = int(metadata.get("original_height", 1080) or 1080)
+        hero = _build_photo_hero_scene(components, layer_paths, orig_w, orig_h)
+        if hero is not None:
+            hw, hh = hero.size
+            scale = target_h / max(1, hh)
+            nw = max(1, int(hw * scale))
+            nh = target_h
+            hero_resized = hero.resize((nw, nh), Image.LANCZOS)
+            hx = max(0, (target_w - nw) // 2)
+            canvas.paste(hero_resized, (hx, 0), hero_resized)
+            logger.info(
+                f"Photo consistency mode: pasted coherent hero scene once ({hw}x{hh} -> {nw}x{nh})."
+            )
 
     for i, comp in enumerate(components):
         ctype = comp.get("type", "")
         if ctype in ("background", "scene", "text"):
+            continue
+        if photo_mode and ctype in {"photo", "image"}:
+            # In photo mode, these are already merged into one coherent hero scene.
             continue
         item = layout_map.get(i)
         if not item:
