@@ -196,6 +196,15 @@ def validate_org_module_jwt(token: str) -> dict:
             except Exception as e:
                 print(f"[ORG_AUTH] Failed to query org document for parentOrgId: {e}")
         
+        allowed_transform_resolutions = (
+            payload.get("orgAllowedTransformationResolutions")
+            or payload.get("allowedTransformationResolutions")
+            or payload.get("allowed_transformation_resolutions")
+            or []
+        )
+        if not isinstance(allowed_transform_resolutions, list):
+            allowed_transform_resolutions = []
+
         # Enrich user object with org context from JWT payload
         visual_engine_user["org_context"] = {
             "org_id": org_id,
@@ -209,6 +218,7 @@ def validate_org_module_jwt(token: str) -> dict:
             "creation_credit_price": org_creation_price,
             "transformation_threshold": org_transform_threshold,
             "creation_threshold": org_creation_threshold,
+            "allowed_transformation_resolutions": allowed_transform_resolutions,
         }
         
         return visual_engine_user
