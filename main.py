@@ -690,27 +690,12 @@ def get_admin_user(current_user = Depends(get_current_user)):
     raise HTTPException(status_code=403, detail="Administrative privileges required")
 
 
-def _can_use_custom_resize(current_user: dict) -> bool:
-    """Allow custom-resize for Glen/HamzaFaisal orgs and their sub-orgs using org-id-based checks."""
-    # Allowed org UUIDs
-    ALLOWED_ORG_IDS = {
-        "35cd976c-d4ac-4e76-8dde-d8065334fa42",  # HamzaFaisal's org ID
-    }
-    
-    # Org-id-based check (primary)
-    org_context = (current_user.get("_org_context") or {}) if isinstance(current_user, dict) else {}
-    org_id = str(org_context.get("org_id") or "").strip()
-    parent_org_id = str(org_context.get("parent_org_id") or "").strip()
-    
-    if org_id in ALLOWED_ORG_IDS or parent_org_id in ALLOWED_ORG_IDS:
-        return True
-    
-    # Strict owner email fallback for testing
-    email = str(current_user.get("email") or "").strip().lower()
-    if email == "muhammadhamzafaisal146@gmail.com":
-        return True
-    
-    return False
+def _can_use_custom_resize(current_user: dict, width: int, height: int) -> bool:
+    """Allow custom-resize only for explicitly allowed OOH resolutions."""
+    code = _ooh_code_from_dims(width, height)
+    if not code:
+        return False
+    return code in _normalize_allowed_ooh_list(current_user)
 
 # Initialize Gemini Client (lazy init or global if key is present)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -1739,6 +1724,67 @@ OOH_MEDIA_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
     "OOH_1024X320":  (1024,  320),
     "OOH_960X576":   (960,   576),
 }
+
+CREATION_ALLOWED_ASPECT_RATIOS = {
+    "16:9",
+    "9:16",
+    "1:1",
+    "3:4",
+    "21:9",
+}
+
+CREATION_ALLOWED_PRESET_NAMES = {
+    "landscape",
+    "story",
+    "square",
+    "portrait",
+    "ultrawide",
+}
+
+
+def _normalize_allowed_ooh_list(current_user: dict) -> set[str]:
+    if not isinstance(current_user, dict):
+        return set()
+    org_context = current_user.get("org_context") or current_user.get("_org_context") or {}
+    
+    # Bypass for AppOwner and SuperOrg - they get everything
+    org_type = org_context.get("org_type") or org_context.get("org_type_name")
+    if org_type in ["AppOwner", "SuperOrg"]:
+        return set(OOH_MEDIA_SITE_DIMENSIONS.keys())
+
+    allowed = (
+        org_context.get("allowed_transformation_resolutions")
+        or org_context.get("allowedTransformationResolutions")
+        or []
+    )
+    if not isinstance(allowed, list):
+        return set()
+    return {str(code).strip().upper() for code in allowed if str(code).strip()}
+
+
+def _is_creation_allowed_ratio(aspect_ratio: str) -> bool:
+    ratio = (aspect_ratio or "").strip()
+    if not ratio:
+        return False
+    if ratio in CREATION_ALLOWED_ASPECT_RATIOS:
+        return True
+    return ratio.lower() in CREATION_ALLOWED_PRESET_NAMES
+
+
+def _ooh_code_from_dims(width: int, height: int) -> str | None:
+    for code, dims in OOH_MEDIA_SITE_DIMENSIONS.items():
+        if dims == (width, height):
+            return code
+    return None
+
+
+def _is_ooh_aspect_ratio(aspect_ratio: str) -> bool:
+    return (aspect_ratio or "").strip().upper() in OOH_MEDIA_SITE_DIMENSIONS
+
+
+def _is_ooh_allowed_for_user(current_user: dict, aspect_ratio: str) -> bool:
+    code = (aspect_ratio or "").strip().upper()
+    return code in _normalize_allowed_ooh_list(current_user)
 
 
 def _is_ooh_dimension(tw: int, th: int) -> bool:
@@ -3303,6 +3349,20 @@ async def resize_image(
                 detail=f"Engine '{engine_type}' is not allocated for this user",
             )
 
+    aspect_ratio_clean = (aspect_ratio or "").strip()
+    if engine_type == "creation":
+        if not _is_creation_allowed_ratio(aspect_ratio_clean):
+            raise HTTPException(
+                status_code=403,
+                detail="Creation engine only supports standard presets.",
+            )
+    elif _is_ooh_aspect_ratio(aspect_ratio_clean):
+        if not _is_ooh_allowed_for_user(current_user, aspect_ratio_clean):
+            raise HTTPException(
+                status_code=403,
+                detail="OOH resolution is not enabled for this organization.",
+            )
+
     # Legacy Glenn interception (kept as commented reference; do not remove):
     # user_email = str(current_user.get("email", "")).lower()
     # user_domain = user_email.split("@")[-1] if "@" in user_email else ""
@@ -4329,12 +4389,6 @@ async def custom_resize_image(
     current_user = Depends(get_current_user),
 ):
     """Custom resize endpoint using explicit pixel dimensions and shared resize pipeline."""
-    if not _can_use_custom_resize(current_user):
-        raise HTTPException(
-            status_code=403,
-            detail="Custom resize is only enabled for the Hamza organization and approved sub-org users.",
-        )
-
     MIN_DIM, MAX_DIM = 64, 4096
     if not (MIN_DIM <= width <= MAX_DIM and MIN_DIM <= height <= MAX_DIM):
         raise HTTPException(
@@ -4360,6 +4414,18 @@ async def custom_resize_image(
         effective_engine = "creation"
     if file is None and prompt_text:
         effective_engine = "creation"
+
+    if effective_engine == "creation":
+        raise HTTPException(
+            status_code=403,
+            detail="Creation engine only supports standard presets.",
+        )
+
+    if not _can_use_custom_resize(current_user, width, height):
+        raise HTTPException(
+            status_code=403,
+            detail="OOH resolution is not enabled for this organization.",
+        )
 
     requested_ratio = f"{width}:{height}"
     mapped_ratio, _, _ = validate_aspect_ratio(requested_ratio)
