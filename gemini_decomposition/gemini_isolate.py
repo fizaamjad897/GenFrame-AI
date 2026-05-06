@@ -79,6 +79,8 @@ EXTRA FIELDS:
   - "text_content": exact text string visible in the image (required)
   - "font_family": the font family name as accurately as possible (e.g. "Bebas Neue", "Playfair Display", "Montserrat", "Arial". If unknown: "sans-serif" or "serif")
   - "font_weight": "bold", "semibold", "normal", or "light"
+  - "font_style": "italic" if the text is slanted/oblique/italic, otherwise "normal"
+  - "font_stretch": "condensed" if the text is narrow/compressed, "expanded" if wide, otherwise "normal"
   - "text_color": hex color of the text (e.g. "#FFFFFF", "#000000", "#C9A94E")
   - "text_align": "left", "center", or "right"
 - For "scene" or "background" components that are a SOLID flat color (not a photo or texture): include "solid_color" with the exact hex code (e.g. "#6B7346")
@@ -89,7 +91,7 @@ Return ONLY this JSON (no markdown):
   "components": [
     {"type": "scene", "description": "solid muted olive green background surrounding the poster", "box_2d": [0, 0, 1000, 1000], "solid_color": "#6B7346"},
     {"type": "background", "description": "dark blue to purple gradient fill covering entire canvas", "box_2d": [0, 0, 1000, 1000]},
-    {"type": "text", "description": "'Save More Today' — large white serif headline, centered at top", "text_content": "Save More Today", "font_family": "Playfair Display", "font_weight": "bold", "text_color": "#FFFFFF", "text_align": "center", "box_2d": [100, 50, 200, 450]},
+    {"type": "text", "description": "'Save More Today' — large white serif headline, centered at top", "text_content": "Save More Today", "font_family": "Playfair Display", "font_weight": "bold", "font_style": "normal", "font_stretch": "normal", "text_color": "#FFFFFF", "text_align": "center", "box_2d": [100, 50, 200, 450]},
     {"type": "image", "description": "gold credit card with chip, angled 15 degrees, centered", "box_2d": [250, 200, 550, 500]},
     {"type": "text", "description": "'0% APR for 12 months' — small white sans-serif text", "text_content": "0% APR for 12 months", "font_family": "Montserrat", "font_weight": "normal", "text_color": "#FFFFFF", "text_align": "center", "box_2d": [580, 300, 620, 700]},
     {"type": "shape", "description": "green (#008955) rounded rectangle button background", "box_2d": [650, 350, 720, 650]},

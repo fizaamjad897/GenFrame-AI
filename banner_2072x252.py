@@ -52,21 +52,309 @@ TARGET_H = 253
 
 FONTS_DIR = Path(__file__).parent / "fonts"
 
+_GF = "https://raw.githubusercontent.com/google/fonts/main"  # shorthand
+
 FONT_URLS = {
-    "Montserrat-Bold":    "https://raw.githubusercontent.com/JulietaUla/Montserrat/master/fonts/ttf/Montserrat-Bold.ttf",
-    "Montserrat-Regular": "https://raw.githubusercontent.com/JulietaUla/Montserrat/master/fonts/ttf/Montserrat-Regular.ttf",
-    "Roboto-Bold":        "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Bold.ttf",
-    "Roboto-Regular":     "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf",
-    "Oswald-Bold":        "https://raw.githubusercontent.com/googlefonts/OswaldFont/master/fonts/ttf/Oswald-Bold.ttf",
-    "Oswald-Regular":     "https://raw.githubusercontent.com/googlefonts/OswaldFont/master/fonts/ttf/Oswald-Regular.ttf",
+    # ── Sans-serif: Geometric ──────────────────────────────────────────────────
+    "Montserrat-Regular":     "https://raw.githubusercontent.com/JulietaUla/Montserrat/master/fonts/ttf/Montserrat-Regular.ttf",
+    "Montserrat-Bold":        "https://raw.githubusercontent.com/JulietaUla/Montserrat/master/fonts/ttf/Montserrat-Bold.ttf",
+    "Poppins-Regular":        f"{_GF}/ofl/poppins/Poppins-Regular.ttf",
+    "Poppins-Bold":           f"{_GF}/ofl/poppins/Poppins-Bold.ttf",
+    "Nunito-Regular":         f"{_GF}/ofl/nunito/Nunito-Regular.ttf",
+    "Nunito-Bold":            f"{_GF}/ofl/nunito/Nunito-Bold.ttf",
+    "NunitoSans-Regular":     f"{_GF}/ofl/nunitosans/NunitoSans-Regular.ttf",
+    "NunitoSans-Bold":        f"{_GF}/ofl/nunitosans/NunitoSans-Bold.ttf",
+    "Jost-Regular":           f"{_GF}/ofl/jost/Jost-Regular.ttf",
+    "Jost-Bold":              f"{_GF}/ofl/jost/Jost-Bold.ttf",
+    "Quicksand-Regular":      f"{_GF}/ofl/quicksand/Quicksand-Regular.ttf",
+    "Quicksand-Bold":         f"{_GF}/ofl/quicksand/Quicksand-Bold.ttf",
+    "Outfit-Regular":         f"{_GF}/ofl/outfit/Outfit-Regular.ttf",
+    "Outfit-Bold":            f"{_GF}/ofl/outfit/Outfit-Bold.ttf",
+    "Raleway-Regular":        f"{_GF}/ofl/raleway/Raleway-Regular.ttf",
+    "Raleway-Bold":           f"{_GF}/ofl/raleway/Raleway-Bold.ttf",
+    "SpaceGrotesk-Regular":   f"{_GF}/ofl/spacegrotesk/SpaceGrotesk-Regular.ttf",
+    "SpaceGrotesk-Bold":      f"{_GF}/ofl/spacegrotesk/SpaceGrotesk-Bold.ttf",
+    "PlusJakartaSans-Regular": f"{_GF}/ofl/plusjakartasans/PlusJakartaSans-Regular.ttf",
+    "PlusJakartaSans-Bold":    f"{_GF}/ofl/plusjakartasans/PlusJakartaSans-Bold.ttf",
+    # ── Sans-serif: Humanist ──────────────────────────────────────────────────
+    "Roboto-Regular":         "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf",
+    "Roboto-Bold":            "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Bold.ttf",
+    "Inter-Regular":          "https://raw.githubusercontent.com/rsms/inter/master/docs/font-files/Inter-Regular.ttf",
+    "Inter-Bold":             "https://raw.githubusercontent.com/rsms/inter/master/docs/font-files/Inter-Bold.ttf",
+    "Lato-Regular":           f"{_GF}/ofl/lato/Lato-Regular.ttf",
+    "Lato-Bold":              f"{_GF}/ofl/lato/Lato-Bold.ttf",
+    "OpenSans-Regular":       f"{_GF}/ofl/opensans/OpenSans-Regular.ttf",
+    "OpenSans-Bold":          f"{_GF}/ofl/opensans/OpenSans-Bold.ttf",
+    "Mulish-Regular":         f"{_GF}/ofl/mulish/Mulish-Regular.ttf",
+    "Mulish-Bold":            f"{_GF}/ofl/mulish/Mulish-Bold.ttf",
+    "Cabin-Regular":          f"{_GF}/ofl/cabin/Cabin-Regular.ttf",
+    "Cabin-Bold":             f"{_GF}/ofl/cabin/Cabin-Bold.ttf",
+    "Ubuntu-Regular":         f"{_GF}/ufl/ubuntu/Ubuntu-Regular.ttf",
+    "Ubuntu-Bold":            f"{_GF}/ufl/ubuntu/Ubuntu-Bold.ttf",
+    "Rubik-Regular":          f"{_GF}/ofl/rubik/Rubik-Regular.ttf",
+    "Rubik-Bold":             f"{_GF}/ofl/rubik/Rubik-Bold.ttf",
+    "WorkSans-Regular":       f"{_GF}/ofl/worksans/WorkSans-Regular.ttf",
+    "WorkSans-Bold":          f"{_GF}/ofl/worksans/WorkSans-Bold.ttf",
+    "DMSans-Regular":         f"{_GF}/ofl/dmsans/DMSans-Regular.ttf",
+    "DMSans-Bold":            f"{_GF}/ofl/dmsans/DMSans-Bold.ttf",
+    "Manrope-Regular":        f"{_GF}/ofl/manrope/Manrope-Regular.ttf",
+    "Manrope-Bold":           f"{_GF}/ofl/manrope/Manrope-Bold.ttf",
+    "NotoSans-Regular":       f"{_GF}/ofl/notosans/NotoSans-Regular.ttf",
+    "NotoSans-Bold":          f"{_GF}/ofl/notosans/NotoSans-Bold.ttf",
+    "IBMPlexSans-Regular":    f"{_GF}/ofl/ibmplexsans/IBMPlexSans-Regular.ttf",
+    "IBMPlexSans-Bold":       f"{_GF}/ofl/ibmplexsans/IBMPlexSans-Bold.ttf",
+    "FiraSans-Regular":       f"{_GF}/ofl/firasans/FiraSans-Regular.ttf",
+    "FiraSans-Bold":          f"{_GF}/ofl/firasans/FiraSans-Bold.ttf",
+    "SourceSans3-Regular":    f"{_GF}/ofl/sourcesans3/SourceSans3-Regular.ttf",
+    "SourceSans3-Bold":       f"{_GF}/ofl/sourcesans3/SourceSans3-Bold.ttf",
+    "EncodeSans-Regular":     f"{_GF}/ofl/encodesans/EncodeSans-Regular.ttf",
+    "EncodeSans-Bold":        f"{_GF}/ofl/encodesans/EncodeSans-Bold.ttf",
+    "Kanit-Regular":          f"{_GF}/ofl/kanit/Kanit-Regular.ttf",
+    "Kanit-Bold":             f"{_GF}/ofl/kanit/Kanit-Bold.ttf",
+    "Barlow-Regular":         f"{_GF}/ofl/barlow/Barlow-Regular.ttf",
+    "Barlow-Bold":            f"{_GF}/ofl/barlow/Barlow-Bold.ttf",
+    "Exo2-Regular":           f"{_GF}/ofl/exo2/Exo2-Regular.ttf",
+    "Exo2-Bold":              f"{_GF}/ofl/exo2/Exo2-Bold.ttf",
+    # ── Sans-serif: Condensed / Display ──────────────────────────────────────
+    "Oswald-Regular":         "https://raw.githubusercontent.com/googlefonts/OswaldFont/master/fonts/ttf/Oswald-Regular.ttf",
+    "Oswald-Bold":            "https://raw.githubusercontent.com/googlefonts/OswaldFont/master/fonts/ttf/Oswald-Bold.ttf",
+    "BebasNeue-Regular":      f"{_GF}/ofl/bebasnue/BebasNeue-Regular.ttf",
+    "BebasNeue-Bold":         f"{_GF}/ofl/bebasnue/BebasNeue-Regular.ttf",
+    "Anton-Regular":          f"{_GF}/apache/anton/Anton-Regular.ttf",
+    "Anton-Bold":             f"{_GF}/apache/anton/Anton-Regular.ttf",
+    "FjallaOne-Regular":      f"{_GF}/ofl/fjallaone/FjallaOne-Regular.ttf",
+    "FjallaOne-Bold":         f"{_GF}/ofl/fjallaone/FjallaOne-Regular.ttf",
+    "FrancoisOne-Regular":    f"{_GF}/ofl/francoisone/FrancoisOne-Regular.ttf",
+    "FrancoisOne-Bold":       f"{_GF}/ofl/francoisone/FrancoisOne-Regular.ttf",
+    "BarlowCondensed-Regular": f"{_GF}/ofl/barlowcondensed/BarlowCondensed-Regular.ttf",
+    "BarlowCondensed-Bold":   f"{_GF}/ofl/barlowcondensed/BarlowCondensed-Bold.ttf",
+    "YanoneKaffeesatz-Regular": f"{_GF}/ofl/yanonekaffeesatz/YanoneKaffeesatz-Regular.ttf",
+    "YanoneKaffeesatz-Bold":  f"{_GF}/ofl/yanonekaffeesatz/YanoneKaffeesatz-Bold.ttf",
+    "JosefinSans-Regular":    f"{_GF}/ofl/josefinsans/JosefinSans-Regular.ttf",
+    "JosefinSans-Bold":       f"{_GF}/ofl/josefinsans/JosefinSans-Bold.ttf",
+    "Archivo-Regular":        f"{_GF}/ofl/archivo/Archivo-Regular.ttf",
+    "Archivo-Bold":           f"{_GF}/ofl/archivo/Archivo-Bold.ttf",
+    "ArchivoBlack-Regular":   f"{_GF}/ofl/archivoblack/ArchivoBlack-Regular.ttf",
+    "ArchivoBlack-Bold":      f"{_GF}/ofl/archivoblack/ArchivoBlack-Regular.ttf",
+    "Signika-Regular":        f"{_GF}/ofl/signika/Signika-Regular.ttf",
+    "Signika-Bold":           f"{_GF}/ofl/signika/Signika-Bold.ttf",
+    "RobotoCondensed-Regular": f"{_GF}/apache/robotocondensed/RobotoCondensed-Regular.ttf",
+    "RobotoCondensed-Bold":   f"{_GF}/apache/robotocondensed/RobotoCondensed-Bold.ttf",
+    # ── Serif ─────────────────────────────────────────────────────────────────
+    "PlayfairDisplay-Regular": f"{_GF}/ofl/playfairdisplay/PlayfairDisplay-Regular.ttf",
+    "PlayfairDisplay-Bold":    f"{_GF}/ofl/playfairdisplay/PlayfairDisplay-Bold.ttf",
+    "Merriweather-Regular":   f"{_GF}/ofl/merriweather/Merriweather-Regular.ttf",
+    "Merriweather-Bold":      f"{_GF}/ofl/merriweather/Merriweather-Bold.ttf",
+    "LibreBaskerville-Regular": f"{_GF}/ofl/librebaskerville/LibreBaskerville-Regular.ttf",
+    "LibreBaskerville-Bold":  f"{_GF}/ofl/librebaskerville/LibreBaskerville-Bold.ttf",
+    "ZillaSlab-Regular":      f"{_GF}/ofl/zillaslab/ZillaSlab-Regular.ttf",
+    "ZillaSlab-Bold":         f"{_GF}/ofl/zillaslab/ZillaSlab-Bold.ttf",
+    "Cinzel-Regular":         f"{_GF}/ofl/cinzel/Cinzel-Regular.ttf",
+    "Cinzel-Bold":            f"{_GF}/ofl/cinzel/Cinzel-Bold.ttf",
+    "CormorantGaramond-Regular": f"{_GF}/ofl/cormorantgaramond/CormorantGaramond-Regular.ttf",
+    "CormorantGaramond-Bold": f"{_GF}/ofl/cormorantgaramond/CormorantGaramond-Bold.ttf",
+    "EBGaramond-Regular":     f"{_GF}/ofl/ebgaramond/EBGaramond-Regular.ttf",
+    "EBGaramond-Bold":        f"{_GF}/ofl/ebgaramond/EBGaramond-Bold.ttf",
+    "CrimsonText-Regular":    f"{_GF}/ofl/crimsontext/CrimsonText-Regular.ttf",
+    "CrimsonText-Bold":       f"{_GF}/ofl/crimsontext/CrimsonText-Bold.ttf",
+    "NotoSerif-Regular":      f"{_GF}/ofl/notoserif/NotoSerif-Regular.ttf",
+    "NotoSerif-Bold":         f"{_GF}/ofl/notoserif/NotoSerif-Bold.ttf",
+    "PTSerif-Regular":        f"{_GF}/ofl/ptserif/PTSerif-Regular.ttf",
+    "PTSerif-Bold":           f"{_GF}/ofl/ptserif/PTSerif-Bold.ttf",
+    "Lora-Regular":           f"{_GF}/ofl/lora/Lora-Regular.ttf",
+    "Lora-Bold":              f"{_GF}/ofl/lora/Lora-Bold.ttf",
+    "RobotoSlab-Regular":     f"{_GF}/apache/robotoslab/RobotoSlab-Regular.ttf",
+    "RobotoSlab-Bold":        f"{_GF}/apache/robotoslab/RobotoSlab-Bold.ttf",
+    # ── Script / Handwriting ──────────────────────────────────────────────────
+    "DancingScript-Regular":  f"{_GF}/ofl/dancingscript/DancingScript-Regular.ttf",
+    "DancingScript-Bold":     f"{_GF}/ofl/dancingscript/DancingScript-Bold.ttf",
+    "Pacifico-Regular":       f"{_GF}/ofl/pacifico/Pacifico-Regular.ttf",
+    "Pacifico-Bold":          f"{_GF}/ofl/pacifico/Pacifico-Regular.ttf",
+    "Lobster-Regular":        f"{_GF}/ofl/lobster/Lobster-Regular.ttf",
+    "Lobster-Bold":           f"{_GF}/ofl/lobster/Lobster-Regular.ttf",
+    "GreatVibes-Regular":     f"{_GF}/ofl/greatvibes/GreatVibes-Regular.ttf",
+    "GreatVibes-Bold":        f"{_GF}/ofl/greatvibes/GreatVibes-Regular.ttf",
+    "Satisfy-Regular":        f"{_GF}/ofl/satisfy/Satisfy-Regular.ttf",
+    "Satisfy-Bold":           f"{_GF}/ofl/satisfy/Satisfy-Regular.ttf",
+    "Sacramento-Regular":     f"{_GF}/ofl/sacramento/Sacramento-Regular.ttf",
+    "Sacramento-Bold":        f"{_GF}/ofl/sacramento/Sacramento-Regular.ttf",
+    "Allura-Regular":         f"{_GF}/ofl/allura/Allura-Regular.ttf",
+    "Allura-Bold":            f"{_GF}/ofl/allura/Allura-Regular.ttf",
+    "AlexBrush-Regular":      f"{_GF}/ofl/alexbrush/AlexBrush-Regular.ttf",
+    "AlexBrush-Bold":         f"{_GF}/ofl/alexbrush/AlexBrush-Regular.ttf",
+    "Caveat-Regular":         f"{_GF}/ofl/caveat/Caveat-Regular.ttf",
+    "Caveat-Bold":            f"{_GF}/ofl/caveat/Caveat-Bold.ttf",
+    # ── Decorative / Display ──────────────────────────────────────────────────
+    "AlfaSlabOne-Regular":    f"{_GF}/ofl/alfaslabone/AlfaSlabOne-Regular.ttf",
+    "AlfaSlabOne-Bold":       f"{_GF}/ofl/alfaslabone/AlfaSlabOne-Regular.ttf",
+    "BlackHanSans-Regular":   f"{_GF}/ofl/blackhansans/BlackHanSans-Regular.ttf",
+    "BlackHanSans-Bold":      f"{_GF}/ofl/blackhansans/BlackHanSans-Regular.ttf",
 }
 
 FAMILY_MAP = {
-    "montserrat": "Montserrat", "roboto": "Roboto", "oswald": "Oswald",
-    "arial": "Roboto", "helvetica": "Roboto", "gotham": "Montserrat",
-    "futura": "Montserrat", "bebas neue": "Oswald", "sans-serif": "Roboto",
-    "sans serif": "Roboto", "serif": "Roboto", "georgia": "Roboto",
-    "times": "Roboto", "playfair display": "Roboto",
+    # ── Geometric sans ────────────────────────────────────────────────────────
+    "montserrat": "Montserrat",
+    "poppins": "Poppins",
+    "nunito": "Nunito",
+    "nunito sans": "NunitoSans",
+    "nunitosans": "NunitoSans",
+    "jost": "Jost",
+    "quicksand": "Quicksand",
+    "outfit": "Outfit",
+    "raleway": "Raleway",
+    "space grotesk": "SpaceGrotesk",
+    "spacegrotesk": "SpaceGrotesk",
+    "plus jakarta sans": "PlusJakartaSans",
+    "plusjakartasans": "PlusJakartaSans",
+    "jakarta": "PlusJakartaSans",
+    # ── Humanist sans ─────────────────────────────────────────────────────────
+    "roboto": "Roboto",
+    "inter": "Inter",
+    "lato": "Lato",
+    "open sans": "OpenSans",
+    "opensans": "OpenSans",
+    "mulish": "Mulish",
+    "cabin": "Cabin",
+    "ubuntu": "Ubuntu",
+    "rubik": "Rubik",
+    "work sans": "WorkSans",
+    "worksans": "WorkSans",
+    "dm sans": "DMSans",
+    "dmsans": "DMSans",
+    "manrope": "Manrope",
+    "noto sans": "NotoSans",
+    "notosans": "NotoSans",
+    "ibm plex sans": "IBMPlexSans",
+    "ibmplexsans": "IBMPlexSans",
+    "ibm plex": "IBMPlexSans",
+    "fira sans": "FiraSans",
+    "firasans": "FiraSans",
+    "source sans": "SourceSans3",
+    "source sans 3": "SourceSans3",
+    "encode sans": "EncodeSans",
+    "kanit": "Kanit",
+    "barlow": "Barlow",
+    "exo": "Exo2",
+    "exo 2": "Exo2",
+    "exo2": "Exo2",
+    # ── Condensed / Display sans ──────────────────────────────────────────────
+    "oswald": "Oswald",
+    "bebas neue": "BebasNeue",
+    "bebas": "BebasNeue",
+    "anton": "Anton",
+    "fjalla one": "FjallaOne",
+    "fjallaone": "FjallaOne",
+    "fjalla": "FjallaOne",
+    "francois one": "FrancoisOne",
+    "francoisone": "FrancoisOne",
+    "barlow condensed": "BarlowCondensed",
+    "barlowcondensed": "BarlowCondensed",
+    "yanone kaffeesatz": "YanoneKaffeesatz",
+    "yanonekaffeesatz": "YanoneKaffeesatz",
+    "yanone": "YanoneKaffeesatz",
+    "josefin sans": "JosefinSans",
+    "josefinsans": "JosefinSans",
+    "josefin": "JosefinSans",
+    "archivo": "Archivo",
+    "archivo black": "ArchivoBlack",
+    "archivoblack": "ArchivoBlack",
+    "signika": "Signika",
+    "roboto condensed": "RobotoCondensed",
+    "robotocondensed": "RobotoCondensed",
+    # ── Serif ─────────────────────────────────────────────────────────────────
+    "playfair display": "PlayfairDisplay",
+    "playfair": "PlayfairDisplay",
+    "merriweather": "Merriweather",
+    "libre baskerville": "LibreBaskerville",
+    "librebaskerville": "LibreBaskerville",
+    "baskerville": "LibreBaskerville",
+    "zilla slab": "ZillaSlab",
+    "zillaslab": "ZillaSlab",
+    "cinzel": "Cinzel",
+    "cormorant garamond": "CormorantGaramond",
+    "cormorantgaramond": "CormorantGaramond",
+    "cormorant": "CormorantGaramond",
+    "eb garamond": "EBGaramond",
+    "ebgaramond": "EBGaramond",
+    "crimson text": "CrimsonText",
+    "crimsontext": "CrimsonText",
+    "crimson": "CrimsonText",
+    "noto serif": "NotoSerif",
+    "notoserif": "NotoSerif",
+    "pt serif": "PTSerif",
+    "ptserif": "PTSerif",
+    "lora": "Lora",
+    "roboto slab": "RobotoSlab",
+    "robotoslab": "RobotoSlab",
+    # ── Script / Handwriting ──────────────────────────────────────────────────
+    "dancing script": "DancingScript",
+    "dancingscript": "DancingScript",
+    "pacifico": "Pacifico",
+    "lobster": "Lobster",
+    "great vibes": "GreatVibes",
+    "greatvibes": "GreatVibes",
+    "satisfy": "Satisfy",
+    "sacramento": "Sacramento",
+    "allura": "Allura",
+    "alex brush": "AlexBrush",
+    "alexbrush": "AlexBrush",
+    "caveat": "Caveat",
+    "brush script": "DancingScript",
+    "script": "DancingScript",
+    "handwriting": "Caveat",
+    # ── Decorative ────────────────────────────────────────────────────────────
+    "alfa slab one": "AlfaSlabOne",
+    "alfaslabone": "AlfaSlabOne",
+    # ── Commercial → free substitutes ─────────────────────────────────────────
+    "arial": "Roboto",
+    "helvetica": "Roboto",
+    "helvetica neue": "Roboto",
+    "helveticaneue": "Roboto",
+    "gotham": "Nunito",
+    "gotham rounded": "Nunito",
+    "futura": "Jost",
+    "futura pt": "Jost",
+    "gill sans": "Lato",
+    "gillsans": "Lato",
+    "proxima nova": "Montserrat",
+    "proximanova": "Montserrat",
+    "brandon grotesque": "Raleway",
+    "brandon": "Raleway",
+    "trade gothic": "Oswald",
+    "tradegothic": "Oswald",
+    "din": "BarlowCondensed",
+    "din condensed": "BarlowCondensed",
+    "akzidenz grotesk": "Roboto",
+    "univers": "Roboto",
+    "century gothic": "Jost",
+    "trebuchet": "Cabin",
+    "trebuchet ms": "Cabin",
+    "verdana": "Inter",
+    "tahoma": "Inter",
+    "calibri": "Lato",
+    "impact": "BebasNeue",
+    "impact condensed": "BebasNeue",
+    "rockwell": "ZillaSlab",
+    "clarendon": "ZillaSlab",
+    "bodoni": "PlayfairDisplay",
+    "bodoni mt": "PlayfairDisplay",
+    "caslon": "EBGaramond",
+    "garamond": "EBGaramond",
+    "adobe garamond": "EBGaramond",
+    "palatino": "Lora",
+    "book antiqua": "Lora",
+    "minion": "Merriweather",
+    "century": "LibreBaskerville",
+    # ── Generic CSS families ──────────────────────────────────────────────────
+    "sans-serif": "Roboto",
+    "sans serif": "Roboto",
+    "serif": "PlayfairDisplay",
+    "monospace": "IBMPlexSans",
+    "cursive": "DancingScript",
+    "fantasy": "Cinzel",
+    "georgia": "PlayfairDisplay",
+    "times": "PlayfairDisplay",
+    "times new roman": "PlayfairDisplay",
 }
 
 
@@ -429,6 +717,75 @@ def _load_layer_pngs(output_dir: Path, n_components: int) -> dict[int, Path | No
     return mapping
 
 
+def _is_photo_consistency_mode(components: list[dict]) -> bool:
+    """
+    Photo mode: preserve a coherent real-world scene as one hero visual.
+    Avoid cutout-style recomposition when there are no strong ad assets.
+    """
+    visual_types = {"photo", "image", "scene"}
+    structured_types = {"logo", "icon", "qr_code", "product", "packshot", "sticker", "badge"}
+
+    def _box_area_norm(comp: dict) -> float:
+        box = comp.get("box_2d")
+        if not box or len(box) < 4:
+            return 0.0
+        ymin, xmin, ymax, xmax = box[:4]
+        try:
+            w = max(0.0, (float(xmax) - float(xmin)) / 1000.0)
+            h = max(0.0, (float(ymax) - float(ymin)) / 1000.0)
+            return w * h
+        except Exception:
+            return 0.0
+
+    visual_count = sum(1 for c in components if c.get("type") in visual_types)
+    # Ignore tiny embedded logos/icons (e.g., logo on a cup) when deciding mode.
+    significant_structured = sum(
+        1 for c in components
+        if c.get("type") in structured_types and _box_area_norm(c) >= 0.02
+    )
+    return visual_count >= 2 and significant_structured == 0
+
+
+def _build_photo_hero_scene(
+    components: list[dict],
+    layer_paths: dict[int, Path | None],
+    orig_w: int,
+    orig_h: int,
+) -> Image.Image | None:
+    """
+    Reconstruct one coherent scene from all photographic layers at original coordinates.
+    This keeps people/objects exactly once and preserves realism.
+    """
+    scene = Image.new("RGBA", (orig_w, orig_h), (0, 0, 0, 0))
+    found = False
+    for i, comp in enumerate(components):
+        if comp.get("type") not in {"photo", "image", "scene"}:
+            continue
+        lp = layer_paths.get(i)
+        if not lp or not lp.exists():
+            continue
+        try:
+            layer_img = Image.open(lp).convert("RGBA")
+            cx, cy, cw, ch, cropped = get_alpha_bbox(layer_img)
+            if cw <= 1 or ch <= 1:
+                continue
+            scene.paste(cropped, (cx, cy), cropped)
+            found = True
+        except Exception:
+            continue
+
+    if not found:
+        return None
+
+    alpha = np.asarray(scene.split()[-1])
+    ys, xs = np.where(alpha > 0)
+    if len(xs) == 0 or len(ys) == 0:
+        return None
+    x0, x1 = int(xs.min()), int(xs.max()) + 1
+    y0, y1 = int(ys.min()), int(ys.max()) + 1
+    return scene.crop((x0, y0, x1, y1))
+
+
 # ── Component sheet builder ────────────────────────────────────────────────────
 
 def _crop_by_box2d(img: Image.Image, box_2d: list, orig_w: int, orig_h: int) -> Image.Image:
@@ -551,11 +908,13 @@ async def recompose_with_gemini_vision(
     sheet.save(str(sheet_path))
     logger.info(f"Component sheet saved → {sheet_path}")
 
-    # Collect full-resolution PNGs for photo/image components so Gemini sees
+    # Collect full-resolution PNGs for photo/image/text components so Gemini sees
     # them at maximum quality rather than as small thumbnails in the sheet.
-    # This is the primary fix for face-changing / logo hallucination.
-    HIGH_RES_TYPES = {"photo", "image", "logo"}
+    # Text is included here so Gemini copies the exact font/style crop instead of
+    # redrawing with a generic font — this is the primary fix for font-loss.
+    HIGH_RES_TYPES = {"photo", "image", "logo", "text"}
     extra_image_parts: list[bytes] = []
+    extra_image_types: list[str] = []
     for i, comp in enumerate(components):
         if comp.get("type", "") not in HIGH_RES_TYPES:
             continue
@@ -563,6 +922,7 @@ async def recompose_with_gemini_vision(
         if lp and lp.exists():
             try:
                 extra_image_parts.append(lp.read_bytes())
+                extra_image_types.append(comp.get("type", "?"))
                 logger.info(f"Added high-res reference: layer_{i:02d} ({comp.get('type')})")
             except Exception as e:
                 logger.warning(f"Could not read layer {i} for extra parts: {e}")
@@ -583,11 +943,19 @@ async def recompose_with_gemini_vision(
 
     extra_context = ""
     if extra_image_parts:
+        has_text_refs = "text" in extra_image_types
+        text_note = (
+            " TEXT LAYERS ARE INCLUDED — do NOT redraw or retype text. "
+            "Copy the text image crops pixel-for-pixel including their exact font, "
+            "italic/condensed/oblique style, weight, size, and letter-spacing."
+            if has_text_refs else ""
+        )
         extra_context = (
             f"IMAGES 2–{1 + len(extra_image_parts)} (full-resolution component references): "
             "These are the exact pixel-accurate versions of the key visual components "
-            "(photos, images, logos). You MUST copy them with 100% fidelity — same face, "
-            "same colors, same details. Do not redraw or reimagine them.\n"
+            f"(photos, images, logos, and text).{text_note} "
+            "You MUST copy them with 100% fidelity — same face, same colors, same details. "
+            "Do not redraw or reimagine them.\n"
         )
 
     prompt = f"""You are a professional advertising layout artist. Your job is POSITIONING and SCALING only — not drawing.
@@ -622,6 +990,14 @@ ABSOLUTE RULES — violating any of these is a critical failure:
 4. SCALING:
    - Scale components DOWN proportionally to fit the {target_h}px banner height.
    - NEVER stretch, squash, or distort any element.
+
+5. TEXT AND TYPOGRAPHY PRESERVATION — CRITICAL:
+   - Text layers are provided as FULL-RESOLUTION pixel-accurate image crops in the reference images above.
+   - You MUST use those exact image crops — do NOT retype, redraw, or re-render text in any way.
+   - Treat every text component identically to a photo: paste the crop as-is, scale it to fit, never redesign it.
+   - The original font may be italic, condensed, oblique, or have custom letter-spacing — preserve ALL of that by using the provided crop.
+   - If the original text uses a condensed bold italic font (e.g. "24HR LASTING HOLD"), the output must show that exact image crop — NOT a new generic upright font.
+   - NEVER substitute a different font. NEVER make text upright if the original is italic. NEVER round a condensed font.
 
 Output ONLY the final {target_w}×{target_h} banner. Nothing else."""
 
@@ -684,6 +1060,7 @@ async def recompose_banner(
         raise FileNotFoundError(f"components.json not found in {output_dir}")
 
     raw = json.loads(components_file.read_text())
+    metadata = raw.get("metadata", {}) if isinstance(raw, dict) else {}
     components = raw["components"] if isinstance(raw, dict) else raw
     logger.info(f"Loaded {len(components)} components from {output_dir}")
 
@@ -701,10 +1078,30 @@ async def recompose_banner(
 
     logger.info("Stage 3/3: Compositing elements...")
     layer_paths = _load_layer_pngs(output_dir, len(components))
+    photo_mode = _is_photo_consistency_mode(components)
+
+    if photo_mode:
+        orig_w = int(metadata.get("original_width", 1080) or 1080)
+        orig_h = int(metadata.get("original_height", 1080) or 1080)
+        hero = _build_photo_hero_scene(components, layer_paths, orig_w, orig_h)
+        if hero is not None:
+            hw, hh = hero.size
+            scale = target_h / max(1, hh)
+            nw = max(1, int(hw * scale))
+            nh = target_h
+            hero_resized = hero.resize((nw, nh), Image.LANCZOS)
+            hx = max(0, (target_w - nw) // 2)
+            canvas.paste(hero_resized, (hx, 0), hero_resized)
+            logger.info(
+                f"Photo consistency mode: pasted coherent hero scene once ({hw}x{hh} -> {nw}x{nh})."
+            )
 
     for i, comp in enumerate(components):
         ctype = comp.get("type", "")
         if ctype in ("background", "scene", "text"):
+            continue
+        if photo_mode and ctype in {"photo", "image"}:
+            # In photo mode, these are already merged into one coherent hero scene.
             continue
         item = layout_map.get(i)
         if not item:
@@ -730,6 +1127,24 @@ async def recompose_banner(
         item = layout_map.get(i)
         if not item:
             continue
+        x, y, w, h = item["x"], item["y"], item["width"], item["height"]
+
+        # Prefer compositing the original isolated text PNG to preserve exact
+        # font, weight, italic styling, and design — PIL re-render loses all of that.
+        layer_path = layer_paths.get(i)
+        if layer_path and layer_path.exists():
+            try:
+                text_img = Image.open(layer_path).convert("RGBA")
+                cx, cy, cw, ch, cropped_rgba = get_alpha_bbox(text_img)
+                if w > 0 and h > 0:
+                    if cropped_rgba.size != (w, h):
+                        cropped_rgba = cropped_rgba.resize((w, h), Image.LANCZOS)
+                    canvas.paste(cropped_rgba, (x, y), cropped_rgba.split()[3])
+                continue  # Skip PIL re-render — original PNG used successfully
+            except Exception as e:
+                logger.warning(f"Could not composite text layer PNG {i}: {e} — falling back to PIL render")
+
+        # Fallback: re-render text with PIL (loses original font/style if not in library)
         canvas = _render_text_onto(canvas, comp, item)
 
     final = canvas.convert("RGB").resize((target_w, target_h), Image.LANCZOS)
