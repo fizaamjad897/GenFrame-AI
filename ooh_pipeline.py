@@ -222,50 +222,13 @@ def _cleanup_old_cache(cache_root: Path, max_age_hours: int = 48, exclude_hash: 
 
 
 def sync_cache_from_s3(file_hash: str, cache_dir: Path) -> bool:
-    try:
-        from main import s3_client, DO_SPACES_BUCKET_NAME
-        if not s3_client or not DO_SPACES_BUCKET_NAME:
-            return False
-
-        prefix = f"ooh_cache/{file_hash}/"
-        response = s3_client.list_objects_v2(Bucket=DO_SPACES_BUCKET_NAME, Prefix=prefix)
-
-        if "Contents" not in response or len(response["Contents"]) == 0:
-            return False
-
-        logger.info("[OOH_PIPELINE] S3 Cache hit for %s. Downloading...", file_hash[:8])
-        cache_dir.mkdir(exist_ok=True, parents=True)
-        for obj in response["Contents"]:
-            file_key = obj["Key"]
-            # Use slice instead of str.replace to avoid stripping repeated substrings.
-            file_name = file_key[len(prefix):]
-            if not file_name:
-                continue
-            download_path = cache_dir / file_name
-            s3_client.download_file(DO_SPACES_BUCKET_NAME, file_key, str(download_path))
-
-        return True
-    except Exception as e:
-        logger.warning("[OOH_PIPELINE] Failed to sync cache from S3 (may not exist): %s", e)
-        return False
+    # S3 cache sync disabled — local cache only.
+    return False
 
 
 def sync_cache_to_s3(file_hash: str, cache_dir: Path) -> None:
-    try:
-        from main import s3_client, DO_SPACES_BUCKET_NAME
-        if not s3_client or not DO_SPACES_BUCKET_NAME:
-            return
-
-        logger.info("[OOH_PIPELINE] Uploading %s to S3 cache...", file_hash[:8])
-        for filepath in cache_dir.iterdir():
-            if filepath.is_file() and not filepath.name.startswith("recomposed_"):
-                s3_client.upload_file(
-                    str(filepath),
-                    DO_SPACES_BUCKET_NAME,
-                    f"ooh_cache/{file_hash}/{filepath.name}",
-                )
-    except Exception as e:
-        logger.warning("[OOH_PIPELINE] Failed to sync cache to S3: %s", e)
+    # S3 cache sync disabled — local cache only.
+    return
 
 
 # ── 5. Public API ──────────────────────────────────────────────────────────────
@@ -327,31 +290,22 @@ async def ooh_resize(
                 )
                 _touch_sentinel(cache_dir)
             else:
-                # Try S3 cache before expensive decomposition.
-                s3_synced = sync_cache_from_s3(file_hash, cache_dir)
+                logger.info(
+                    "[OOH_PIPELINE] Cache miss for %s. Running full decomposition.",
+                    file_hash[:8],
+                )
+                cache_dir.mkdir(exist_ok=True, parents=True)
+                success = await _decompose_and_save(
+                    source,
+                    cache_dir,
+                    funcs["analyze_components"],
+                    funcs["isolate_component_png"],
+                )
+                if not success:
+                    shutil.rmtree(cache_dir, ignore_errors=True)
+                    return None
 
-                if s3_synced and _is_cache_valid(cache_dir):
-                    logger.info("[OOH_PIPELINE] Cache hit (S3) for %s.", file_hash[:8])
-                    _touch_sentinel(cache_dir)
-                else:
-                    logger.info(
-                        "[OOH_PIPELINE] Cache miss for %s (local & S3). Running full decomposition.",
-                        file_hash[:8],
-                    )
-                    cache_dir.mkdir(exist_ok=True, parents=True)
-                    success = await _decompose_and_save(
-                        source,
-                        cache_dir,
-                        funcs["analyze_components"],
-                        funcs["isolate_component_png"],
-                    )
-                    if not success:
-                        shutil.rmtree(cache_dir, ignore_errors=True)
-                        return None
-
-                    _touch_sentinel(cache_dir)
-                    # Back up to S3 so other instances can reuse this decomposition.
-                    sync_cache_to_s3(file_hash, cache_dir)
+                _touch_sentinel(cache_dir)
 
     # 3. Background cleanup after active cache selection.
     asyncio.get_event_loop().run_in_executor(
@@ -430,24 +384,18 @@ async def ensure_cache_decomposed(image_bytes: bytes) -> Optional[Path]:
                 logger.info("[OOH_PIPELINE] ensure_cache: hit (local, post-lock) for %s.", file_hash[:8])
                 _touch_sentinel(cache_dir)
             else:
-                s3_synced = sync_cache_from_s3(file_hash, cache_dir)
-                if s3_synced and _is_cache_valid(cache_dir):
-                    logger.info("[OOH_PIPELINE] ensure_cache: hit (S3) for %s.", file_hash[:8])
-                    _touch_sentinel(cache_dir)
-                else:
-                    logger.info("[OOH_PIPELINE] ensure_cache: miss for %s. Running decomposition.", file_hash[:8])
-                    cache_dir.mkdir(exist_ok=True, parents=True)
-                    success = await _decompose_and_save(
-                        source,
-                        cache_dir,
-                        funcs["analyze_components"],
-                        funcs["isolate_component_png"],
-                    )
-                    if not success:
-                        shutil.rmtree(cache_dir, ignore_errors=True)
-                        return None
-                    _touch_sentinel(cache_dir)
-                    sync_cache_to_s3(file_hash, cache_dir)
+                logger.info("[OOH_PIPELINE] ensure_cache: miss for %s. Running decomposition.", file_hash[:8])
+                cache_dir.mkdir(exist_ok=True, parents=True)
+                success = await _decompose_and_save(
+                    source,
+                    cache_dir,
+                    funcs["analyze_components"],
+                    funcs["isolate_component_png"],
+                )
+                if not success:
+                    shutil.rmtree(cache_dir, ignore_errors=True)
+                    return None
+                _touch_sentinel(cache_dir)
 
     asyncio.get_event_loop().run_in_executor(
         None, _cleanup_old_cache, cache_root, 48, file_hash
