@@ -162,7 +162,7 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         label="Wide billboard (1728×432)",
         canvas_description=(
             "a wide horizontal billboard banner (1728×432 px, 4:1 ratio). "
-            "Classic landscape billboard format requiring a natural, unbroken horizontal visual flow."
+            "Classic landscape billboard format requiring a single, continuous, unbroken visual composition across the full width — NO centre split."
         ),
         ratio_str="4:1",
         orientation="landscape_wide",
@@ -170,17 +170,15 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.95,
         element_guidance=(
-            "Fill the 1728×432 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
-            "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
-            "FOR ADVERTISING IMAGES: Utilise the 4:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
-            "intelligently across the remaining horizontal space. Photos/persons can be full-body at this height. Do NOT cluster elements in the middle."
+            "Fill the 1728×432 pixel space completely, edge-to-edge as ONE unified image. "
+            "CRITICAL: The background MUST flow continuously and seamlessly across the ENTIRE 1728 px width — left edge to right edge with no break, split, or seam at any point, especially not at the centre. "
+            "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically. Extend the background environment horizontally as a single continuous panorama. No invented text or logos. "
+            "FOR ADVERTISING IMAGES: Anchor the photo/hero on one side. Let the background environment stretch naturally behind and beyond it to fill all remaining space. Do NOT create two separate visual halves."
         ),
         fill_direction="horizontally",
         fill_description=(
-            "Fill any remaining horizontal space with a seamless background or scene environment extension. "
-            "Maintain the natural perspective, lighting, and continuous flow of the original image. "
+            "Fill remaining horizontal space by extending the background as a single continuous scene — same lighting, perspective, and colour tone throughout. "
+            "The result must look like one wide photograph, not two halves joined together. "
             "Strictly NO duplication of primary subjects, unique objects, or foreground elements to fill space."
         ),
         layout_rules=[
@@ -189,8 +187,9 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
             "CRITICAL: Every single component must appear exactly once — zero duplication.",
             "Only render components detected in the source image — skip any element type not present.",
-            "LAYOUT FOR GENERIC IMAGES (No text/logos): Position the main subject organically within the frame. Extend the background/environment seamlessly to fill the 1728x432 canvas without stretching the subject or creating visible seams.",
-            "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Distribute elements intelligently across the 4:1 width. Place the photo/hero in a left or right anchor zone. Place text/headlines adjacent to the subject. Place CTA in the opposing zone.",
+            "CRITICAL: The entire 1728 px width must be ONE continuous visual — no split, no seam, no hard divide at the centre or anywhere else.",
+            "LAYOUT FOR GENERIC IMAGES (No text/logos): Place the main subject organically. Extend the background as a seamless panoramic environment across the full 1728x432 canvas.",
+            "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Anchor the photo/hero on one side. Distribute text and logos in the clear zone. The background MUST paint behind everything as one unbroken scene.",
             "ALL elements must maintain their original aspect ratios.",
             "ALL elements must remain within y: 0–432 px.",
             "Minimum 22 px padding between distinct advertising elements and canvas edges.",
@@ -200,10 +199,10 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL: DO NOT split the image into two halves — left half subject, right half background. The canvas must be ONE unified composition.",
+            "CRITICAL: DO NOT create a visible seam, edge, boundary, or colour/tone shift at or near the horizontal centre of the canvas.",
             "DO NOT stretch primary subjects to fill the 4:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
-            "DO NOT cluster all content in a small central zone; utilise the full 1728 px width organically.",
-            "DO NOT break the image flow: ensure the transition between the main subject and the extended horizontal background is completely seamless.",
             "Output must be exactly 1728×432 px — not square, not portrait.",
         ],
     ),
@@ -311,11 +310,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
     ),
 
     # ── 760 × 240 ── AR 3.17:1  WIDE STRIP ───────────────────────────────────
+    # ── 760 × 240 ── AR 3.2:1  WIDE STRIP ────────────────────────────────────
     (760, 240): DimProfile(
         label="Wide strip (760×240)",
         canvas_description=(
             "a wide horizontal strip banner (760×240 px, ~3.2:1 ratio). "
-            "Compact wide format with limited vertical space requiring a natural, unbroken horizontal visual flow."
+            "Compact wide format with limited vertical space, requiring a natural, unbroken horizontal visual flow."
         ),
         ratio_str="3.2:1",
         orientation="landscape_wide",
@@ -325,11 +325,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         element_guidance=(
             "Fill the 760×240 pixel space completely, edge-to-edge. "
             "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
-            "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
-            "FOR ADVERTISING IMAGES: Utilise the 3.2:1 width by positioning the photo/hero as a compact visual anchor "
-            "(head/torso crop works well at 240 px height) and distributing text and logo elements in the adjacent or opposing clear space. "
-            "Do NOT cluster elements in the middle."
+            "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
+            "FOR ADVERTISING IMAGES: Utilize the 3.2:1 width by positioning the photo/hero as a visual anchor and distributing text elements in the adjacent or opposing clear space. Do NOT cluster elements in the middle."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -341,12 +338,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Never change, redraw, or reimagine any original component.",
             "CRITICAL: Human images must stay exactly as they are without any modifications.",
             "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
-            "CRITICAL: Every single component must appear exactly once — zero duplication.",
+            "CRITICAL: Every single component must appear exactly once — zero duplication.", 
             "Only render components detected in the source image — skip any element type not present.",
             "LAYOUT FOR GENERIC IMAGES (No text/logos): Position the main subject organically within the frame. Extend the background/environment seamlessly to fill the 760x240 canvas without stretching the subject or creating visible seams.",
-            "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Distribute elements intelligently across the banner width in a single horizontal flow. Position the main visual (subject/product) on one side, with text and logos in complementary clear zones.",
+            "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Distribute elements intelligently across the banner width. Position the main visual (subject/product) on one side, with text and logos placed in complementary clear zones.",
             "ALL elements must maintain their original aspect ratios.",
-            "ALL elements must remain within y: 0–240 px (hard limit).",
+            "ALL elements must remain within y: 0–240 px.",
             "Minimum 12 px padding between distinct advertising elements and canvas edges.",
             "NO vertical stacking — horizontal distribution only.",
         ],
@@ -358,17 +355,18 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "DO NOT stretch primary subjects to fill the 3.2:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT stack elements vertically; use the limited 240 px height for a single horizontal row.",
+            "DO NOT cluster content in the center — spread organically across the 760 px width.",
             "DO NOT break the image flow: ensure the transition between the main subject and the extended background is completely seamless.",
             "Output must be exactly 760×240 px — not square, not portrait.",
         ],
     ),
 
-    # ── 1184 × 384 ── AR 3.08:1  WIDE BILLBOARD ──────────────────────────────
-    (1184, 384): DimProfile(
-        label="Wide billboard (1184×384)",
+    # ── 1472 × 480 ── AR 3.07:1  WIDE BILLBOARD ──────────────────────────────
+    (1472, 480): DimProfile(
+        label="Wide billboard (1472×480)",
         canvas_description=(
-            "a wide horizontal billboard banner (1184×384 px, ~3.1:1 ratio). "
-            "Classic outdoor billboard format requiring a natural, unbroken horizontal visual flow."
+            "a wide horizontal billboard banner (1472×480 px, ~3.1:1 ratio). "
+            "Classic outdoor billboard format requiring a single, continuous, unbroken visual composition across the full width — NO centre split."
         ),
         ratio_str="3.1:1",
         orientation="landscape_wide",
@@ -376,11 +374,61 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.95,
         element_guidance=(
-            "Fill the 1184×384 pixel space completely, edge-to-edge. "
+            "Fill the 1472×480 pixel space completely, edge-to-edge as ONE unified image. "
+            "CRITICAL: The background MUST flow continuously and seamlessly across the ENTIRE 1472 px width — left edge to right edge with no break, split, or seam at any point, especially not at the centre. "
+            "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically. Extend the background as a single continuous panorama. No invented text or logos. "
+            "FOR ADVERTISING IMAGES: Anchor the photo/hero on one side. Let the background stretch naturally behind and beyond it to fill all remaining space. Do NOT create two separate visual halves."
+        ),
+        fill_direction="horizontally",
+        fill_description=(
+            "Fill remaining horizontal space by extending the background as a single continuous scene — same lighting, perspective, and colour tone throughout. "
+            "The result must look like one wide photograph, not two halves joined together. "
+            "Strictly NO duplication of primary subjects, unique objects, or foreground elements to fill space."
+        ),
+        layout_rules=[
+            "CRITICAL: Never change, redraw, or reimagine any original component.",
+            "CRITICAL: Human images must stay exactly as they are without any modifications.",
+            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
+            "CRITICAL: Every single component must appear exactly once — zero duplication.",
+            "Only render components detected in the source image — skip any element type not present.",
+            "CRITICAL: The entire 1472 px width must be ONE continuous visual — no split, no seam, no hard divide at the centre or anywhere else.",
+            "LAYOUT FOR GENERIC IMAGES (No text/logos): Place the main subject organically. Extend the background as a seamless panoramic environment across the full 1472x480 canvas.",
+            "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Anchor photo/hero on one side. Distribute text and logos in the clear zone. The background MUST paint behind everything as one unbroken scene.",
+            "ALL elements must maintain their original aspect ratios.",
+            "ALL elements must remain within y: 0–480 px.",
+            "Minimum 20 px padding between distinct advertising elements and canvas edges.",
+        ],
+        dimension_warnings=[
+            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
+            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
+            "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
+            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL: DO NOT split the image into two halves — left half subject, right half background. The canvas must be ONE unified composition.",
+            "CRITICAL: DO NOT create a visible seam, edge, boundary, or colour/tone shift at or near the horizontal centre of the canvas.",
+            "DO NOT stretch primary subjects to fill the 3.1:1 width; only extend the background/environment.",
+            "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
+            "Output must be exactly 1472×480 px — not square, not portrait.",
+        ],
+    ),
+
+    # ── 1296 × 432 ── AR 3.0:1  WIDE BILLBOARD ───────────────────────────────
+    (1296, 432): DimProfile(
+        label="Wide billboard (1296×432)",
+        canvas_description=(
+            "a wide horizontal billboard banner (1296×432 px, 3:1 ratio). "
+            "Classic 3:1 billboard format requiring a natural, unbroken horizontal visual flow."
+        ),
+        ratio_str="3:1",
+        orientation="landscape_wide",
+        layout_direction="horizontal_flow",
+        arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
+        element_max_height=0.95,
+        element_guidance=(
+            "Fill the 1296×432 pixel space completely, edge-to-edge. "
             "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
             "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
-            "FOR ADVERTISING IMAGES: Utilise the 3.1:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
+            "FOR ADVERTISING IMAGES: Utilise the 3:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
             "in the adjacent or opposing clear space. Do NOT cluster elements in the middle."
         ),
         fill_direction="horizontally",
@@ -395,8 +443,160 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
             "CRITICAL: Every single component must appear exactly once — zero duplication.",
             "Only render components detected in the source image — skip any element type not present.",
-            "LAYOUT FOR GENERIC IMAGES (No text/logos): Position the main subject organically within the frame. Extend the background/environment seamlessly to fill the 1184x384 canvas without stretching the subject or creating visible seams.",
+            "LAYOUT FOR GENERIC IMAGES (No text/logos): Position the main subject organically within the frame. Extend the background/environment seamlessly to fill the 1296x432 canvas without stretching the subject or creating visible seams.",
             "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Distribute elements intelligently across the banner width. Position the main visual (subject/product) on one side, with text and logos placed in complementary clear zones.",
+            "ALL elements must maintain their original aspect ratios.",
+            "ALL elements must remain within y: 0–432 px.",
+            "Minimum 20 px padding between distinct advertising elements and canvas edges.",
+        ],
+        dimension_warnings=[
+            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
+            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
+            "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
+            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "DO NOT stretch primary subjects to fill the 3:1 width; only extend the background/environment.",
+            "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
+            "DO NOT cluster content in the centre — spread organically across the full 1296 px width.",
+            "DO NOT break the image flow: ensure the transition between the main subject and the extended background is completely seamless.",
+            "Output must be exactly 1296×432 px — not square, not portrait.",
+        ],
+    ),
+
+    # ── 1200 × 400 ── AR 3.0:1  WIDE BILLBOARD ───────────────────────────────
+    # ── 1200 × 400 ── AR 3:1  WIDE BILLBOARD ──────────────────────────────
+    (1200, 400): DimProfile(
+        label="Wide billboard (1200×400)",
+        canvas_description=(
+            "a wide horizontal billboard banner (1200×400 px, 3:1 ratio). "
+            "Classic 3:1 format requiring a natural, unbroken horizontal visual flow and a single unified background."
+        ),
+        ratio_str="3:1",
+        orientation="landscape_wide",
+        layout_direction="horizontal_flow",
+        arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
+        element_max_height=0.95,
+        element_guidance=(
+            "Fill the 1200×400 pixel space completely, edge-to-edge as a SINGLE unified image. "
+            "CRITICAL: Do NOT create a 'split-screen' effect. The background or scene environment MUST paint the outer edges of the canvas seamlessly with NO visible vertical seams or harsh lines. "
+            "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
+            "FOR ADVERTISING IMAGES: Utilize the 3:1 width by positioning the photo/hero as a visual anchor and distributing text elements (headlines, body, CTA) intelligently across the remaining smoothly extended clear space. Do NOT cluster elements in the middle."
+        ),
+        fill_direction="horizontally",
+        fill_description=(
+            "Fill any remaining horizontal space with a seamless background or scene environment extension. "
+            "Maintain the natural perspective, lighting, and continuous flow of the original image. The transition MUST be a perfect, seamless blend. "
+            "Strictly NO duplication of primary subjects, unique objects, or foreground elements to fill space."
+        ),
+        layout_rules=[
+            "CRITICAL: Never change, redraw, or reimagine any original component.",
+            "CRITICAL: Human images must stay exactly as they are without any modifications.",
+            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
+            "CRITICAL: Every single component must appear exactly once — zero duplication.",
+            "Only render components detected in the source image — skip any element type not present.",
+            "CRITICAL: UNIFIED CANVAS. The entire 1200 px width must be ONE continuous visual — no split, no visible seam, no hard divide.",
+            "LAYOUT FOR GENERIC IMAGES (No text/logos): Position the main subject organically within the frame. Extend the background/environment seamlessly to fill the 1200x400 canvas without stretching the subject or creating visible seams.",
+            "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Distribute elements intelligently across the banner width. Position the main visual (subject/product) on one side, with text and logos placed in complementary clear zones.",
+            "ALL elements must maintain their original aspect ratios.",
+            "ALL elements must remain within y: 0–400 px.",
+            "Minimum 20 px padding between distinct advertising elements and canvas edges.",
+        ],
+        dimension_warnings=[
+            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
+            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
+            "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
+            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL: DO NOT CREATE A SPLIT-SCREEN OR VISIBLE SEAM. The canvas must be ONE unified composition with no split at the center.",
+            "DO NOT stretch primary subjects to fill the 3:1 width; only extend the background/environment.",
+            "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
+            "DO NOT cluster content in the center — spread organically across the 1200 px width.",
+            "DO NOT break the image flow: ensure the transition between the main subject and the extended background is completely seamless.",
+            "Output must be exactly 1200×400 px — not square, not portrait.",
+        ],
+    ),
+
+    # ── 1188 × 396 ── AR 3.0:1  WIDE BILLBOARD ───────────────────────────────
+    (1188, 396): DimProfile(
+        label="Wide billboard (1188×396)",
+        canvas_description=(
+            "a wide horizontal billboard banner (1188×396 px, 3:1 ratio). "
+            "Classic 3:1 billboard format requiring a single, continuous, unbroken visual composition across the full width — NO centre split."
+        ),
+        ratio_str="3:1",
+        orientation="landscape_wide",
+        layout_direction="horizontal_flow",
+        arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
+        element_max_height=0.95,
+        element_guidance=(
+            "Fill the 1188×396 pixel space completely, edge-to-edge as ONE unified image. "
+            "CRITICAL: The background MUST flow continuously and seamlessly across the ENTIRE 1188 px width — left edge to right edge with no break, split, or seam at any point, especially not at the centre. "
+            "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically. Extend the background as a single continuous panorama. No invented text or logos. "
+            "FOR ADVERTISING IMAGES: Anchor the photo/hero on one side. Let the background stretch naturally behind and beyond it to fill all remaining space. Do NOT create two separate visual halves."
+        ),
+        fill_direction="horizontally",
+        fill_description=(
+            "Fill remaining horizontal space by extending the background as a single continuous scene — same lighting, perspective, and colour tone throughout. "
+            "The result must look like one wide photograph, not two halves joined together. "
+            "Strictly NO duplication of primary subjects, unique objects, or foreground elements to fill space."
+        ),
+        layout_rules=[
+            "CRITICAL: Never change, redraw, or reimagine any original component.",
+            "CRITICAL: Human images must stay exactly as they are without any modifications.",
+            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
+            "CRITICAL: Every single component must appear exactly once — zero duplication.",
+            "Only render components detected in the source image — skip any element type not present.",
+            "CRITICAL: The entire 1188 px width must be ONE continuous visual — no split, no seam, no hard divide at the centre or anywhere else.",
+            "LAYOUT FOR GENERIC IMAGES (No text/logos): Place the main subject organically. Extend the background as a seamless panoramic environment across the full 1188x396 canvas.",
+            "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Anchor photo/hero on one side. Distribute text and logos in the clear zone. The background MUST paint behind everything as one unbroken scene.",
+            "ALL elements must maintain their original aspect ratios.",
+            "ALL elements must remain within y: 0–396 px.",
+            "Minimum 20 px padding between distinct advertising elements and canvas edges.",
+        ],
+        dimension_warnings=[
+            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
+            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
+            "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
+            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL: DO NOT split the image into two halves — left half subject, right half background. The canvas must be ONE unified composition.",
+            "CRITICAL: DO NOT create a visible seam, edge, boundary, or colour/tone shift at or near the horizontal centre of the canvas.",
+            "DO NOT stretch primary subjects to fill the 3:1 width; only extend the background/environment.",
+            "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
+            "Output must be exactly 1188×396 px — not square, not portrait.",
+        ],
+    ),
+
+    # ── 1184 × 384 ── AR 3.08:1  WIDE BILLBOARD ──────────────────────────────
+    (1184, 384): DimProfile(
+        label="Wide billboard (1184×384)",
+        canvas_description=(
+            "a wide horizontal billboard banner (1184×384 px, ~3.1:1 ratio). "
+            "Classic outdoor billboard format requiring a single, continuous, unbroken visual composition across the full width — NO centre split."
+        ),
+        ratio_str="3.1:1",
+        orientation="landscape_wide",
+        layout_direction="horizontal_flow",
+        arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
+        element_max_height=0.95,
+        element_guidance=(
+            "Fill the 1184×384 pixel space completely, edge-to-edge as ONE unified image. "
+            "CRITICAL: The background MUST flow continuously and seamlessly across the ENTIRE 1184 px width — left edge to right edge with no break, split, or seam at any point, especially not at the centre. "
+            "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically. Extend the background as a single continuous panorama. No invented text or logos. "
+            "FOR ADVERTISING IMAGES: Anchor the photo/hero on one side. Let the background stretch naturally behind and beyond it to fill all remaining space. Do NOT create two separate visual halves."
+        ),
+        fill_direction="horizontally",
+        fill_description=(
+            "Fill remaining horizontal space by extending the background as a single continuous scene — same lighting, perspective, and colour tone throughout. "
+            "The result must look like one wide photograph, not two halves joined together. "
+            "Strictly NO duplication of primary subjects, unique objects, or foreground elements to fill space."
+        ),
+        layout_rules=[
+            "CRITICAL: Never change, redraw, or reimagine any original component.",
+            "CRITICAL: Human images must stay exactly as they are without any modifications.",
+            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
+            "CRITICAL: Every single component must appear exactly once — zero duplication.",
+            "Only render components detected in the source image — skip any element type not present.",
+            "CRITICAL: The entire 1184 px width must be ONE continuous visual — no split, no seam, no hard divide at the centre or anywhere else.",
+            "LAYOUT FOR GENERIC IMAGES (No text/logos): Place the main subject organically. Extend the background as a seamless panoramic environment across the full 1184x384 canvas.",
+            "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Anchor photo/hero on one side. Distribute text and logos in the clear zone. The background MUST paint behind everything as one unbroken scene.",
             "ALL elements must maintain their original aspect ratios.",
             "ALL elements must remain within y: 0–384 px.",
             "Minimum 18 px padding between distinct advertising elements and canvas edges.",
@@ -406,10 +606,10 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL: DO NOT split the image into two halves — left half subject, right half background. The canvas must be ONE unified composition.",
+            "CRITICAL: DO NOT create a visible seam, edge, boundary, or colour/tone shift at or near the horizontal centre of the canvas.",
             "DO NOT stretch primary subjects to fill the 3.1:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
-            "DO NOT cluster content in the centre — spread organically across the full 1184 px width.",
-            "DO NOT break the image flow: ensure the transition between the main subject and the extended background is completely seamless.",
             "Output must be exactly 1184×384 px — not square, not portrait.",
         ],
     ),

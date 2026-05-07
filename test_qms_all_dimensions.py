@@ -29,6 +29,10 @@ QMS_DIMENSIONS = {
     "QMS_1120X320":  (1120,  320),   # Wide strip billboard (3.5:1)
     "QMS_760X240":   (760,   240),   # Wide strip (3.2:1)
     "QMS_1184X384":  (1184,  384),   # Wide billboard (3.1:1)
+    "QMS_1472X480":  (1472,  480),   # Wide billboard (3.1:1)
+    "QMS_1296X432":  (1296,  432),   # Wide billboard (3:1)
+    "QMS_1200X400":  (1200,  400),   # Wide billboard (3:1)
+    "QMS_1188X396":  (1188,  396),   # Wide billboard (3:1)
 }
 
 

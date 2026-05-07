@@ -1731,6 +1731,10 @@ OOH_MEDIA_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
     "QMS_1120X320":  (1120,  320),
     "QMS_760X240":   (760,   240),
     "QMS_1184X384":  (1184,  384),
+    "QMS_1472X480":  (1472,  480),
+    "QMS_1296X432":  (1296,  432),
+    "QMS_1200X400":  (1200,  400),
+    "QMS_1188X396":  (1188,  396),
 }
 
 CREATION_ALLOWED_ASPECT_RATIOS = {
