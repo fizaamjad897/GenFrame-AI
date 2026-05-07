@@ -39,10 +39,25 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / "Visual-Engine-BE-secure"))
 try:
-    from ooh_dimensions import get_profile
+    from ooh_dimensions import get_profile as _ooh_get_profile, OOH_PROFILES
 except ImportError as e:
     print(f"Error importing ooh_dimensions: {e}", file=sys.stderr)
     sys.exit(1)
+
+try:
+    from qms_dimensions import get_profile as _qms_get_profile, QMS_PROFILES
+    _QMS_AVAILABLE = True
+except ImportError:
+    _QMS_AVAILABLE = False
+    _qms_get_profile = None
+    QMS_PROFILES = {}
+
+
+def get_profile(target_w: int, target_h: int):
+    """Return the DimProfile for the given dimensions, checking QMS profiles first."""
+    if _QMS_AVAILABLE and (target_w, target_h) in QMS_PROFILES:
+        return _qms_get_profile(target_w, target_h)
+    return _ooh_get_profile(target_w, target_h)
 
 load_dotenv()
 load_dotenv(Path(__file__).parent / ".env")
