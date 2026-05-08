@@ -1529,12 +1529,13 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.92,
         element_guidance=(
+            "⚠ YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. Every component is a sealed, unalterable PNG crop. You do NOT draw, generate, design, or create anything from scratch. "
             "Fill the 736×256 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — drop it in at the correct position without modification. "
-            "Scale all text to be legible at 256 px height. Do NOT wrap text into narrow vertical columns. "
-            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Paste the EXACT crop unchanged. "
-            "FOR GENERIC IMAGES: Place the main subject/scene organically and extend background seamlessly."
+            "CRITICAL: The background crop MUST extend to paint the outer edges of the canvas seamlessly — use the background component, do not generate new background. "
+            "FOR ADVERTISING IMAGES: Take each component crop and paste it at the calculated position: background first (full canvas), then person crop at its anchor position, then text crops at their positions, then logo at its position. "
+            "Scale all text crops to be legible at 256 px height but do NOT redraw them — scale the existing PNG crop only. Do NOT wrap text into narrow vertical columns. "
+            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly. Do not alter a single pixel. "
+            "FOR GENERIC IMAGES: Place the background crop, then the subject crop at its natural position. Extend background only — no generation."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -1635,17 +1636,17 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.88,
         element_guidance=(
+            "⚠ YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. Every component is a sealed, unalterable PNG crop. You do NOT draw, generate, design, or create anything from scratch. "
             "Fill the 1680×810 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — drop it in at the correct position without modification. "
-            "Use the 2.1:1 proportions to create a well-balanced layout — hero/person on one side, headline and text on the other. "
-            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Paste the EXACT crop unchanged. "
-            "FOR GENERIC IMAGES: Place the main subject/scene organically and extend background seamlessly."
+            "CRITICAL: The background crop MUST extend to paint the outer edges of the canvas seamlessly — use the background component, do not generate new background. "
+            "FOR ADVERTISING IMAGES: Take each component crop and paste it at the calculated position: background first (full canvas), then person crop at its anchor position, then text crops at their positions, then logo at its position. "
+            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly. Do not alter a single pixel. "
+            "FOR GENERIC IMAGES: Place the background crop, then the subject crop at its natural position. Extend background only — no generation."
         ),
         fill_direction="horizontally",
         fill_description=(
-            "Fill any remaining horizontal space with a seamless background extension. "
-            "Strictly NO duplication of primary subjects, unique objects, or foreground elements."
+            "Fill any remaining horizontal space with a seamless background extension using the background component. "
+            "Strictly NO duplication of primary subjects, unique objects, or foreground elements. NO generation of new imagery."
         ),
         layout_rules=[
             "CRITICAL: Never change, redraw, or reimagine any original component.",
@@ -1653,12 +1654,16 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose.",
             "CRITICAL: Every single component must appear exactly once — zero duplication.",
             "Only render components detected in the source image — skip any element type not present.",
-            "LAYOUT FOR ADVERTISING IMAGES: Balanced left/right zones with natural visual hierarchy.",
+            "PASTE ORDER: background crop (full canvas) → person crop at anchor position → text crops at their positions → logo crop at its position.",
             "ALL elements must maintain their original aspect ratios.",
             "ALL elements must remain within y: 0–810 px.",
             "Minimum 24 px padding between elements and canvas edges.",
+            "DO NOT generate, draw, or invent any visual content — paste only.",
         ],
         dimension_warnings=[
+            "CRITICAL — ZERO GENERATION POLICY: You are FORBIDDEN from generating, drawing, or creating ANY visual content. The output contains ONLY the provided component crops placed at (x,y) positions. If any pixel in the output was not in an input crop, it is WRONG.",
+            "CRITICAL — DO NOT REDESIGN: Do NOT create a new advertisement from scratch. The advertisement already exists as component crops. Assemble them at calculated positions only.",
+            "CRITICAL — IF OUTPUT LOOKS LIKE A NEW IMAGE: You have generated content. That is WRONG. Redo using ONLY the provided crops placed at positions.",
             "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component to fill empty space.",
@@ -1668,7 +1673,7 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL — NO INVENTED FURNITURE: Do NOT add desk, table, chair, or any object not in the reference.",
             "CRITICAL — PASTE DO NOT BLEND: Paste the human photo as a discrete crop — do NOT blend or redraw.",
             "CRITICAL — BACKGROUND CONTEXT BANNED: Plain background in = plain background out.",
-            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Confirm face identical, no furniture, pose unchanged.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Confirm (1) face pixel-identical to reference, (2) no furniture added, (3) pose unchanged, (4) no generated content. If any fails, restart.",
             "Output must be exactly 1680×810 px.",
         ],
     ),
@@ -1788,12 +1793,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.88,
         element_guidance=(
+            "⚠ YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. Every component is a sealed, unalterable PNG crop. You do NOT draw, generate, design, or create anything from scratch. "
             "Fill the 864×480 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — drop it in at the correct position without modification. "
-            "Use the 1.8:1 proportions for a balanced split — hero/person on one side, text hierarchy on the other. "
-            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Paste the EXACT crop unchanged. "
-            "FOR GENERIC IMAGES: Place the main subject/scene organically."
+            "CRITICAL: The background crop MUST extend to paint the outer edges of the canvas seamlessly — use the background component, do not generate new background. "
+            "FOR ADVERTISING IMAGES: Take each component crop and paste it at the calculated position: background first (full canvas), then person crop at its anchor position, then text crops at their positions, then logo at its position. "
+            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly. Do not alter a single pixel. "
+            "FOR GENERIC IMAGES: Place the background crop, then the subject crop at its natural position. Extend background only — no generation."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -1839,12 +1844,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.88,
         element_guidance=(
+            "⚠ YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. Every component is a sealed, unalterable PNG crop. You do NOT draw, generate, design, or create anything from scratch. "
             "Fill the 608×304 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — drop it in at the correct position without modification. "
-            "Use the 2:1 proportions for a clean split — person/hero left, headline and text right (or mirrored). "
-            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Paste the EXACT crop unchanged. "
-            "FOR GENERIC IMAGES: Place the main subject/scene naturally."
+            "CRITICAL: The background crop MUST extend to paint the outer edges of the canvas seamlessly — use the background component, do not generate new background. "
+            "FOR ADVERTISING IMAGES: Take each component crop and paste it at the calculated position: background first (full canvas), then person crop at its anchor position, then text crops at their positions, then logo at its position. "
+            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly. Do not alter a single pixel. "
+            "FOR GENERIC IMAGES: Place the background crop, then the subject crop at its natural position. Extend background only — no generation."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -1890,12 +1895,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.88,
         element_guidance=(
+            "⚠ YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. Every component is a sealed, unalterable PNG crop. You do NOT draw, generate, design, or create anything from scratch. "
             "Fill the 600×320 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — drop it in at the correct position without modification. "
-            "Use the 1.9:1 proportions for a clean balanced layout. "
-            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Paste the EXACT crop unchanged. "
-            "FOR GENERIC IMAGES: Place the main subject/scene naturally."
+            "CRITICAL: The background crop MUST extend to paint the outer edges of the canvas seamlessly — use the background component, do not generate new background. "
+            "FOR ADVERTISING IMAGES: Take each component crop and paste it at the calculated position: background first (full canvas), then person crop at its anchor position, then text crops at their positions, then logo at its position. "
+            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly. Do not alter a single pixel. "
+            "FOR GENERIC IMAGES: Place the background crop, then the subject crop at its natural position. Extend background only — no generation."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -1941,12 +1946,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.88,
         element_guidance=(
+            "⚠ YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. Every component is a sealed, unalterable PNG crop. You do NOT draw, generate, design, or create anything from scratch. "
             "Fill the 600×280 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — drop it in at the correct position without modification. "
-            "Use the 2.1:1 proportions for a clean layout with person one side and text/logo the other. "
-            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Paste the EXACT crop unchanged. "
-            "FOR GENERIC IMAGES: Place the main subject/scene naturally."
+            "CRITICAL: The background crop MUST extend to paint the outer edges of the canvas seamlessly — use the background component, do not generate new background. "
+            "FOR ADVERTISING IMAGES: Take each component crop and paste it at the calculated position: background first (full canvas), then person crop at its anchor position, then text crops at their positions, then logo at its position. "
+            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly. Do not alter a single pixel. "
+            "FOR GENERIC IMAGES: Place the background crop, then the subject crop at its natural position. Extend background only — no generation."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -2427,12 +2432,13 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.45,
         element_guidance=(
+            "⚠ YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. Every component is a sealed, unalterable PNG crop. You do NOT draw, generate, design, or create anything from scratch. "
             "Fill the 648×1296 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background MUST paint the full 1296 px height seamlessly. "
-            "Scale ALL components to fit within 648 px width. "
-            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — drop it in at the correct position without modification. "
-            "Stack elements top-to-bottom. CRITICAL — PERSON IS A STICKER NOT A DRAWING: Paste the EXACT crop unchanged. "
-            "FOR GENERIC IMAGES: Vertical scene composition."
+            "CRITICAL: The background crop MUST extend to paint the full 1296 px height seamlessly — use the background component only, do not generate new background. "
+            "Scale ALL components to fit within 648 px width while maintaining their aspect ratios — scale the PNG crop, do not redraw it. "
+            "FOR ADVERTISING IMAGES: Take each component crop and paste it at the calculated position from top to bottom: background first (full canvas), then logo crop at top, then person crop at centre, then text crops below. "
+            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly. Do not alter a single pixel. "
+            "FOR GENERIC IMAGES: Place the background crop, then subject crop at its natural vertical position. Extend background only — no generation."
         ),
         fill_direction="vertically",
         fill_description=(
@@ -2844,17 +2850,19 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.45,
         element_guidance=(
+            "⚠ STOP. YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. You do NOT draw, generate, design, or create ANYTHING from scratch. This is not a creative task. "
+            "You have pre-cut PNG component crops. Your ONLY job is to calculate (x, y, width, height) for each crop and paste it onto a 360×720 canvas. Nothing else. "
             "Fill the 360×720 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background MUST paint the full 720 px height seamlessly. "
-            "Scale ALL components to fit within 360 px width. "
-            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — drop it in at the correct position without modification. "
-            "Stack elements top-to-bottom. CRITICAL — PERSON IS A STICKER NOT A DRAWING: Paste the EXACT crop unchanged. "
-            "FOR GENERIC IMAGES: Natural vertical composition."
+            "CRITICAL: The background crop MUST extend to paint the full 720 px height seamlessly — use the background component only, do NOT generate new background. "
+            "Scale ALL components to fit within 360 px width while maintaining their aspect ratios — scale the PNG crop, do NOT redraw it. "
+            "FOR ADVERTISING IMAGES: Paste components top-to-bottom in this exact order: (1) background crop fills full canvas, (2) logo crop at top, (3) person crop at centre, (4) text crops below. "
+            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly as given. Zero alteration. "
+            "FOR GENERIC IMAGES: Place background crop (full canvas), then subject crop at natural vertical position. Background extension only — absolutely no generation."
         ),
         fill_direction="vertically",
         fill_description=(
-            "Fill any remaining vertical space with a seamless background extension. "
-            "Strictly NO duplication of primary subjects, unique objects, or foreground elements."
+            "Fill any remaining vertical space with a seamless background extension using the background component. "
+            "Strictly NO duplication of primary subjects, unique objects, or foreground elements. NO generation of new imagery."
         ),
         layout_rules=[
             "CRITICAL: Never change, redraw, or reimagine any original component.",
@@ -2862,12 +2870,16 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose.",
             "CRITICAL: Every single component must appear exactly once — zero duplication.",
             "Only render components detected in the source image — skip any element type not present.",
-            "TOP-TO-BOTTOM: logo → photo → headline → body text → CTA.",
+            "TOP-TO-BOTTOM paste order: background (full canvas) → logo → person → text → CTA.",
             "ALL elements must remain within x: 0–360 px.",
             "Center elements horizontally. 16 px vertical padding between stacked elements.",
             "DO NOT place elements side by side.",
+            "DO NOT generate, draw, or invent any visual content — paste only.",
         ],
         dimension_warnings=[
+            "CRITICAL — ZERO GENERATION POLICY: You are FORBIDDEN from generating, drawing, or creating ANY visual content. The output contains ONLY the provided component crops placed at (x,y) positions. If any pixel in the output was not in an input crop, it is WRONG.",
+            "CRITICAL — DO NOT REDESIGN: Do NOT create a new advertisement from scratch. The advertisement already exists as component crops. Assemble them at calculated positions only.",
+            "CRITICAL — IF OUTPUT LOOKS LIKE A NEW IMAGE: You have generated content. That is WRONG. Redo using ONLY the provided crops placed at positions.",
             "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component to fill empty space.",
@@ -2877,7 +2889,7 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL — NO INVENTED FURNITURE: Do NOT add desk, table, chair, or any object not in the reference.",
             "CRITICAL — PASTE DO NOT BLEND: Paste the human photo as a discrete crop — do NOT blend or redraw.",
             "CRITICAL — BACKGROUND CONTEXT BANNED: Plain background in = plain background out.",
-            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Confirm face identical, no furniture, pose unchanged.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Confirm (1) face pixel-identical to reference, (2) no furniture added, (3) pose unchanged, (4) no generated content. If any fails, restart.",
             "DO NOT use a horizontal layout — this is a portrait format.",
             "Output must be exactly 360×720 px — NOT landscape.",
         ],
