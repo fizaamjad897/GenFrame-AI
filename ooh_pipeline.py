@@ -262,6 +262,11 @@ async def ooh_resize(
         logger.info("[OOH_PIPELINE] 2072×252 routed to banner_2072x252 — skipping ooh_resize.")
         return None
 
+    # Ultra-wide QMS dimensions (AR ≥ 9:1) are routed to banner_2072x252 which has
+    # purpose-built prompt engineering and post-processing for extreme aspect ratios.
+    _ULTRA_WIDE_ROUTE = {(2640, 288)}
+    _is_ultra_wide_route = (target_w, target_h) in _ULTRA_WIDE_ROUTE
+
     logger.info(
         "[OOH_PIPELINE] %d×%d → %d×%d",
         source.width, source.height, target_w, target_h,
@@ -321,6 +326,28 @@ async def ooh_resize(
     # 4. Recompose for requested target dimensions.
     logger.info("[OOH_PIPELINE] Recomposing at %d×%d", target_w, target_h)
     orig_path = cache_dir / "00_original.png"
+
+    # Ultra-wide dimensions bypass banner_recomposer and use banner_2072x252 instead,
+    # which has a simpler, cleaner prompt tuned for extreme AR banners and a direct
+    # resize post-step that avoids the grey-bar artefact seen with the AR-aware path.
+    if _is_ultra_wide_route:
+        try:
+            from banner_2072x252 import recompose_with_gemini_vision as _uw_recompose  # type: ignore
+            logger.info("[OOH_PIPELINE] Ultra-wide %d×%d → banner_2072x252", target_w, target_h)
+            result_bytes = await _uw_recompose(
+                output_dir=cache_dir,
+                target_w=target_w,
+                target_h=target_h,
+                original_image_path=orig_path,
+                temperature=0.10,
+            )
+            if result_bytes:
+                logger.info("[OOH_PIPELINE] banner_2072x252 ultra-wide recompose succeeded")
+                return result_bytes
+            logger.warning("[OOH_PIPELINE] banner_2072x252 returned None for %d×%d — falling back to standard path", target_w, target_h)
+        except Exception as exc:
+            logger.warning("[OOH_PIPELINE] banner_2072x252 ultra-wide routing failed: %s — falling back", exc)
+
     try:
         result_bytes = await funcs["recompose_with_gemini_vision"](
             output_dir=cache_dir,
