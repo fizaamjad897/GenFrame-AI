@@ -141,7 +141,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
             "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
             "FOR ADVERTISING IMAGES: Utilise the large 4.2:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
-            "(headlines, body, CTA) intelligently across the remaining clear space. Do NOT cluster elements in the middle."
+            "(headlines, body, CTA) intelligently across the remaining clear space. Do NOT cluster elements in the middle. "
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -166,6 +167,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged.",
+            "CRITICAL — FACE INTEGRITY: The person's face MUST be identical to the provided photo crop — same skin tone, same facial features, same expression.",
+            "CRITICAL — NO POSE CHANGE: The person's body pose, gesture, and arm/hand position MUST be identical to the reference crop.",
+            "CRITICAL — PASTE DO NOT BLEND: The human photo layer must be pasted as a discrete image crop. Do NOT blend, redraw, or composite the person into the background.",
+            "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, that plain background MUST stay plain in the output. You are FORBIDDEN from drawing an office, room, studio, desk scene, or any environmental context around the person. Plain in = plain out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Before finalising, confirm: (1) The person's face is pixel-identical to the reference crop. (2) No desk, chair, table, or furniture was added. (3) The person's pose has not changed. If any check fails, your output is wrong — restart.",
             "DO NOT stretch primary subjects to fill the large 4.2:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT cluster content in the centre — spread organically across the full 1824 px width.",
@@ -192,7 +199,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
             "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
             "FOR ADVERTISING IMAGES: Utilize the 4:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
-            "(headlines, body, CTA) intelligently across the remaining space. Do NOT cluster elements in the middle."
+            "(headlines, body, CTA) intelligently across the remaining space. Do NOT cluster elements in the middle. "
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -217,6 +225,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged.",
+            "CRITICAL — FACE INTEGRITY: The person's face MUST be identical to the provided photo crop — same skin tone, same facial features, same expression.",
+            "CRITICAL — NO POSE CHANGE: The person's body pose, gesture, and arm/hand position MUST be identical to the reference crop.",
+            "CRITICAL — PASTE DO NOT BLEND: The human photo layer must be pasted as a discrete image crop. Do NOT blend, redraw, or composite the person into the background.",
+            "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, that plain background MUST stay plain in the output. You are FORBIDDEN from drawing an office, room, studio, desk scene, or any environmental context around the person. Plain in = plain out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Before finalising, confirm: (1) The person's face is pixel-identical to the reference crop. (2) No desk, chair, table, or furniture was added. (3) The person's pose has not changed. If any check fails, your output is wrong — restart.",
             "DO NOT stretch primary subjects to fill the 4:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT cluster content in the centre — spread organically across the full 1728 px width.",
@@ -302,7 +316,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
             "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
             "FOR ADVERTISING IMAGES: Utilise the 3.5:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
-            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle."
+            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle. "
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -327,6 +342,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged.",
+            "CRITICAL — FACE INTEGRITY: The person's face MUST be identical to the provided photo crop — same skin tone, same facial features, same expression.",
+            "CRITICAL — NO POSE CHANGE: The person's body pose, gesture, and arm/hand position MUST be identical to the reference crop.",
+            "CRITICAL — PASTE DO NOT BLEND: The human photo layer must be pasted as a discrete image crop. Do NOT blend, redraw, or composite the person into the background.",
+            "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, that plain background MUST stay plain in the output. You are FORBIDDEN from drawing an office, room, studio, desk scene, or any environmental context around the person. Plain in = plain out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Before finalising, confirm: (1) The person's face is pixel-identical to the reference crop. (2) No desk, chair, table, or furniture was added. (3) The person's pose has not changed. If any check fails, your output is wrong — restart.",
             "DO NOT stretch primary subjects to fill the 3.5:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT stack elements vertically; use the horizontal space organically.",
@@ -352,7 +373,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "Fill the 760×240 pixel space completely, edge-to-edge. "
             "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
-            "FOR ADVERTISING IMAGES: Utilize the 3.2:1 width by positioning the photo/hero as a visual anchor and distributing text elements in the adjacent or opposing clear space. Do NOT cluster elements in the middle."
+            "FOR ADVERTISING IMAGES: Utilize the 3.2:1 width by positioning the photo/hero as a visual anchor and distributing text elements in the adjacent or opposing clear space. Do NOT cluster elements in the middle. "
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -379,10 +401,13 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged.",
             "CRITICAL — FACE INTEGRITY: The person's face in the output MUST be identical to the provided photo crop — same skin tone, same facial features, same expression, same facial structure. ANY deviation in face appearance is a failure.",
             "CRITICAL — NO POSE CHANGE: The person's body pose, gesture, and arm/hand position MUST be identical to the reference crop. Do NOT change standing to seated, do NOT alter gestures.",
             "CRITICAL — NO INVENTED FURNITURE: Do NOT add a desk, table, chair, or any object not visible in the reference photo crop. If the person appears against a plain background, keep it plain.",
             "CRITICAL — PASTE DO NOT BLEND: The human photo layer must be pasted as a discrete image crop. Do NOT blend, redraw, or composite the person into the background. Treat the person exactly like a logo — drop it in, do not regenerate it.",
+            "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, that plain background MUST stay plain in the output. You are FORBIDDEN from drawing an office, room, studio, desk scene, or any environmental context around the person. Plain in = plain out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Before finalising, confirm: (1) The person's face is pixel-identical to the reference crop. (2) No desk, chair, table, or furniture was added. (3) The person's pose has not changed. If any check fails, your output is wrong — restart.",
             "DO NOT stretch primary subjects to fill the 3.2:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT stack elements vertically; use the limited 240 px height for a single horizontal row.",
@@ -410,7 +435,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
             "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
             "FOR ADVERTISING IMAGES: Utilize the 3.1:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
-            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle."
+            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle. "
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -435,6 +461,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged.",
+            "CRITICAL — FACE INTEGRITY: The person's face MUST be identical to the provided photo crop — same skin tone, same facial features, same expression.",
+            "CRITICAL — NO POSE CHANGE: The person's body pose, gesture, and arm/hand position MUST be identical to the reference crop.",
+            "CRITICAL — PASTE DO NOT BLEND: The human photo layer must be pasted as a discrete image crop. Do NOT blend, redraw, or composite the person into the background.",
+            "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, that plain background MUST stay plain in the output. You are FORBIDDEN from drawing an office, room, studio, desk scene, or any environmental context around the person. Plain in = plain out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Before finalising, confirm: (1) The person's face is pixel-identical to the reference crop. (2) No desk, chair, table, or furniture was added. (3) The person's pose has not changed. If any check fails, your output is wrong — restart.",
             "DO NOT stretch primary subjects to fill the 3.1:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT cluster content in the center — spread organically across the 1472 px width.",
@@ -461,7 +493,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
             "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
             "FOR ADVERTISING IMAGES: Utilise the 3:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
-            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle."
+            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle. "
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -486,6 +519,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged.",
+            "CRITICAL — FACE INTEGRITY: The person's face MUST be identical to the provided photo crop — same skin tone, same facial features, same expression.",
+            "CRITICAL — NO POSE CHANGE: The person's body pose, gesture, and arm/hand position MUST be identical to the reference crop.",
+            "CRITICAL — PASTE DO NOT BLEND: The human photo layer must be pasted as a discrete image crop. Do NOT blend, redraw, or composite the person into the background.",
+            "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, that plain background MUST stay plain in the output. You are FORBIDDEN from drawing an office, room, studio, desk scene, or any environmental context around the person. Plain in = plain out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Before finalising, confirm: (1) The person's face is pixel-identical to the reference crop. (2) No desk, chair, table, or furniture was added. (3) The person's pose has not changed. If any check fails, your output is wrong — restart.",
             "DO NOT stretch primary subjects to fill the 3:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT cluster content in the centre — spread organically across the full 1296 px width.",
@@ -512,7 +551,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
             "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
             "FOR ADVERTISING IMAGES: Utilize the 3:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
-            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle."
+            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle. "
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -537,6 +577,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged.",
+            "CRITICAL — FACE INTEGRITY: The person's face MUST be identical to the provided photo crop — same skin tone, same facial features, same expression.",
+            "CRITICAL — NO POSE CHANGE: The person's body pose, gesture, and arm/hand position MUST be identical to the reference crop.",
+            "CRITICAL — PASTE DO NOT BLEND: The human photo layer must be pasted as a discrete image crop. Do NOT blend, redraw, or composite the person into the background.",
+            "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, that plain background MUST stay plain in the output. You are FORBIDDEN from drawing an office, room, studio, desk scene, or any environmental context around the person. Plain in = plain out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Before finalising, confirm: (1) The person's face is pixel-identical to the reference crop. (2) No desk, chair, table, or furniture was added. (3) The person's pose has not changed. If any check fails, your output is wrong — restart.",
             "DO NOT stretch primary subjects to fill the 3:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT cluster content in the center — spread organically across the 1200 px width.",
@@ -563,7 +609,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
             "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
             "FOR ADVERTISING IMAGES: Utilize the 3:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
-            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle."
+            "in the adjacent or opposing clear space. Do NOT cluster elements in the middle. "
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -588,6 +635,12 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
+            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged.",
+            "CRITICAL — FACE INTEGRITY: The person's face MUST be identical to the provided photo crop — same skin tone, same facial features, same expression.",
+            "CRITICAL — NO POSE CHANGE: The person's body pose, gesture, and arm/hand position MUST be identical to the reference crop.",
+            "CRITICAL — PASTE DO NOT BLEND: The human photo layer must be pasted as a discrete image crop. Do NOT blend, redraw, or composite the person into the background.",
+            "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, that plain background MUST stay plain in the output. You are FORBIDDEN from drawing an office, room, studio, desk scene, or any environmental context around the person. Plain in = plain out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Before finalising, confirm: (1) The person's face is pixel-identical to the reference crop. (2) No desk, chair, table, or furniture was added. (3) The person's pose has not changed. If any check fails, your output is wrong — restart.",
             "DO NOT stretch primary subjects to fill the 3:1 width; only extend the background/environment.",
             "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT cluster content in the centre — spread organically across the full 1188 px width.",
