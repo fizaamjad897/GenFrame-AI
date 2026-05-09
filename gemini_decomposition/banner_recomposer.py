@@ -39,10 +39,25 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / "Visual-Engine-BE-secure"))
 try:
-    from ooh_dimensions import get_profile
+    from ooh_dimensions import get_profile as _ooh_get_profile, OOH_PROFILES
 except ImportError as e:
     print(f"Error importing ooh_dimensions: {e}", file=sys.stderr)
     sys.exit(1)
+
+try:
+    from qms_dimensions import get_profile as _qms_get_profile, QMS_PROFILES
+    _QMS_AVAILABLE = True
+except ImportError:
+    _QMS_AVAILABLE = False
+    _qms_get_profile = None
+    QMS_PROFILES = {}
+
+
+def get_profile(target_w: int, target_h: int):
+    """Return the DimProfile for the given dimensions, checking QMS profiles first."""
+    if _QMS_AVAILABLE and (target_w, target_h) in QMS_PROFILES:
+        return _qms_get_profile(target_w, target_h)
+    return _ooh_get_profile(target_w, target_h)
 
 load_dotenv()
 load_dotenv(Path(__file__).parent / ".env")
@@ -990,9 +1005,11 @@ async def recompose_with_gemini_vision(
     if extra_image_parts:
         has_text_refs = "text" in extra_image_types
         text_note = (
-            " TEXT LAYERS ARE INCLUDED — do NOT redraw or retype text. "
-            "Copy the text image crops pixel-for-pixel including their exact font, "
-            "italic/condensed/oblique style, weight, size, and letter-spacing."
+            " ⚠ TEXT LAYERS ARE SEALED IMAGE CROPS — NEVER retype, redraw, or re-render them under any circumstances. "
+            "Each text layer is a pixel-accurate photograph of the original text. "
+            "You MUST paste it exactly as provided — same font, same italic/condensed/oblique style, same weight, same letter-spacing, same size. "
+            "Do NOT attempt to recreate the text with a different font. Do NOT make italic text upright. Do NOT round a condensed font. "
+            "Treat text layers IDENTICALLY to human face photos — absolute zero alteration."
             if has_text_refs else ""
         )
         extra_context = (
@@ -1007,7 +1024,16 @@ async def recompose_with_gemini_vision(
     warnings = profile.get("dimension_warnings", ["DO NOT change the aspect ratio"])
     warnings_text = (chr(10) + "   - ").join(warnings) if warnings else ""
 
-    prompt = f"""You are a professional advertising layout artist. Your job is POSITIONING and SCALING only — not drawing.
+    prompt = f"""You are a professional advertising layout artist. Your job is POSITIONING and SCALING only — not drawing, not retyping, not redesigning.
+
+⚠ BEFORE ANYTHING ELSE — YOU ARE A LAYOUT TOOL, NOT AN ARTIST:
+You do not draw anything. You do not generate anything. You paste pre-made image crops onto a canvas at the correct positions and sizes. That is your entire job.
+
+⚠ HUMAN PHOTO — READ THIS FIRST:
+The person's photo is provided as a sealed image crop. You MUST paste it exactly as given. FORBIDDEN: changing the face, skin tone, facial features, body shape, pose, gesture, or arm position. FORBIDDEN: adding a desk, chair, table, or any object not in the reference crop. FORBIDDEN: changing a standing person to seated. FORBIDDEN: blending or redrawing the person to fit the background. Paste the crop as-is.
+
+⚠ TEXT IS AN IMAGE, NOT A STRING:
+Every text layer has been pre-rendered and provided to you as a sealed pixel-accurate image crop. You MUST paste it exactly as given. You are FORBIDDEN from retyping, redrawing, or re-rendering ANY text. The font, style, weight, italics, condensing, letter-spacing — all of that is baked into the image crop. Your only job for text is: paste it, scale it to fit. Nothing else.
 
 {original_context}{extra_context}LAST IMAGE: Reference grid showing ALL isolated components from the advertisement.
 
@@ -1020,11 +1046,16 @@ Arrange these EXACT components into a single {target_w}×{target_h} {profile['ca
 CRITICAL DIRECTIVES — DO NOT IGNORE:
 
 1. ABSOLUTE ZERO ALTERATION OF COMPONENTS:
-   - YOU MUST NOT change, redraw, reimagine, or modify ANY component in any way, DONOT CHANGE HUMAN FACES USE THEM AS IT IS.
-   - People, faces, products, logos, and UI elements MUST BE 100% pixel-perfect identical to the provided references. 
+   - YOU MUST NOT change, redraw, reimagine, or modify ANY component in any way.
+   - People, faces, products, logos, and UI elements MUST BE 100% pixel-perfect identical to the provided references.
    - If you cannot blend something smoothly, leave it EXACTLY as it is in the reference.
    - Do NOT invent new clothing, new facial expressions, or new objects.
    - If an element looks cut off in the reference, place it at the edge of the canvas to hide the cut. Do NOT draw a new body or object around it.
+   - HUMAN PHOTO — ZERO TOLERANCE FOR ANY CHANGE:
+     • The person's face, skin tone, facial features, and expression MUST be identical to the reference crop. Do NOT regenerate or blend the face.
+     • The person's body pose, gesture, and arm position MUST be identical to the reference crop. Do NOT change a standing person to sitting, do NOT change arm/hand positions.
+     • Do NOT add any furniture, desk, table, chair, or object that is NOT visible in the reference crop. If the person is standing against a plain background, they stay standing against a plain background.
+     • Paste the human photo crop AS-IS onto the canvas — same crop, same proportions, same everything. You are a layout tool, not an artist.
 
 2. STRICT ZERO DUPLICATION POLICY:
    - Every single component provided MUST appear EXACTLY ONCE.
@@ -1044,13 +1075,14 @@ CRITICAL DIRECTIVES — DO NOT IGNORE:
 5. DO NOT DRAW LABELS OR NUMBERS:
    - Do NOT draw "id=", brackets "[]", bullets "•", or any layer names directly onto the banner. Lay out the actual visual assets, do not label them.
 
-6. TEXT AND TYPOGRAPHY PRESERVATION — CRITICAL:
-   - Text layers are provided as FULL-RESOLUTION pixel-accurate image crops in the reference images above.
-   - You MUST use those exact image crops — do NOT retype, redraw, or re-render text in any way.
-   - Treat every text component identically to a photo: paste the crop as-is, scale it to fit, never redesign it.
-   - The original font may be italic, condensed, oblique, or have custom letter-spacing — preserve ALL of that by using the provided crop.
-   - If the original text uses a condensed bold italic font (e.g. "24HR LASTING HOLD"), the output must show that exact image crop — NOT a new generic upright font.
-   - NEVER substitute a different font. NEVER make text upright if the original is italic. NEVER round a condensed font.
+6. TEXT AND TYPOGRAPHY PRESERVATION — ABSOLUTE RULE:
+   - Text layers are SEALED IMAGE CROPS. They are photographs of text, not editable strings.
+   - You MUST paste each text crop pixel-for-pixel exactly as provided — same font, same style, same weight, same italics, same letter-spacing.
+   - NEVER retype any text. NEVER redraw any text. NEVER re-render any text in a different font.
+   - NEVER make italic text upright. NEVER make condensed text wider. NEVER substitute any font whatsoever.
+   - Treat text IDENTICALLY to a human face: you would never redraw a face, so never redraw text either.
+   - If the crop shows bold condensed italic text, the output must show that exact image crop — NOT your own version of the text.
+   - Scaling a text crop larger or smaller is allowed. Retyping or redrawing it is FORBIDDEN.
 
 Failure to follow these directives exactly will ruin the advertising campaign. Output ONLY the final {target_w}×{target_h} banner. Nothing else."""
 
@@ -1091,12 +1123,51 @@ Failure to follow these directives exactly will ruin the advertising campaign. O
         logger.warning("Gemini returned no image after 3 attempts — falling back to manual compositor")
         return await recompose_banner(output_dir, target_w, target_h, save_path)
 
-    # Resize to exact target dimensions
+    # Resize to exact target dimensions — aspect-ratio-aware for extreme ratios.
     try:
         result_img = Image.open(io.BytesIO(result_bytes)).convert("RGB")
         if result_img.size != (target_w, target_h):
-            logger.info(f"Resizing Gemini output {result_img.size} → {target_w}×{target_h}")
-            result_img = result_img.resize((target_w, target_h), Image.LANCZOS)
+            src_w, src_h = result_img.size
+            src_ar = src_w / max(src_h, 1)
+            tgt_ar = target_w / max(target_h, 1)
+            ar_mismatch = abs(src_ar - tgt_ar) / max(tgt_ar, 1)
+
+            if ar_mismatch > 0.20:
+                # AR mismatch >20% — scale to fit target height, pad sides rather than stretch.
+                logger.info(
+                    f"Resizing Gemini output {result_img.size} → {target_w}×{target_h} "
+                    f"(AR-preserving: src {src_ar:.2f}:1 vs tgt {tgt_ar:.2f}:1, mismatch {ar_mismatch:.0%})"
+                )
+                # Scale so height matches target exactly, width may be smaller or larger.
+                scale = target_h / src_h
+                scaled_w = int(src_w * scale)
+                scaled_h = target_h
+                scaled = result_img.resize((scaled_w, scaled_h), Image.LANCZOS)
+
+                if scaled_w >= target_w:
+                    # Wider than target — center crop width.
+                    left = (scaled_w - target_w) // 2
+                    result_img = scaled.crop((left, 0, left + target_w, target_h))
+                else:
+                    # Narrower than target — pad sides with sampled edge colour.
+                    # Sample background colour from left and right edges of the scaled image.
+                    left_strip = np.array(scaled.crop((0, 0, min(4, scaled_w), scaled_h)))
+                    right_strip = np.array(scaled.crop((max(0, scaled_w - 4), 0, scaled_w, scaled_h)))
+                    bg_color = tuple(
+                        int(v) for v in np.concatenate([left_strip, right_strip]).reshape(-1, 3).mean(axis=0)
+                    )
+                    canvas = Image.new("RGB", (target_w, target_h), bg_color)
+                    x_offset = (target_w - scaled_w) // 2
+                    canvas.paste(scaled, (x_offset, 0))
+                    result_img = canvas
+                    logger.info(
+                        f"Padded Gemini output: placed {scaled_w}×{scaled_h} at x={x_offset} "
+                        f"on {target_w}×{target_h} canvas (bg={bg_color})"
+                    )
+            else:
+                logger.info(f"Resizing Gemini output {result_img.size} → {target_w}×{target_h}")
+                result_img = result_img.resize((target_w, target_h), Image.LANCZOS)
+
         out_buf = io.BytesIO()
         result_img.save(out_buf, format="PNG")
         result_bytes = out_buf.getvalue()
