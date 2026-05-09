@@ -556,10 +556,16 @@ ALLOWED_ORIGINS = [
     for origin in (os.getenv("CORS_ORIGINS") or "http://localhost:3000,http://127.0.0.1:3000,https://transformation.slidexy.ai,https://recreative.slidexy.ai,https://transformation.signagexai.com").split(",")
     if origin.strip()
 ]
+# Preflight returns 400 "Disallowed CORS origin" if Origin does not match either list or
+# regex — regex covers localhost/127.0.0.1 on any port so dev survives CORS_ORIGINS overrides.
+_CORS_ORIGIN_REGEX = (os.getenv("CORS_ORIGIN_REGEX") or "").strip() or (
+    r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=_CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1735,6 +1741,18 @@ OOH_MEDIA_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
     "QMS_1296X432":  (1296,  432),
     "QMS_1200X400":  (1200,  400),
     "QMS_1188X396":  (1188,  396),
+    # Present in qms_dimensions.py QMS_PROFILES — synced 2026-05
+    "QMS_1440X480":  (1440,  480),
+    "QMS_1152X384":  (1152,  384),
+    "QMS_945X315":   (945,   315),
+    "QMS_864X288":   (864,   288),
+    "QMS_648X216":   (648,   216),
+    "QMS_1152X576":  (1152,  576),
+    "QMS_768X384":   (768,   384),
+    "QMS_720X360":   (720,   360),
+    "QMS_576X288":   (576,   288),
+    "QMS_576X1152":  (576,  1152),
+    "QMS_704X1408":  (704,  1408),
     # ── QMS dimensions — Batch 2 ──────────────────────────────────────────────
     # Landscape wide
     "QMS_4530X990":  (4530,  990),
