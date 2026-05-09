@@ -1212,15 +1212,16 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         ratio_str="4.6:1",
         orientation="landscape_wide",
         layout_direction="horizontal_flow",
-        arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
+        arrangement_order=["background", "logo", "text", "photo", "graphic"],
         element_max_height=0.92,
         element_guidance=(
-            "Fill the 4530×990 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — do NOT redraw, regenerate, or envision it; simply drop it in at the correct position. "
-            "Distribute elements across the full 4530 px: logo far-left zone → headline centre-left → subheading centre-right → person or CTA far-right. "
-            "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop, unchanged, against the SAME plain background it already has. "
-            "FOR GENERIC IMAGES: Place the main subject/scene organically and extend background as a seamless panorama."
+            "SPATIAL LAYOUT FOR 4530×990 — distribute across the full width, no clustering: "
+            "STEP 1 — Background: scale the background crop to fill the full 4530×990 canvas edge-to-edge as a seamless panorama. "
+            "STEP 2 — Logo: far-left zone, 24 px from left edge, vertically centered or top-aligned. "
+            "STEP 3 — Text crops (headline, subheading, body): stack vertically in the centre-left zone, left-aligned, 12 px gaps between crops. "
+            "STEP 4 — Person: far-right zone (x ≈ 3200–4530), scaled so the person fills ~88% of the 990 px canvas height (~870 px). Maintain aspect ratio. "
+            "STEP 5 — CTA / graphic: bottom-right or centre-right, 24 px from edge. "
+            "FOR GENERIC IMAGES: background fills canvas → subject placed organically → background extended as seamless panorama only."
         ),
         fill_direction="horizontally",
         fill_description=(
@@ -1229,28 +1230,23 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         ),
         layout_rules=[
             "CRITICAL: Never change, redraw, or reimagine any original component.",
-            "CRITICAL: Human images must stay exactly as they are without any modifications.",
-            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
             "CRITICAL: Every single component must appear exactly once — zero duplication.",
             "Only render components detected in the source image — skip any element type not present.",
-            "LAYOUT FOR ADVERTISING IMAGES: Distribute elements across the full 4530 px — no clustering on one side.",
-            "ALL elements must maintain their original aspect ratios.",
+            "Distribute elements across the full 4530 px width — no clustering on one side.",
+            "ALL elements must maintain their original aspect ratios — no stretching.",
             "ALL elements must remain within y: 0–990 px.",
             "Minimum 24 px padding between elements and canvas edges.",
         ],
         dimension_warnings=[
-            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
-            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
-            "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
-            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
-            "CRITICAL — FACE INTEGRITY: The person's face MUST be identical to the provided photo crop — same skin tone, same facial features, same expression. ANY deviation is a failure.",
-            "CRITICAL — NO POSE CHANGE: The person's body pose, gesture, and arm/hand position MUST be identical to the reference crop.",
-            "CRITICAL — NO INVENTED FURNITURE: Do NOT add a desk, table, chair, or any object not visible in the reference photo crop.",
-            "CRITICAL — PASTE DO NOT BLEND: The human photo layer must be pasted as a discrete image crop. Do NOT blend, redraw, or composite the person into the background.",
-            "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, keep it plain. Do NOT add office, room, or environmental context.",
-            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Confirm: (1) face pixel-identical to reference; (2) no furniture added; (3) pose unchanged. If any fails, restart.",
-            "DO NOT stretch primary subjects to fill the 4.6:1 width; only extend the background/environment.",
-            "DO NOT invent or hallucinate advertising elements not in the source image.",
+            "CRITICAL — FACE IS A SEALED PIXEL CROP: The person photo in the high-resolution references is the ONLY valid source for the person. Paste it exactly — same face, skin tone, facial structure, expression, hair, and pose. ANY regeneration or blending of the face = CATASTROPHIC FAILURE.",
+            "CRITICAL — TREAT PERSON EXACTLY LIKE A LOGO: You would never redraw a logo from memory — apply the identical rule to the person. Drop the provided crop in at the calculated position. Do NOT draw, imagine, or synthesise a new person.",
+            "CRITICAL — TEXT IS A SEALED IMAGE CROP: Every text layer is a pre-rendered pixel-accurate PNG. Paste it exactly — same font, weight, style, letter-spacing, and colour. NEVER retype, redraw, or re-render any text in a different font or style. Scaling the crop is allowed; retyping is FORBIDDEN.",
+            "CRITICAL — POSE AND GESTURES LOCKED: Body pose, arm angle, hand position, and all gestures MUST match the reference crop exactly. Do NOT change standing to seated, do NOT alter hand/arm positions.",
+            "CRITICAL — NO INVENTED FURNITURE: The person's background in the reference is plain. Do NOT add desk, table, chair, shelves, or any object. Plain background in = plain background out.",
+            "CRITICAL — PASTE DO NOT BLEND: Paste each crop as a discrete unaltered layer. Do NOT blend or composite any element against a new background.",
+            "CRITICAL — DO NOT INVENT ELEMENTS: Do NOT add headlines, taglines, CTAs, or decorative shapes absent from the source component list.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: (1) Face pixel-identical to reference? (2) Text fonts/styles unchanged? (3) No furniture added? (4) Pose unchanged? (5) No invented elements? If ANY check fails, redo.",
+            "DO NOT stretch primary subjects to fill the 4.6:1 width — only extend the background/environment.",
             "Output must be exactly 4530×990 px — not square, not portrait.",
         ],
     ),
@@ -1790,43 +1786,40 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         ratio_str="1.8:1",
         orientation="landscape_moderate",
         layout_direction="horizontal_flow",
-        arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
+        arrangement_order=["background", "photo", "text", "logo", "graphic"],
         element_max_height=0.88,
         element_guidance=(
-            "⚠ YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. Every component is a sealed, unalterable PNG crop. You do NOT draw, generate, design, or create anything from scratch. "
-            "Fill the 864×480 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background crop MUST extend to paint the outer edges of the canvas seamlessly — use the background component, do not generate new background. "
-            "FOR ADVERTISING IMAGES: Take each component crop and paste it at the calculated position: background first (full canvas), then person crop at its anchor position, then text crops at their positions, then logo at its position. "
-            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly. Do not alter a single pixel. "
-            "FOR GENERIC IMAGES: Place the background crop, then the subject crop at its natural position. Extend background only — no generation."
+            "SPATIAL LAYOUT FOR 864×480 — follow this order exactly: "
+            "STEP 1 — Background: scale the background crop to fill the full 864×480 canvas edge-to-edge. "
+            "STEP 2 — Person: anchor to the RIGHT half of the canvas (x ≈ 480–864), scaled so the person fills ~85% of the 480 px canvas height (~408 px tall). Maintain aspect ratio. "
+            "STEP 3 — Text crops: stack vertically on the LEFT half, centered in that zone, top-to-bottom with 12 px gaps. "
+            "STEP 4 — Logo: upper-left corner with 16 px padding. "
+            "FOR GENERIC IMAGES (no advertising text/logo): background fills canvas → subject at natural position → extend background only. "
+            "RATIO TRAP: 1.8:1 may resemble the source AR — do NOT rescale the source image wholesale; place each component crop individually."
         ),
         fill_direction="horizontally",
         fill_description=(
-            "Fill any remaining horizontal space with a seamless background extension. "
+            "Fill any remaining horizontal space with a seamless extension of the background crop only. "
             "Strictly NO duplication of primary subjects, unique objects, or foreground elements."
         ),
         layout_rules=[
             "CRITICAL: Never change, redraw, or reimagine any original component.",
-            "CRITICAL: Human images must stay exactly as they are without any modifications.",
-            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose.",
             "CRITICAL: Every single component must appear exactly once — zero duplication.",
             "Only render components detected in the source image — skip any element type not present.",
-            "LAYOUT FOR ADVERTISING IMAGES: Balanced left/right zones.",
-            "ALL elements must maintain their original aspect ratios.",
+            "Person RIGHT half of canvas, text + logo LEFT half. Person height ≈ 85% of canvas height.",
+            "ALL elements must maintain their original aspect ratios — no stretching.",
             "ALL elements must remain within y: 0–480 px.",
             "Minimum 16 px padding between elements and canvas edges.",
         ],
         dimension_warnings=[
-            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
-            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
-            "CRITICAL: DO NOT duplicate any component to fill empty space.",
-            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy only.",
-            "CRITICAL — FACE INTEGRITY: Face MUST be identical to the provided photo crop. ANY deviation is a failure.",
-            "CRITICAL — NO POSE CHANGE: Pose and gestures MUST be identical to the reference crop.",
-            "CRITICAL — NO INVENTED FURNITURE: Do NOT add desk, table, chair, or any object not in the reference.",
-            "CRITICAL — PASTE DO NOT BLEND: Paste the human photo as a discrete crop — do NOT blend or redraw.",
-            "CRITICAL — BACKGROUND CONTEXT BANNED: Plain background in = plain background out.",
-            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Confirm face identical, no furniture, pose unchanged.",
+            "CRITICAL — FACE IS A SEALED PIXEL CROP: The person photo provided in the high-resolution references is the ONLY valid source for the person. You MUST paste it exactly — same face, skin tone, facial structure, expression, hair, and pose. ANY regeneration or blending of the face = CATASTROPHIC FAILURE.",
+            "CRITICAL — TREAT PERSON EXACTLY LIKE A LOGO: You would never redraw a logo from memory — apply the identical rule to the person. Drop the provided crop in at the calculated position. Do NOT draw, imagine, or synthesise a new person.",
+            "CRITICAL — POSE AND GESTURES LOCKED: Body pose, arm angle, hand position, and all gestures MUST match the reference crop exactly. Do NOT change standing to seated, do NOT alter hand/arm positions.",
+            "CRITICAL — NO INVENTED FURNITURE: The person's background in the reference is plain. Do NOT add desk, table, chair, shelves, or any object. Plain background in = plain background out.",
+            "CRITICAL — TEXT IS A SEALED IMAGE CROP: Every text layer is a pre-rendered pixel-accurate PNG. You MUST paste it exactly — same font, weight, style, letter-spacing, and colour. NEVER retype, redraw, or re-render any text in a different font or style. Scaling the crop is allowed; retyping is FORBIDDEN.",
+            "CRITICAL — PASTE DO NOT BLEND: Paste each crop as a discrete unaltered layer. Do NOT blend or composite any element against a new background.",
+            "CRITICAL — DO NOT INVENT ELEMENTS: Do NOT add headlines, taglines, CTAs, or decorative shapes absent from the source component list.",
+            "CRITICAL — SELF-VERIFICATION: Before output — (1) Face pixel-identical to reference? (2) No furniture added? (3) Pose unchanged? (4) Text fonts/styles unchanged? (5) No invented elements? If ANY check fails, redo.",
             "Output must be exactly 864×480 px.",
         ],
     ),
@@ -1946,40 +1939,50 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.88,
         element_guidance=(
-            "⚠ YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. Every component is a sealed, unalterable PNG crop. You do NOT draw, generate, design, or create anything from scratch. "
-            "Fill the 600×280 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background crop MUST extend to paint the outer edges of the canvas seamlessly — use the background component, do not generate new background. "
-            "FOR ADVERTISING IMAGES: Take each component crop and paste it at the calculated position: background first (full canvas), then person crop at its anchor position, then text crops at their positions, then logo at its position. "
-            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly. Do not alter a single pixel. "
-            "FOR GENERIC IMAGES: Place the background crop, then the subject crop at its natural position. Extend background only — no generation."
+            "⚠ ABSOLUTE STOP — YOU ARE FORBIDDEN FROM GENERATING ANY HUMAN PERSON. "
+            "A sealed, pixel-locked photo of the real person is provided as one of the HIGH-RESOLUTION REFERENCE IMAGES alongside the component sheet. "
+            "That reference image IS the person — you do NOT draw, imagine, or synthesise any human face or body. "
+            "⚠ RATIO TRAP WARNING: The 2.1:1 target format may look visually similar to the source image. "
+            "DO NOT simply rescale or regenerate the source image. You MUST place each component crop INDIVIDUALLY. "
+            "COMPOSITOR WORKFLOW FOR 600×280: "
+            "STEP 1 — Background: Scale the background crop to fill the entire 600×280 canvas edge-to-edge. "
+            "STEP 2 — Person: Treat the person photo EXACTLY like a LOGO — drop it in, do NOT regenerate it. "
+            "Take the EXACT person photo from the high-resolution reference images. "
+            "Scale it so the person fills ~90 % of the 280 px canvas height, maintaining aspect ratio. "
+            "Anchor them to the RIGHT side of the canvas (x ≈ 330 to 600). "
+            "Paste the crop AGAINST THE SAME plain/white background it already has — do NOT place them in a new scene. "
+            "DO NOT alter a single pixel of their face, skin tone, facial features, expression, body, clothing, or pose. "
+            "STEP 3 — Text crops: Arrange text LEFT of the person, stacked vertically, scaled to fit 280 px height. "
+            "STEP 4 — Logo: Upper-left corner, proportionally scaled. "
+            "FORBIDDEN: Generating any human; using any stock photo from training memory; blending or redrawing the person; "
+            "adding desk, table, chair, or any object not in the reference. "
+            "FOR GENERIC IMAGES: background fills canvas → subject at natural position → extend background only."
         ),
         fill_direction="horizontally",
         fill_description=(
-            "Fill any remaining horizontal space with a seamless background extension. "
+            "Fill any remaining horizontal space with a seamless extension of the background crop only. "
             "Strictly NO duplication of primary subjects, unique objects, or foreground elements."
         ),
         layout_rules=[
+            "⚠ THE PERSON IS A HIGH-RES SEALED REFERENCE — COPY IT EXACTLY, DO NOT GENERATE A NEW PERSON.",
             "CRITICAL: Never change, redraw, or reimagine any original component.",
-            "CRITICAL: Human images must stay exactly as they are without any modifications.",
-            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose.",
+            "CRITICAL: Human person ZERO tolerance — same face, skin tone, clothing, pose, and gesture.",
             "CRITICAL: Every single component must appear exactly once — zero duplication.",
             "Only render components detected in the source image — skip any element type not present.",
-            "LAYOUT FOR ADVERTISING IMAGES: Person/hero one side, text/logo other side.",
+            "Person RIGHT side, text+logo LEFT side. Person height ~90 % of 280 px canvas height.",
             "ALL elements must maintain their original aspect ratios.",
             "ALL elements must remain within y: 0–280 px.",
             "Minimum 12 px padding between elements and canvas edges.",
         ],
         dimension_warnings=[
-            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
-            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
-            "CRITICAL: DO NOT duplicate any component to fill empty space.",
-            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy only.",
-            "CRITICAL — FACE INTEGRITY: Face MUST be identical to the provided photo crop. ANY deviation is a failure.",
-            "CRITICAL — NO POSE CHANGE: Pose and gestures MUST be identical to the reference crop.",
-            "CRITICAL — NO INVENTED FURNITURE: Do NOT add desk, table, chair, or any object not in the reference.",
-            "CRITICAL — PASTE DO NOT BLEND: Paste the human photo as a discrete crop — do NOT blend or redraw.",
-            "CRITICAL — BACKGROUND CONTEXT BANNED: Plain background in = plain background out.",
-            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Confirm face identical, no furniture, pose unchanged.",
+            "CRITICAL — DO NOT GENERATE ANY HUMAN: Using a stock photo or generating a person from scratch is a CATASTROPHIC FAILURE. There is EXACTLY ONE valid person: the sealed photo crop in the high-resolution references.",
+            "CRITICAL — TREAT PERSON LIKE A LOGO: You would never regenerate a logo from scratch — apply the same rule to the person. The person crop is a sacred, unalterable asset. Drop it in, do not redesign it.",
+            "CRITICAL — FACE INTEGRITY: The face in your output MUST match the provided reference on ALL of: skin tone, facial features, facial structure, expression, beard/hair, and eye shape. ANY deviation = FAILURE.",
+            "CRITICAL — NO INVENTED FURNITURE: Reference shows person against a plain background. DO NOT add desk, table, chair, or any object. Plain background in = plain background out.",
+            "CRITICAL — POSE IS LOCKED: Body pose, hand position, arm angle, and ALL gestures MUST match the reference exactly.",
+            "CRITICAL — PASTE DO NOT BLEND: Paste the person crop as a discrete, unaltered layer — against THE SAME background they already have. Do NOT blend the person against a new background.",
+            "CRITICAL — DO NOT INVENT ELEMENTS: Do NOT add advertising elements that do not appear in the source image's component list.",
+            "CRITICAL — SELF-VERIFICATION: Before output — (1) Face identical to photo reference? (2) No desk/table/chair? (3) Pose/gesture identical? (4) No invented elements? If ANY fails, redo.",
             "Output must be exactly 600×280 px.",
         ],
     ),
@@ -2847,17 +2850,18 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         ratio_str="1:2",
         orientation="portrait_moderate",
         layout_direction="vertical_flow",
-        arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
+        arrangement_order=["background", "logo", "photo", "text", "graphic"],
         element_max_height=0.45,
         element_guidance=(
-            "⚠ STOP. YOU ARE A MECHANICAL COMPOSITOR — NOT AN ARTIST. You do NOT draw, generate, design, or create ANYTHING from scratch. This is not a creative task. "
-            "You have pre-cut PNG component crops. Your ONLY job is to calculate (x, y, width, height) for each crop and paste it onto a 360×720 canvas. Nothing else. "
-            "Fill the 360×720 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background crop MUST extend to paint the full 720 px height seamlessly — use the background component only, do NOT generate new background. "
-            "Scale ALL components to fit within 360 px width while maintaining their aspect ratios — scale the PNG crop, do NOT redraw it. "
-            "FOR ADVERTISING IMAGES: Paste components top-to-bottom in this exact order: (1) background crop fills full canvas, (2) logo crop at top, (3) person crop at centre, (4) text crops below. "
-            "CRITICAL — EVERY COMPONENT IS A SEALED STICKER: The person crop, every text crop, and the logo crop are pixel-locked. Paste them exactly as given. Zero alteration. "
-            "FOR GENERIC IMAGES: Place background crop (full canvas), then subject crop at natural vertical position. Background extension only — absolutely no generation."
+            "SPATIAL LAYOUT FOR 360×720 — follow this stacking order exactly: "
+            "STEP 1 — Background: scale the background crop to fill the full 360×720 canvas edge-to-edge (extend to full 720 px height). "
+            "STEP 2 — Logo: place at top-center with 16 px top padding. "
+            "STEP 3 — Person: place below the logo, centered horizontally, scaled to fit within 360 px width while maintaining aspect ratio. "
+            "STEP 4 — Text crops: stack below the person, centered horizontally, with 12 px gaps between each text crop. "
+            "STEP 5 — CTA / graphic: at bottom-center with 16 px bottom padding. "
+            "FOR GENERIC IMAGES (no advertising text/logo): background fills full canvas → subject at natural vertical center → extend background only. "
+            "PORTRAIT TRAP: Source and target are both portrait — do NOT rescale the source image wholesale; place each component crop individually. "
+            "All elements centered horizontally. Elements must NOT be placed side by side."
         ),
         fill_direction="vertically",
         fill_description=(
@@ -2866,30 +2870,22 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         ),
         layout_rules=[
             "CRITICAL: Never change, redraw, or reimagine any original component.",
-            "CRITICAL: Human images must stay exactly as they are without any modifications.",
-            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose.",
             "CRITICAL: Every single component must appear exactly once — zero duplication.",
             "Only render components detected in the source image — skip any element type not present.",
-            "TOP-TO-BOTTOM paste order: background (full canvas) → logo → person → text → CTA.",
+            "TOP-TO-BOTTOM stacking: background (full canvas) → logo → person → text → CTA.",
             "ALL elements must remain within x: 0–360 px.",
-            "Center elements horizontally. 16 px vertical padding between stacked elements.",
-            "DO NOT place elements side by side.",
-            "DO NOT generate, draw, or invent any visual content — paste only.",
+            "Center all elements horizontally. 12–16 px vertical padding between stacked elements.",
+            "DO NOT place any elements side by side — this is a vertical-flow layout.",
         ],
         dimension_warnings=[
-            "CRITICAL — ZERO GENERATION POLICY: You are FORBIDDEN from generating, drawing, or creating ANY visual content. The output contains ONLY the provided component crops placed at (x,y) positions. If any pixel in the output was not in an input crop, it is WRONG.",
-            "CRITICAL — DO NOT REDESIGN: Do NOT create a new advertisement from scratch. The advertisement already exists as component crops. Assemble them at calculated positions only.",
-            "CRITICAL — IF OUTPUT LOOKS LIKE A NEW IMAGE: You have generated content. That is WRONG. Redo using ONLY the provided crops placed at positions.",
-            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
-            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
-            "CRITICAL: DO NOT duplicate any component to fill empty space.",
-            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy only.",
-            "CRITICAL — FACE INTEGRITY: Face MUST be identical to the provided photo crop. ANY deviation is a failure.",
-            "CRITICAL — NO POSE CHANGE: Pose and gestures MUST be identical to the reference crop.",
-            "CRITICAL — NO INVENTED FURNITURE: Do NOT add desk, table, chair, or any object not in the reference.",
-            "CRITICAL — PASTE DO NOT BLEND: Paste the human photo as a discrete crop — do NOT blend or redraw.",
-            "CRITICAL — BACKGROUND CONTEXT BANNED: Plain background in = plain background out.",
-            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Confirm (1) face pixel-identical to reference, (2) no furniture added, (3) pose unchanged, (4) no generated content. If any fails, restart.",
+            "CRITICAL — FACE IS A SEALED PIXEL CROP: The person photo in the high-resolution references is the ONLY valid source for the person. Paste it exactly — same face, skin tone, facial structure, expression, hair, and pose. ANY regeneration or blending of the face = CATASTROPHIC FAILURE.",
+            "CRITICAL — TREAT PERSON EXACTLY LIKE A LOGO: You would never redraw a logo from memory — apply the identical rule to the person. Drop the provided crop in at the calculated position. Do NOT draw, imagine, or synthesise a new person.",
+            "CRITICAL — TEXT IS A SEALED IMAGE CROP: Every text layer is a pre-rendered pixel-accurate PNG. Paste it exactly — same font, weight, style, letter-spacing, and colour. NEVER retype, redraw, or re-render any text in a different font or style. Scaling the crop is allowed; retyping is FORBIDDEN.",
+            "CRITICAL — PORTRAIT-TO-PORTRAIT TRAP: Source and target are both portrait. You MUST NOT regenerate or rescale the source image. Assemble the individual component crops at their calculated (x, y) positions.",
+            "CRITICAL — POSE AND GESTURES LOCKED: Every arm position, hand position, finger position, and body angle MUST be identical to the reference. Do NOT change whether the person is raising a hand, gesturing outward, holding a phone, or touching their face.",
+            "CRITICAL — PASTE AGAINST SAME BACKGROUND: Paste the person AGAINST THE SAME plain/white background visible in their reference crop. Do NOT place them against a new scene or environment.",
+            "CRITICAL — NO INVENTED FURNITURE: Do NOT add desk, table, chair, or any object not in the reference. Plain background in = plain background out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: (1) Face pixel-identical to reference? (2) Text fonts/styles unchanged? (3) No furniture added? (4) Pose/gesture unchanged? (5) Each component placed individually, not regenerated? If ANY fails, restart.",
             "DO NOT use a horizontal layout — this is a portrait format.",
             "Output must be exactly 360×720 px — NOT landscape.",
         ],

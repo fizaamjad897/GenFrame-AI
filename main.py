@@ -3501,9 +3501,10 @@ async def resize_image(
             # Routes directly to ooh_pipeline.ooh_resize() — no fallback providers.
             # The pipeline handles decomposition, isolation, recomposition, and
             # exact PIL resize internally. Output is returned as-is.
-            # Exception: 2072×252 is routed to banner_2072x252.py for recomposition.
+            # Exceptions: 2072×252 and ultra-wide QMS dims are routed to banner_2072x252.py.
+            _ULTRA_WIDE_BANNER_DIMS = {(2072, 252), (2640, 288)}
             if _is_ooh:
-                if tw == 2072 and th == 252:
+                if (tw, th) in _ULTRA_WIDE_BANNER_DIMS:
                     try:
                         import json as _json
                         from pathlib import Path as _Path
@@ -3568,14 +3569,14 @@ async def resize_image(
                             else:
                                 raise RuntimeError(f"Gemini Flash returned no image for {tw}×{th} adaptation")
                         else:
-                            if tw == 2072 and th == 252:
-                                print(f"[GLENN] 2072×252: {_n_comp} components ≥ 4, routing to banner_2072x252")
+                            if (tw, th) in _ULTRA_WIDE_BANNER_DIMS:
+                                print(f"[GLENN] {tw}×{th}: {_n_comp} components ≥ 4, routing to banner_2072x252")
                                 from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
                                 _orig_path = _cache_dir / "00_original.png"
                                 _ooh_result = await _banner_recompose(
                                     output_dir=_cache_dir,
-                                    target_w=2072,
-                                    target_h=252,
+                                    target_w=tw,
+                                    target_h=th,
                                     original_image_path=_orig_path,
                                     temperature=0.40,
                                 )
@@ -3583,9 +3584,9 @@ async def resize_image(
                                     image_data = _ooh_result
                                     provider_used = "banner_2072x252"
                                     _ooh_pipeline_succeeded = True
-                                    print(f"[GLENN] banner_2072x252 ✅: {src_w}x{src_h} → 2072×252")
+                                    print(f"[GLENN] banner_2072x252 ✅: {src_w}x{src_h} → {tw}×{th}")
                                 else:
-                                    raise RuntimeError("banner_2072x252 returned None")
+                                    raise RuntimeError(f"banner_2072x252 returned None for {tw}×{th}")
                             else:
                                 print(f"[GLENN] {tw}×{th}: {_n_comp} components ≥ 4, routing to ooh_pipeline")
                                 from ooh_pipeline import ooh_resize as _ooh_resize
@@ -4585,7 +4586,8 @@ async def custom_resize_image(
             file_bytes = await file.read()
             await file.seek(0)
 
-            if (width == 2072 and height == 252) or (width == 504 and height == 1008):
+            _CUSTOM_ULTRA_WIDE_DIMS = {(2072, 252), (2640, 288)}
+            if (width, height) in _CUSTOM_ULTRA_WIDE_DIMS or (width == 504 and height == 1008):
                 import json as _json
                 from pathlib import Path as _Path
                 from ooh_pipeline import ensure_cache_decomposed as _ensure_cache
@@ -4596,7 +4598,7 @@ async def custom_resize_image(
                 _components = _raw_comps["components"] if isinstance(_raw_comps, dict) else _raw_comps
                 _n_comp = len(_components)
                 if _n_comp < 4:
-                    _flash_ar = "8:1" if (width == 2072 and height == 252) else "9:16"
+                    _flash_ar = "8:1" if (width, height) in _CUSTOM_ULTRA_WIDE_DIMS else "9:16"
                     print(f"[CUSTOM-RESIZE] {width}×{height}: {_n_comp} components < 4, routing to build_image_adaptation_prompt + Gemini Flash ({_flash_ar})")
                     _pil_img = await run_blocking(Image.open, io.BytesIO(file_bytes))
                     _src_w, _src_h = _pil_img.size
@@ -4650,14 +4652,14 @@ async def custom_resize_image(
                     ooh_image_data = await run_blocking(safe_scale_to_exact, _flash_result, width, height, file_bytes)
                     print(f"[CUSTOM-RESIZE] image_adaptation ✅ ({_n_comp} components): {_src_w}x{_src_h} → {width}×{height}")
                 else:
-                    if width == 2072 and height == 252:
-                        print(f"[CUSTOM-RESIZE] 2072×252: {_n_comp} components ≥ 4, routing to banner_2072x252")
+                    if (width, height) in _CUSTOM_ULTRA_WIDE_DIMS:
+                        print(f"[CUSTOM-RESIZE] {width}×{height}: {_n_comp} components ≥ 4, routing to banner_2072x252")
                         from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
                         _orig_path = _cache_dir / "00_original.png"
                         ooh_image_data = await _banner_recompose(
                             output_dir=_cache_dir,
-                            target_w=2072,
-                            target_h=252,
+                            target_w=width,
+                            target_h=height,
                             original_image_path=_orig_path,
                             temperature=0.40,
                         )
