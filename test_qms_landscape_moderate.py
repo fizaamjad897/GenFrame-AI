@@ -1,7 +1,7 @@
 """
 test_qms_landscape_moderate.py — Test QMS pipeline for all Landscape Moderate dimensions
 
-Landscape Moderate = AR 1.0:1 – 2.5:1 (near-widescreen, near-square landscape banners)
+Landscape Moderate = AR 1.0:1 – 2.5:1 (includes 864×768 9:8 near-square)
 
 Usage:
     python test_qms_landscape_moderate.py --image /path/to/image.png
@@ -27,6 +27,7 @@ from ooh_pipeline import ooh_resize
 # ── Landscape Moderate Dimensions (AR 1.0:1 – 2.5:1) ─────────────────────────
 QMS_LANDSCAPE_MODERATE = {
     "QMS_1680X810":  (1680,  810),   # Moderate landscape banner (2.07:1)
+    "QMS_864X768":   (864,   768),   # Near-square landscape (9:8, ~1.13:1)
     "QMS_864X480":   (864,   480),   # Moderate landscape banner (1.8:1)
     "QMS_608X304":   (608,   304),   # Standard 2:1 banner       (2.0:1)
     "QMS_600X320":   (600,   320),   # Moderate banner           (1.875:1)
