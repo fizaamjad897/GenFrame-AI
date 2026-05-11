@@ -697,11 +697,23 @@ def get_admin_user(current_user = Depends(get_current_user)):
 
 
 def _can_use_custom_resize(current_user: dict, width: int, height: int) -> bool:
-    """Allow custom-resize only for explicitly allowed OOH resolutions."""
-    code = _ooh_code_from_dims(width, height)
-    if not code:
+    """Allow custom-resize only for explicitly allowed transformation resolutions."""
+    codes = {
+        code
+        for code, dims in OOH_MEDIA_SITE_DIMENSIONS.items()
+        if dims == (width, height)
+    }
+    codes.update(
+        {
+            code
+            for code, dims in FMCTV_SUPPORTED_SITE_DIMENSIONS.items()
+            if dims == (width, height)
+        }
+    )
+    if not codes:
         return False
-    return code in _normalize_allowed_ooh_list(current_user)
+    allowed = _normalize_allowed_transform_list(current_user)
+    return bool(codes & allowed)
 
 # Initialize Gemini Client (lazy init or global if key is present)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -1711,7 +1723,59 @@ GEMINI_NATIVE_RESOLUTIONS: Dict[str, Tuple[int, int]] = {
 # FMCTV SITE DIMENSIONS (95 production sites)
 # ═══════════════════════════════════════════════════════════════════════════
 
+FMCTV_SUPPORTED_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
+    "AK8100": (1200, 400), "AK8140": (1440, 480), "AK8150": (864, 288),
+    "AK8160": (864, 288),  "AK8170": (864, 288),  "AK8180": (1440, 360),
+    "AK8190": (864, 288),  "AK8220": (1472, 480), "AK8230": (1152, 288),
+    "AK8240": (1824, 432), "AK8270": (1728, 576), "AK8340": (864, 480),
+    "AK8350": (1152, 640), "AK8370": (1296, 432), "AK8420": (864, 720),
+    "AK8440": (1184, 384), "AK8470": (864, 288),  "AK8500": (1152, 384),
+    "AK9110": (360, 720),  "AK9120": (360, 720),  "AK9130": (432, 864),
+    "AK9200": (684, 1368), "AK9300": (576, 1152), "AK9500": (480, 960),
+    "AK9600": (504, 1008), "AK9800": (384, 768),  "AK9900": (288, 768),
+    "AK9000": (576, 1080), "AK9100": (704, 1408),
+    "AK8600": (648, 216),  "AK8700": (864, 288),  "AK8800": (945, 315),
+    "AK8900": (768, 384),
+    "BR8100": (432, 768),
+    "NK8100": (1280, 448),
+    "BN8100": (864, 288),
+    "CH8100": (1200, 400), "CH8310": (768, 384),  "CH8320": (768, 384),
+    "CH8330": (720, 360),  "CH8340": (608, 304),  "CH8360": (768, 384),
+    "CH8370": (768, 384),  "CH8380": (768, 384),  "CH8390": (768, 384),
+    "CH8400": (1152, 576), "CH8410": (600, 280),  "CH8420": (600, 280),
+    "CH8430": (1728, 432), "CH8440": (1728, 432), "CH8500": (1152, 384),
+    "CH9100": (384, 768),  "CH9200": (480, 960),
+    "GB9100": (384, 768),
+    "GM8100": (864, 288),
+    "HM8100": (1188, 396), "HM8200": (768, 288),  "HM8300": (864, 288),
+    "HM8400": (1152, 384), "HM8500": (1152, 384),
+    "HQ1": (1080, 1920),
+    "HS8100": (576, 288),  "HS8200": (1152, 288), "HS8300": (576, 288),
+    "NP8100": (864, 288),
+    "PN8100": (760, 240),
+    "RT8100": (600, 320),
+    "TI8100": (736, 256),  "TI8200": (864, 288),
+    "TR8100": (864, 288),  "TR8200": (864, 288),  "TR8300": (864, 288),
+    "WH8100": (816, 288),
+    "WE8100": (1472, 480), "WN8100": (1152, 384), "WN8200": (2640, 288),
+    "WN8300": (1120, 320), "WN8400": (1152, 288), "WN8600": (864, 288),
+    "WN8900": (768, 384),  "WN9100": (504, 1152), "WN9110": (384, 768),
+    "WN9120": (432, 1008), "WN9130": (648, 1296), "WN9400": (352, 704),
+    "WN9700": (432, 864),  "WN9800": (224, 832),  "WN9900": (396, 792),
+    "WI8000": (4530, 990), "WI8300": (1680, 810), "WI8400": (990, 1620),
+    "WIAL_CAROUSEL": (3840, 2160),
+    "STREET_FURNITURE_ASSETS": (2160, 3840),
+    "URBAN_NETWORK": (1080, 1920),
+    "SKY_PACK": (1080, 1920),
+    "SKY_PACK_WIAL": (1080, 1920),
+}
 
+FMCTV_SITE_ALIASES: Dict[str, str] = {
+    "WIAL CAROUSEL": "WIAL_CAROUSEL",
+    "CAROUSEL": "WIAL_CAROUSEL",
+    "STREET FURNITURE": "STREET_FURNITURE_ASSETS",
+    "STREET FURNITURE ASSETS": "STREET_FURNITURE_ASSETS",
+}
 
 OOH_MEDIA_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
     "OOH_1060X360":  (1060, 360),
@@ -1793,6 +1857,11 @@ OOH_MEDIA_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
     "QMS_352X704":   (352,   704),
 }
 
+ALL_TRANSFORMATION_RESOLUTION_CODES: set[str] = (
+    set(OOH_MEDIA_SITE_DIMENSIONS.keys())
+    | set(FMCTV_SUPPORTED_SITE_DIMENSIONS.keys())
+)
+
 CREATION_ALLOWED_ASPECT_RATIOS = {
     "16:9",
     "9:16",
@@ -1810,15 +1879,15 @@ CREATION_ALLOWED_PRESET_NAMES = {
 }
 
 
-def _normalize_allowed_ooh_list(current_user: dict) -> set[str]:
+def _normalize_allowed_transform_list(current_user: dict) -> set[str]:
     if not isinstance(current_user, dict):
         return set()
     org_context = current_user.get("org_context") or current_user.get("_org_context") or {}
     
-    # Bypass for AppOwner and SuperOrg - they get everything
+    # AppOwner gets full access; all other org types are restricted by allowed list.
     org_type = org_context.get("org_type") or org_context.get("org_type_name")
-    if org_type in ["AppOwner", "SuperOrg"]:
-        return set(OOH_MEDIA_SITE_DIMENSIONS.keys())
+    if org_type == "AppOwner":
+        return set(ALL_TRANSFORMATION_RESOLUTION_CODES)
 
     allowed = (
         org_context.get("allowed_transformation_resolutions")
@@ -1839,6 +1908,27 @@ def _is_creation_allowed_ratio(aspect_ratio: str) -> bool:
     return ratio.lower() in CREATION_ALLOWED_PRESET_NAMES
 
 
+def _normalize_ooh_code(aspect_ratio: str) -> str | None:
+    code = (aspect_ratio or "").strip().upper()
+    if code in OOH_MEDIA_SITE_DIMENSIONS:
+        return code
+    return None
+
+
+def _normalize_fmctv_code(aspect_ratio: str) -> str | None:
+    code = (aspect_ratio or "").strip().upper()
+    if code in FMCTV_SUPPORTED_SITE_DIMENSIONS:
+        return code
+    alias_target = FMCTV_SITE_ALIASES.get(code)
+    if alias_target and alias_target in FMCTV_SUPPORTED_SITE_DIMENSIONS:
+        return alias_target
+    return None
+
+
+def _normalize_transform_code(aspect_ratio: str) -> str | None:
+    return _normalize_ooh_code(aspect_ratio) or _normalize_fmctv_code(aspect_ratio)
+
+
 def _ooh_code_from_dims(width: int, height: int) -> str | None:
     for code, dims in OOH_MEDIA_SITE_DIMENSIONS.items():
         if dims == (width, height):
@@ -1847,12 +1937,22 @@ def _ooh_code_from_dims(width: int, height: int) -> str | None:
 
 
 def _is_ooh_aspect_ratio(aspect_ratio: str) -> bool:
-    return (aspect_ratio or "").strip().upper() in OOH_MEDIA_SITE_DIMENSIONS
+    return _normalize_ooh_code(aspect_ratio) is not None
+
+
+def _is_fmctv_aspect_ratio(aspect_ratio: str) -> bool:
+    return _normalize_fmctv_code(aspect_ratio) is not None
 
 
 def _is_ooh_allowed_for_user(current_user: dict, aspect_ratio: str) -> bool:
-    code = (aspect_ratio or "").strip().upper()
-    return code in _normalize_allowed_ooh_list(current_user)
+    return _is_transform_resolution_allowed(current_user, aspect_ratio)
+
+
+def _is_transform_resolution_allowed(current_user: dict, aspect_ratio: str) -> bool:
+    code = _normalize_transform_code(aspect_ratio)
+    if not code:
+        return False
+    return code in _normalize_allowed_transform_list(current_user)
 
 
 def _is_ooh_dimension(tw: int, th: int) -> bool:
@@ -1921,9 +2021,30 @@ def validate_aspect_ratio(aspect_ratio: str) -> Tuple[str, Optional[Tuple[int, i
     Supports: FMCTV site codes, direct Gemini ratios, named presets,
               pWxH format, W:H pixel dims, WxH pixel dims.
     """
-    # OOH site-code pass-through
+    # FMCTV / QMC site-code pass-through
     site_code = (aspect_ratio or "").strip().upper()
+    fmctv_code = site_code
+    if fmctv_code not in FMCTV_SUPPORTED_SITE_DIMENSIONS:
+        fmctv_code = FMCTV_SITE_ALIASES.get(site_code)
 
+    if fmctv_code and fmctv_code in FMCTV_SUPPORTED_SITE_DIMENSIONS:
+        width, height = FMCTV_SUPPORTED_SITE_DIMENSIONS[fmctv_code]
+        actual_ratio = width / height
+
+        if actual_ratio > 2.5:
+            closest_ratio, closest_val = "21:9", 21 / 9
+            print(
+                f"[FMCTV] Site {fmctv_code} -> {width}x{height} (Gemini {closest_ratio} FORCED for ratio {actual_ratio:.2f})"
+            )
+        else:
+            closest_ratio, closest_val = _find_closest_gemini_ratio(actual_ratio)
+            print(
+                f"[FMCTV] Site {fmctv_code} -> {width}x{height} (Gemini {closest_ratio})"
+            )
+
+        return closest_ratio, (width, height), closest_val
+
+    # OOH site-code pass-through
     if site_code in OOH_MEDIA_SITE_DIMENSIONS:
         width, height = OOH_MEDIA_SITE_DIMENSIONS[site_code]
         actual_ratio = width / height
@@ -3424,11 +3545,11 @@ async def resize_image(
                 status_code=403,
                 detail="Creation engine only supports standard presets.",
             )
-    elif _is_ooh_aspect_ratio(aspect_ratio_clean):
-        if not _is_ooh_allowed_for_user(current_user, aspect_ratio_clean):
+    elif _is_ooh_aspect_ratio(aspect_ratio_clean) or _is_fmctv_aspect_ratio(aspect_ratio_clean):
+        if not _is_transform_resolution_allowed(current_user, aspect_ratio_clean):
             raise HTTPException(
                 status_code=403,
-                detail="OOH resolution is not enabled for this organization.",
+                detail="Resolution is not enabled for this organization.",
             )
 
     # Legacy Glenn interception (kept as commented reference; do not remove):
@@ -4568,7 +4689,7 @@ async def custom_resize_image(
     if not _can_use_custom_resize(current_user, width, height):
         raise HTTPException(
             status_code=403,
-            detail="OOH resolution is not enabled for this organization.",
+            detail="Resolution is not enabled for this organization.",
         )
 
     requested_ratio = f"{width}:{height}"
