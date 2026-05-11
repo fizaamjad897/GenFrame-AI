@@ -8,17 +8,42 @@ Tests:
 4. Show timing + cache hit/miss stats
 """
 
+import argparse
 import asyncio
+import os
 import sys
 import time
 from pathlib import Path
 from PIL import Image
 import io
 
-# Add parent to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+_REPO_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(_REPO_ROOT))
 
-from ooh_pipeline import ooh_resize
+# Load .env before ooh_pipeline — that module reads GLENN_GOOGLE_API_KEY* /
+# GOOGLE_AI_STUDIO_KEY from os.environ at import time and injects the first hit.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(_REPO_ROOT / ".env")
+    load_dotenv()
+except ImportError:
+    pass
+
+from ooh_pipeline import ensure_cache_decomposed, ooh_resize
+
+
+def _gemini_key_configured() -> bool:
+    if os.getenv("GOOGLE_AI_STUDIO_KEY", "").strip().strip("'\""):
+        return True
+    for var in (
+        "GLENN_GOOGLE_API_KEY",
+        "GLENN_GOOGLE_API_KEY_2",
+        "GLENN_GOOGLE_API_KEY_3",
+    ):
+        if os.getenv(var, "").strip().strip("'\""):
+            return True
+    return False
 
 # ── OOH Media Dimensions ──────────────────────────────────────────────────────
 OOH_DIMENSIONS = {
@@ -82,7 +107,29 @@ async def test_single_dimension(
     """Test resizing to a single dimension and measure time."""
     start = time.time()
     try:
-        result = await ooh_resize(image_bytes, width, height)
+        # Production routes 2072×252 through banner_2072x252 (ooh_resize returns None).
+        if width == 2072 and height == 252:
+            cache_dir = await ensure_cache_decomposed(image_bytes)
+            if not cache_dir:
+                return {
+                    "name": name,
+                    "dims": f"{width}×{height}",
+                    "status": "❌ FAILED",
+                    "time": f"{time.time() - start:.2f}s",
+                    "error": "ensure_cache_decomposed returned None",
+                }
+            from banner_2072x252 import recompose_with_gemini_vision
+
+            _orig = cache_dir / "00_original.png"
+            result = await recompose_with_gemini_vision(
+                output_dir=cache_dir,
+                target_w=width,
+                target_h=height,
+                original_image_path=_orig,
+                temperature=0.40,
+            )
+        else:
+            result = await ooh_resize(image_bytes, width, height)
         elapsed = time.time() - start
         
         if result:
@@ -116,19 +163,45 @@ async def test_single_dimension(
 
 
 async def main():
+    parser = argparse.ArgumentParser(description="Run OOH pipeline for all registered OOH dimensions.")
+    parser.add_argument(
+        "--image",
+        type=str,
+        default=None,
+        help="Path to a JPEG/PNG; default is a synthetic 1200×800 test pattern.",
+    )
+    args = parser.parse_args()
+
     print("=" * 80)
     print("OOH Pipeline — All Dimensions Test + Cache Verification")
     print("=" * 80)
+
+    if not _gemini_key_configured():
+        print(
+            "\n❌ No Google AI Studio API key found.\n"
+            "   Put GOOGLE_AI_STUDIO_KEY or GLENN_GOOGLE_API_KEY in `.env` at the repo root, "
+            "or export it in your shell, then re-run.\n"
+        )
+        sys.exit(1)
     
     # Create output directory
-    output_dir = Path(__file__).parent / "ooh_test_outputs"
+    output_dir = _REPO_ROOT / "ooh_test_outputs"
     output_dir.mkdir(exist_ok=True)
     print(f"\n📁 Output directory: {output_dir}")
     
-    # Create test image (1200×800, has multiple colored regions = multiple components)
-    print("\n📷 Creating test image (1200×800)...")
-    image_bytes = create_test_image(1200, 800)
-    print(f"   Image size: {len(image_bytes) / 1024:.1f}KB")
+    if args.image:
+        img_path = Path(args.image).expanduser().resolve()
+        if not img_path.is_file():
+            print(f"\n❌ --image path not found: {img_path}")
+            sys.exit(1)
+        image_bytes = img_path.read_bytes()
+        with Image.open(io.BytesIO(image_bytes)) as im:
+            w, h = im.size
+        print(f"\n📷 Loaded image: {img_path.name} ({w}×{h}, {len(image_bytes) / 1024:.1f}KB)")
+    else:
+        print("\n📷 Creating test image (1200×800)...")
+        image_bytes = create_test_image(1200, 800)
+        print(f"   Image size: {len(image_bytes) / 1024:.1f}KB")
     
     # Test all dimensions
     print(f"\n⏳ Testing {len(OOH_DIMENSIONS)} OOH dimensions...")
@@ -177,7 +250,7 @@ async def main():
         print(f"   • {r['name']:20s} ({r['dims']:15s}): {r['time']:>8s}  {r['size']:>10s}")
     
     # Cache info
-    cache_root = Path(__file__).parent / "ooh_decomposition_cache"
+    cache_root = _REPO_ROOT / "ooh_decomposition_cache"
     if cache_root.exists():
         cache_entries = list(cache_root.glob("*"))
         print(f"\n💾 Cache Directory: {cache_root}")

@@ -140,8 +140,8 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
             "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). "
             "Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
-            "FOR ADVERTISING IMAGES: Utilise the large 4.2:1 width by positioning the photo/hero as a visual anchor and distributing text elements "
-            "(headlines, body, CTA) intelligently across the remaining clear space. Do NOT cluster elements in the middle. "
+            "FOR ADVERTISING IMAGES: Utilise the large 4.2:1 width by positioning the photo/hero as a visual anchor. "
+            "CRITICAL: Treat all provided text elements (headlines, body, CTA) as flat, immutable image assets. Distribute these original assets intelligently across the remaining clear space. Do NOT cluster elements in the middle. "
             "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged."
         ),
         fill_direction="horizontally",
@@ -154,6 +154,7 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL: Never change, redraw, or reimagine any original component.",
             "CRITICAL: Human images must stay exactly as they are without any modifications.",
             "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
+            "CRITICAL: TYPOGRAPHY PRESERVATION — Treat all text components as static image layers. ZERO tolerance for altering typography, font style, kerning, weight, or color. Do NOT re-render or re-type.",
             "CRITICAL: Every single component must appear exactly once — zero duplication.",
             "Only render components detected in the source image — skip any element type not present.",
             "LAYOUT FOR GENERIC IMAGES (No text/logos): Position the main subject organically within the frame. Extend the background/environment seamlessly to fill the 1824x432 canvas without stretching the subject or creating visible seams.",
@@ -165,6 +166,7 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         dimension_warnings=[
             "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
             "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
+            "CRITICAL: DO NOT regenerate text. NO font changes. Text MUST remain a 1:1 pixel-perfect copy of the original typography.",
             "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
             "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
             "CRITICAL — PERSON IS A STICKER NOT A DRAWING: Never generate, render, or composite the person into a new scene. Paste the EXACT provided crop unchanged.",
@@ -174,7 +176,7 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
             "CRITICAL — BACKGROUND CONTEXT BANNED: If the person's reference crop shows them against a plain/white/clean background, that plain background MUST stay plain in the output. You are FORBIDDEN from drawing an office, room, studio, desk scene, or any environmental context around the person. Plain in = plain out.",
             "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Before finalising, confirm: (1) The person's face is pixel-identical to the reference crop. (2) No desk, chair, table, or furniture was added. (3) The person's pose has not changed. If any check fails, your output is wrong — restart.",
             "DO NOT stretch primary subjects to fill the large 4.2:1 width; only extend the background/environment.",
-            "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
+            "DO NOT invent, re-type, or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
             "DO NOT cluster content in the centre — spread organically across the full 1824 px width.",
             "DO NOT break the image flow: ensure the transition between the main subject and the extended background is completely seamless.",
             "Output must be exactly 1824×432 px — not square, not portrait.",
