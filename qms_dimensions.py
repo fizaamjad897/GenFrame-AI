@@ -1908,6 +1908,58 @@ QMS_PROFILES: dict[tuple[int, int], DimProfile] = {
         ],
     ),
 
+    # ── 864 × 768 ── AR 1.125:1  NEAR-SQUARE LANDSCAPE (9:8) ─────────────────
+    (864, 768): DimProfile(
+        label="Near-square landscape banner (864×768)",
+        canvas_description=(
+            "a near-square landscape canvas (864×768 px, ~1.13:1 / 9:8 ratio). "
+            "Slightly wider than tall — balanced room for hero, text, and logo without extreme letterboxing."
+        ),
+        ratio_str="1.13:1",
+        orientation="landscape_moderate",
+        layout_direction="horizontal_flow",
+        arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
+        element_max_height=0.90,
+        element_guidance=(
+            "Fill the 864×768 pixel space completely, edge-to-edge. "
+            "CRITICAL: The background or scene MUST paint the full canvas seamlessly. "
+            "FOR ADVERTISING IMAGES: Treat the person photo as a SEALED PNG STICKER — paste the exact crop; do not redraw. "
+            "Use a balanced split or centered layout — hero on one side, text hierarchy and logo on the other. "
+            "⚠ RATIO TRAP: 9:8 can look close to a square or portrait crop — still place each component individually; "
+            "do not rescale the whole source as one flat image. "
+            "FOR GENERIC IMAGES: Subject + seamless background extension only."
+        ),
+        fill_direction="horizontally and vertically",
+        fill_description=(
+            "Extend background horizontally or vertically into gaps as needed. "
+            "Strictly NO duplication of people, products, or logos."
+        ),
+        layout_rules=[
+            "CRITICAL: Never change, redraw, or reimagine any original component.",
+            "CRITICAL: Human images must stay exactly as they are without any modifications.",
+            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose.",
+            "CRITICAL: Every single component must appear exactly once — zero duplication.",
+            "Only render components detected in the source image — skip any element type not present.",
+            "LAYOUT FOR ADVERTISING IMAGES: Balanced split or centered composition within 864×768.",
+            "ALL elements must maintain their original aspect ratios.",
+            "ALL elements must remain within x: 0–864, y: 0–768 px.",
+            "Minimum 18 px padding between elements and canvas edges.",
+        ],
+        dimension_warnings=[
+            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
+            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
+            "CRITICAL: DO NOT duplicate any component to fill empty space.",
+            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy only.",
+            "CRITICAL — FACE INTEGRITY: Face MUST be identical to the provided photo crop. ANY deviation is a failure.",
+            "CRITICAL — NO POSE CHANGE: Pose and gestures MUST be identical to the reference crop.",
+            "CRITICAL — NO INVENTED FURNITURE: Do NOT add desk, table, chair, or any object not in the reference.",
+            "CRITICAL — PASTE DO NOT BLEND: Paste the human photo as a discrete crop — do NOT blend or redraw.",
+            "CRITICAL — BACKGROUND CONTEXT BANNED: Plain background in = plain background out.",
+            "CRITICAL — SELF-VERIFICATION BEFORE OUTPUT: Confirm face identical, no furniture, pose unchanged.",
+            "Output must be exactly 864×768 px.",
+        ],
+    ),
+
     # ── 864 × 480 ── AR 1.8:1  MODERATE LANDSCAPE BANNER ────────────────────
     (864, 480): DimProfile(
         label="Moderate landscape banner (864×480)",
