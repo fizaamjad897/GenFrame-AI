@@ -1,5 +1,5 @@
 """
-test_qms_batch2.py — Run all 16 batch-2 QMS dimensions in one go
+test_qms_batch2.py — Run all batch-2 QMS dimensions (+864×768) in one go
 
 Covers all three groups (landscape wide, landscape moderate, portrait moderate).
 
@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from ooh_pipeline import ooh_resize
 
-# ── All 16 batch-2 test dimensions ────────────────────────────────────────────
+# ── Batch-2 test dimensions (+ QMS_864X768) ───────────────────────────────────
 QMS_BATCH2 = {
     # ── Landscape Wide (AR >= 2.5:1) ──────────────────────────────────────────
     "QMS_4530X990":  (4530,  990),   # Super wide billboard      (4.58:1)  mirrors OOH 3924×972
@@ -36,6 +36,7 @@ QMS_BATCH2 = {
     "QMS_736X256":   (736,   256),   # Wide strip                (2.875:1) direct neighbour of QMS 760×240
     # ── Landscape Moderate (AR 1.0:1 – 2.5:1) ────────────────────────────────
     "QMS_1680X810":  (1680,  810),   # Moderate landscape banner (2.07:1)  mirrors OOH 1952×896
+    "QMS_864X768":   (864,   768),   # Near-square landscape (9:8, ~1.13:1)
     "QMS_864X480":   (864,   480),   # Moderate landscape banner (1.8:1)   mirrors OOH 1232×672
     "QMS_608X304":   (608,   304),   # Standard 2:1 banner       (2.0:1)   mirror of OOH 800×400
     "QMS_600X320":   (600,   320),   # Moderate banner           (1.875:1) proven 2:1 template
@@ -50,7 +51,7 @@ QMS_BATCH2 = {
 GROUPS = {
     "Landscape Wide":     ["QMS_4530X990", "QMS_1728X576", "QMS_1280X448", "QMS_1152X288",
                            "QMS_816X288", "QMS_768X288", "QMS_736X256"],
-    "Landscape Moderate": ["QMS_1680X810", "QMS_864X480", "QMS_608X304", "QMS_600X320", "QMS_600X280"],
+    "Landscape Moderate": ["QMS_1680X810", "QMS_864X768", "QMS_864X480", "QMS_608X304", "QMS_600X320", "QMS_600X280"],
     "Portrait Moderate":  ["QMS_648X1296", "QMS_480X960", "QMS_432X768", "QMS_360X720"],
 }
 
@@ -86,7 +87,7 @@ async def test_single_dimension(
 
 
 async def main():
-    parser = argparse.ArgumentParser(description="Test QMS batch-2 — all 16 dimensions")
+    parser = argparse.ArgumentParser(description="Test QMS batch-2 — all batch-2 + 864×768 dimensions")
     parser.add_argument("--image", required=True, help="Local path or URL to the source image")
     parser.add_argument("--output-dir", default=None,
                         help="Output directory (default: qms_test_outputs/batch2)")
@@ -96,7 +97,7 @@ async def main():
 
     print("=" * 80)
     print(f"QMS Pipeline — Batch-2 All Dimensions ({total} formats)")
-    print("  7 × Landscape Wide  |  5 × Landscape Moderate  |  4 × Portrait Moderate")
+    print("  7 × Landscape Wide  |  6 × Landscape Moderate  |  4 × Portrait Moderate")
     print("=" * 80)
 
     output_dir = Path(args.output_dir) if args.output_dir else (
