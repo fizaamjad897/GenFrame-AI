@@ -927,40 +927,64 @@ async def recompose_with_gemini_vision(
             except Exception as e:
                 logger.warning(f"Could not read layer {i} for extra parts: {e}")
 
-    # Build component list for prompt
+    # Build component list for prompt.
+    # IMPORTANT: do NOT include raw text_content strings for text components.
+    # Leaking the text string causes Gemini to re-render it with its own font
+    # instead of pasting the sealed image crop that was provided.
     comp_lines = []
     for i, c in enumerate(components):
         ctype = c.get("type", "?")
-        text = f', text="{c["text_content"]}"' if c.get("text_content") else ""
-        comp_lines.append(f"  [{i}] {ctype}{text}: {c.get('description', '')[:80]}")
+        if c.get("type") == "text":
+            comp_lines.append(f"  [{i}] TEXT [SEALED IMAGE CROP — paste as-is, NO retyping]: {c.get('description', '')[:80]}")
+        else:
+            comp_lines.append(f"  [{i}] {ctype}: {c.get('description', '')[:80]}")
+
+    # ── Image numbering MUST match the actual API order ──────────────────────
+    # gemini_edit_image assembles:
+    #   parts[0] = image_bytes (sheet)           → IMAGE 1 (always)
+    #   parts[1] = original_image_bytes          → IMAGE 2 (if provided)
+    #   parts[2+]= extra_image_parts             → IMAGE 3+ (or 2+ if no original)
+    has_original = bool(original_image_path and Path(original_image_path).exists())
+    extras_start_idx = 3 if has_original else 2
 
     original_context = ""
-    if original_image_path and Path(original_image_path).exists():
+    if has_original:
         original_context = (
-            "IMAGE 1 (original vertical ad): Use this ONLY to understand the overall "
-            "visual style, color palette, and brand identity — do NOT copy its layout.\n"
+            "IMAGE 2 (original vertical ad — style reference ONLY): Use this ONLY to understand the "
+            "overall visual style, color palette, and brand identity — DO NOT copy its layout or dimensions.\n"
         )
 
     extra_context = ""
     if extra_image_parts:
         has_text_refs = "text" in extra_image_types
+        per_image_lines = []
+        for j, etype in enumerate(extra_image_types):
+            img_num = extras_start_idx + j
+            if etype == "text":
+                per_image_lines.append(
+                    f"  IMAGE {img_num} — TEXT SEALED CROP: "
+                    f"Paste pixel-for-pixel. Font/style baked in. DO NOT retype."
+                )
+            else:
+                per_image_lines.append(
+                    f"  IMAGE {img_num} — {etype.upper()} reference: "
+                    f"Copy with 100% fidelity."
+                )
+        last_idx = extras_start_idx + len(extra_image_parts) - 1
         text_note = (
-            " TEXT LAYERS ARE INCLUDED — do NOT redraw or retype text. "
-            "Copy the text image crops pixel-for-pixel including their exact font, "
-            "italic/condensed/oblique style, weight, size, and letter-spacing."
+            " ⚠ TEXT CROPS: Each text image is a sealed photograph of the original text — "
+            "paste it, never retype or re-render it."
             if has_text_refs else ""
         )
         extra_context = (
-            f"IMAGES 2–{1 + len(extra_image_parts)} (full-resolution component references): "
-            "These are the exact pixel-accurate versions of the key visual components "
-            f"(photos, images, logos, and text).{text_note} "
-            "You MUST copy them with 100% fidelity — same face, same colors, same details. "
-            "Do not redraw or reimagine them.\n"
+            f"IMAGES {extras_start_idx}–{last_idx} (full-resolution component references):{text_note}\n"
+            + "\n".join(per_image_lines) + "\n"
         )
 
     prompt = f"""You are a professional advertising layout artist. Your job is POSITIONING and SCALING only — not drawing.
 
-{original_context}{extra_context}LAST IMAGE: Reference grid showing ALL isolated components from the advertisement.
+IMAGE 1 (component reference grid): Shows ALL isolated components as indexed thumbnails. Use this to understand the full set of elements.
+{original_context}{extra_context}
 
 COMPONENTS (use every single one):
 {chr(10).join(comp_lines)}
