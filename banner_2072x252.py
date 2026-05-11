@@ -1053,7 +1053,10 @@ Output ONLY the final {target_w}×{target_h} banner. Nothing else."""
     try:
         result_img = Image.open(io.BytesIO(result_bytes)).convert("RGB")
         if result_img.size != (target_w, target_h):
-            logger.info(f"Resizing Gemini output {result_img.size} → {target_w}×{target_h}")
+            logger.info(
+                f"Normalizing size: Gemini returned {result_img.size[0]}×{result_img.size[1]} "
+                f"(expected {target_w}×{target_h}) — LANCZOS resize to exact target"
+            )
             result_img = result_img.resize((target_w, target_h), Image.LANCZOS)
         out_buf = io.BytesIO()
         result_img.save(out_buf, format="PNG")

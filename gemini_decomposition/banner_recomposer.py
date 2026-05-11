@@ -52,9 +52,21 @@ except ImportError:
     _qms_get_profile = None
     QMS_PROFILES = {}
 
+try:
+    from standard_dimensions import get_profile as _std_get_profile, STANDARD_PIPELINE_TARGETS
+    _STD_AVAILABLE = True
+except ImportError:
+    _STD_AVAILABLE = False
+    _std_get_profile = None
+    STANDARD_PIPELINE_TARGETS = frozenset()
+
 
 def get_profile(target_w: int, target_h: int):
-    """Return the DimProfile for the given dimensions, checking QMS profiles first."""
+    """Return the DimProfile: standard API targets first, then QMS, then OOH/fallback."""
+    if _STD_AVAILABLE and (target_w, target_h) in STANDARD_PIPELINE_TARGETS:
+        _p = _std_get_profile(target_w, target_h)
+        if _p is not None:
+            return _p
     if _QMS_AVAILABLE and (target_w, target_h) in QMS_PROFILES:
         return _qms_get_profile(target_w, target_h)
     return _ooh_get_profile(target_w, target_h)

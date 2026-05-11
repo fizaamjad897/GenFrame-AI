@@ -1674,6 +1674,7 @@ async def generate_bill(current_user = Depends(get_current_user)):
 # ─── AI Content-Aware Resize Utilities ───────────────────────────────────────
 
 from PIL import ImageEnhance, ImageFilter
+from standard_dimensions import is_standard_pipeline_target
 
 # Gemini only supports a fixed set of aspect ratios.  Any custom dimension
 # must be mapped to the closest supported ratio before calling the API.
@@ -3501,6 +3502,7 @@ async def resize_image(
             is_wide_landscape = tw > th * 1.5
             is_extreme_portrait = th > tw * 1.5
             _is_ooh = _is_ooh_dimension(tw, th)
+            _uses_decomp_pipeline = _is_ooh or is_standard_pipeline_target(tw, th)
             _tgt_ar_val = tw / th
 
             # Log all key counters at start of each request
@@ -3515,14 +3517,14 @@ async def resize_image(
             # for any AR mismatch edge-case, could distort the image a second time.
             _ooh_pipeline_succeeded = False
 
-            # ── OOH dims: full gemini_decomposition pipeline ─────────────────
+            # ── OOH + standard preset dims: full gemini_decomposition pipeline ─
             # Routes directly to ooh_pipeline.ooh_resize() — no fallback providers.
             # The pipeline handles decomposition, isolation, recomposition, and
             # exact PIL resize internally. Output is returned as-is.
             # Exceptions: 2072×252 and ultra-wide QMS dims are routed to banner_2072x252.py.
             _ULTRA_WIDE_BANNER_DIMS = {(2072, 252), (2640, 288)}
-            if _is_ooh:
-                if (tw, th) in _ULTRA_WIDE_BANNER_DIMS:
+            if _uses_decomp_pipeline:
+                if _is_ooh and (tw, th) in _ULTRA_WIDE_BANNER_DIMS:
                     try:
                         import json as _json
                         from pathlib import Path as _Path
@@ -3646,8 +3648,8 @@ async def resize_image(
                         print(f"[GLENN] OOH pipeline failed: {_ooh_err}")
                         raise HTTPException(status_code=500, detail=f"OOH pipeline failed: {_ooh_err}")
 
-            # Non-OOH requests keep the existing Glenn prompt/provider flow.
-            if not _is_ooh:
+            # Non-pipeline targets keep the existing Glenn prompt/provider flow.
+            if not _uses_decomp_pipeline:
                 if gemini_aspect_ratio == "8:1":
                     resize_prompt = build_flash_extreme_wide_prompt(
                         user_prompt=prompt if has_custom_prompt else "",
