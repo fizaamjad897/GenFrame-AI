@@ -804,7 +804,7 @@ if not GLENN_GOOGLE_KEY_1 and not GLENN_GOOGLE_KEY_2 and not GLENN_GOOGLE_KEY_3 
     print("Warning: No Glenn API keys set in .env")
 
 # ── Glenn key request counters (250 requests / 24h per key) ──────────────
-GLENN_KEY_LIMIT = 250
+GLENN_KEY_LIMIT = 25000
 
 # Map key labels → (client object, api_key string)
 _glenn_keys_map = {
