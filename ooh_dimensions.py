@@ -75,8 +75,8 @@ OOH_PROFILES: dict[tuple[int, int], DimProfile] = {
    (792, 216): DimProfile(
         label="Thin wide strip (792×216)",
         canvas_description=(
-            "a thin, wide horizontal strip banner (792×216 px, ~3.7:1 ratio). "
-            "Extremely limited vertical space, requiring a natural, unbroken horizontal visual flow."
+            "a very short wide strip (792×216 px, ~3.7:1): only 216 px tall — "
+            "one horizontal band of content; widen by extending background only."
         ),
         ratio_str="3.7:1",
         orientation="landscape_extreme",
@@ -84,40 +84,27 @@ OOH_PROFILES: dict[tuple[int, int], DimProfile] = {
         arrangement_order=["background", "scene", "subject", "photo", "graphic", "text"],
         element_max_height=0.95,
         element_guidance=(
-            "Fill the 792×216 pixel space completely, edge-to-edge. "
-            "CRITICAL: The background or scene environment MUST paint the outer edges of the canvas seamlessly. "
-            "FOR GENERIC/NORMAL IMAGES: Place the main subject/scene organically (e.g., centered or following the rule of thirds). Extend the background environment horizontally without stretching the subject or breaking the visual flow. No invented text or logos. "
-            "FOR ADVERTISING IMAGES: Utilize the 3.7:1 width by positioning the photo/hero as a visual anchor and distributing text elements in the adjacent or opposing clear space. Do NOT cluster elements in the middle."
+            "Edge-to-edge 792×216. Lay every element in a single horizontal row (left→right). "
+            "Scale subjects and text to fit inside 216 px height without squashing faces. "
+            "Widen empty areas by continuing the background sideways — do not stretch people or logos wide."
         ),
         fill_direction="horizontally",
         fill_description=(
-            "Fill any remaining horizontal space with a seamless background or scene environment extension. "
-            "Maintain the natural perspective, lighting, and continuous flow of the original image. "
-            "Strictly NO duplication of primary subjects, unique objects, or foreground elements to fill space."
+            "Extend background or scene horizontally into gaps. "
+            "Do not clone people, products, or text to fill width."
         ),
         layout_rules=[
-            "CRITICAL: Never change, redraw, or reimagine any original component.",
-            "CRITICAL: Human images must stay exactly as they are without any modifications.",
-            "CRITICAL: Human person: ZERO tolerance for alteration — same face, body, clothing, skin tone, and pose as the reference.",
-            "CRITICAL: Every single component must appear exactly once — zero duplication.", 
-            "Only render components detected in the source image — skip any element type not present.",
-            "LAYOUT FOR GENERIC IMAGES (No text/logos): Position the main subject organically within the frame. Extend the background/environment seamlessly to fill the 792x216 canvas without stretching the subject or creating visible seams.",
-            "LAYOUT FOR ADVERTISING IMAGES (Contains text/logos): Distribute elements intelligently across the banner width in a single horizontal flow. Position the main visual (subject/product) on one side, with text and logos placed in complementary clear zones.",
-            "ALL elements must maintain their original aspect ratios.",
-            "ALL elements must remain within y: 0–216 px (hard limit).",
-            "Minimum 12 px padding between distinct advertising elements and canvas edges.",
-            "NO vertical stacking — horizontal distribution only."
+            "Use only layers from the source; paste each once, unchanged.",
+            "People and logos: same pixels as the supplied crops — no redraw, no new faces.",
+            "y must stay 0–216; keep natural aspect ratios (no vertical squash).",
+            "Ads: hero on one side, text/logo on the other; generics: subject + extended background.",
+            "12 px minimum margin from edges between separate elements.",
         ],
         dimension_warnings=[
-            "CRITICAL: DO NOT alter, redraw, or reinvent ANY core component.",
-            "CRITICAL: Human faces, bodies, and clothing MUST remain 100% pixel-perfect identical to the reference.",
-            "CRITICAL: DO NOT duplicate any component (humans, products, text, or logos) to fill empty space.",
-            "CRITICAL: DO NOT redraw, reimagine, or regenerate any human person — exact pixel-level copy from the reference only.",
-            "DO NOT stretch primary subjects to fill the 3.7:1 width; only extend the background/environment.",
-            "DO NOT invent or hallucinate advertising elements (logos, headlines, CTAs, body text) that do not exist in the source image.",
-            "DO NOT stack elements vertically; use the limited 216px height for a single horizontal row of elements.",
-            "DO NOT break the image flow: ensure the transition between the main subject and the extended background is completely seamless.",
-            "Output must be exactly 792×216 px — not square, not portrait."
+            "No vertical stacks — one row only for 216 px height.",
+            "No duplicated subjects or logos to pad width.",
+            "No invented text or marks not in the source.",
+            "Exact output 792×216 px landscape strip.",
         ],
     ),
 

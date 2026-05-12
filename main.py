@@ -556,10 +556,16 @@ ALLOWED_ORIGINS = [
     for origin in (os.getenv("CORS_ORIGINS") or "http://localhost:3000,http://127.0.0.1:3000,https://transformation.slidexy.ai,https://recreative.slidexy.ai,https://transformation.signagexai.com").split(",")
     if origin.strip()
 ]
+# Preflight returns 400 "Disallowed CORS origin" if Origin does not match either list or
+# regex — regex covers localhost/127.0.0.1 on any port so dev survives CORS_ORIGINS overrides.
+_CORS_ORIGIN_REGEX = (os.getenv("CORS_ORIGIN_REGEX") or "").strip() or (
+    r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$"
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=_CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -691,11 +697,23 @@ def get_admin_user(current_user = Depends(get_current_user)):
 
 
 def _can_use_custom_resize(current_user: dict, width: int, height: int) -> bool:
-    """Allow custom-resize only for explicitly allowed OOH resolutions."""
-    code = _ooh_code_from_dims(width, height)
-    if not code:
+    """Allow custom-resize only for explicitly allowed transformation resolutions."""
+    codes = {
+        code
+        for code, dims in OOH_MEDIA_SITE_DIMENSIONS.items()
+        if dims == (width, height)
+    }
+    codes.update(
+        {
+            code
+            for code, dims in FMCTV_SUPPORTED_SITE_DIMENSIONS.items()
+            if dims == (width, height)
+        }
+    )
+    if not codes:
         return False
-    return code in _normalize_allowed_ooh_list(current_user)
+    allowed = _normalize_allowed_transform_list(current_user)
+    return bool(codes & allowed)
 
 # Initialize Gemini Client (lazy init or global if key is present)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -786,7 +804,7 @@ if not GLENN_GOOGLE_KEY_1 and not GLENN_GOOGLE_KEY_2 and not GLENN_GOOGLE_KEY_3 
     print("Warning: No Glenn API keys set in .env")
 
 # ── Glenn key request counters (250 requests / 24h per key) ──────────────
-GLENN_KEY_LIMIT = 250
+GLENN_KEY_LIMIT = 25000
 
 # Map key labels → (client object, api_key string)
 _glenn_keys_map = {
@@ -1668,6 +1686,7 @@ async def generate_bill(current_user = Depends(get_current_user)):
 # ─── AI Content-Aware Resize Utilities ───────────────────────────────────────
 
 from PIL import ImageEnhance, ImageFilter
+from standard_dimensions import is_standard_pipeline_target
 
 # Gemini only supports a fixed set of aspect ratios.  Any custom dimension
 # must be mapped to the closest supported ratio before calling the API.
@@ -1705,7 +1724,59 @@ GEMINI_NATIVE_RESOLUTIONS: Dict[str, Tuple[int, int]] = {
 # FMCTV SITE DIMENSIONS (95 production sites)
 # ═══════════════════════════════════════════════════════════════════════════
 
+FMCTV_SUPPORTED_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
+    "AK8100": (1200, 400), "AK8140": (1440, 480), "AK8150": (864, 288),
+    "AK8160": (864, 288),  "AK8170": (864, 288),  "AK8180": (1440, 360),
+    "AK8190": (864, 288),  "AK8220": (1472, 480), "AK8230": (1152, 288),
+    "AK8240": (1824, 432), "AK8270": (1728, 576), "AK8340": (864, 480),
+    "AK8350": (1152, 640), "AK8370": (1296, 432), "AK8420": (864, 720),
+    "AK8440": (1184, 384), "AK8470": (864, 288),  "AK8500": (1152, 384),
+    "AK9110": (360, 720),  "AK9120": (360, 720),  "AK9130": (432, 864),
+    "AK9200": (684, 1368), "AK9300": (576, 1152), "AK9500": (480, 960),
+    "AK9600": (504, 1008), "AK9800": (384, 768),  "AK9900": (288, 768),
+    "AK9000": (576, 1080), "AK9100": (704, 1408),
+    "AK8600": (648, 216),  "AK8700": (864, 288),  "AK8800": (945, 315),
+    "AK8900": (768, 384),
+    "BR8100": (432, 768),
+    "NK8100": (1280, 448),
+    "BN8100": (864, 288),
+    "CH8100": (1200, 400), "CH8310": (768, 384),  "CH8320": (768, 384),
+    "CH8330": (720, 360),  "CH8340": (608, 304),  "CH8360": (768, 384),
+    "CH8370": (768, 384),  "CH8380": (768, 384),  "CH8390": (768, 384),
+    "CH8400": (1152, 576), "CH8410": (600, 280),  "CH8420": (600, 280),
+    "CH8430": (1728, 432), "CH8440": (1728, 432), "CH8500": (1152, 384),
+    "CH9100": (384, 768),  "CH9200": (480, 960),
+    "GB9100": (384, 768),
+    "GM8100": (864, 288),
+    "HM8100": (1188, 396), "HM8200": (768, 288),  "HM8300": (864, 288),
+    "HM8400": (1152, 384), "HM8500": (1152, 384),
+    "HQ1": (1080, 1920),
+    "HS8100": (576, 288),  "HS8200": (1152, 288), "HS8300": (576, 288),
+    "NP8100": (864, 288),
+    "PN8100": (760, 240),
+    "RT8100": (600, 320),
+    "TI8100": (736, 256),  "TI8200": (864, 288),
+    "TR8100": (864, 288),  "TR8200": (864, 288),  "TR8300": (864, 288),
+    "WH8100": (816, 288),
+    "WE8100": (1472, 480), "WN8100": (1152, 384), "WN8200": (2640, 288),
+    "WN8300": (1120, 320), "WN8400": (1152, 288), "WN8600": (864, 288),
+    "WN8900": (768, 384),  "WN9100": (504, 1152), "WN9110": (384, 768),
+    "WN9120": (432, 1008), "WN9130": (648, 1296), "WN9400": (352, 704),
+    "WN9700": (432, 864),  "WN9800": (224, 832),  "WN9900": (396, 792),
+    "WI8000": (4530, 990), "WI8300": (1680, 810), "WI8400": (990, 1620),
+    "WIAL_CAROUSEL": (3840, 2160),
+    "STREET_FURNITURE_ASSETS": (2160, 3840),
+    "URBAN_NETWORK": (1080, 1920),
+    "SKY_PACK": (1080, 1920),
+    "SKY_PACK_WIAL": (1080, 1920),
+}
 
+FMCTV_SITE_ALIASES: Dict[str, str] = {
+    "WIAL CAROUSEL": "WIAL_CAROUSEL",
+    "CAROUSEL": "WIAL_CAROUSEL",
+    "STREET FURNITURE": "STREET_FURNITURE_ASSETS",
+    "STREET FURNITURE ASSETS": "STREET_FURNITURE_ASSETS",
+}
 
 OOH_MEDIA_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
     "OOH_1060X360":  (1060, 360),
@@ -1723,7 +1794,75 @@ OOH_MEDIA_SITE_DIMENSIONS: Dict[str, Tuple[int, int]] = {
     "OOH_1280X384":  (1280,  384),
     "OOH_1024X320":  (1024,  320),
     "OOH_960X576":   (960,   576),
+    # ── QMS dimensions ────────────────────────────────────────────────────────
+    "QMS_2640X288":  (2640,  288),
+    "QMS_1824X432":  (1824,  432),
+    "QMS_1728X432":  (1728,  432),
+    "QMS_1440X360":  (1440,  360),
+    "QMS_1120X320":  (1120,  320),
+    "QMS_760X240":   (760,   240),
+    "QMS_1184X384":  (1184,  384),
+    "QMS_1472X480":  (1472,  480),
+    "QMS_1296X432":  (1296,  432),
+    "QMS_1200X400":  (1200,  400),
+    "QMS_1188X396":  (1188,  396),
+    # Present in qms_dimensions.py QMS_PROFILES — synced 2026-05
+    "QMS_1440X480":  (1440,  480),
+    "QMS_1152X384":  (1152,  384),
+    "QMS_945X315":   (945,   315),
+    "QMS_864X288":   (864,   288),
+    "QMS_648X216":   (648,   216),
+    "QMS_1152X576":  (1152,  576),
+    "QMS_768X384":   (768,   384),
+    "QMS_720X360":   (720,   360),
+    "QMS_576X288":   (576,   288),
+    "QMS_576X1152":  (576,  1152),
+    "QMS_704X1408":  (704,  1408),
+    # ── QMS dimensions — Batch 2 ──────────────────────────────────────────────
+    # Landscape wide
+    "QMS_4530X990":  (4530,  990),
+    "QMS_1728X576":  (1728,  576),
+    "QMS_1280X448":  (1280,  448),
+    "QMS_1152X288":  (1152,  288),
+    "QMS_816X288":   (816,   288),
+    "QMS_768X288":   (768,   288),
+    "QMS_736X256":   (736,   256),
+    # Landscape moderate
+    "QMS_3840X2160": (3840, 2160),
+    "QMS_1680X810":  (1680,  810),
+    "QMS_1152X640":  (1152,  640),
+    "QMS_864X720":   (864,   720),
+    "QMS_864X768":   (864,   768),
+    "QMS_864X480":   (864,   480),
+    "QMS_608X304":   (608,   304),
+    "QMS_600X320":   (600,   320),
+    "QMS_600X280":   (600,   280),
+    # Portrait tall
+    "QMS_224X832":   (224,   832),
+    "QMS_288X768":   (288,   768),
+    "QMS_432X1008":  (432,  1008),
+    "QMS_504X1152":  (504,  1152),
+    # Portrait moderate
+    "QMS_2160X3840": (2160, 3840),
+    "QMS_1080X1920": (1080, 1920),
+    "QMS_990X1620":  (990,  1620),
+    "QMS_684X1368":  (684,  1368),
+    "QMS_648X1296":  (648,  1296),
+    "QMS_576X1080":  (576,  1080),
+    "QMS_504X1008":  (504,  1008),
+    "QMS_480X960":   (480,   960),
+    "QMS_432X864":   (432,   864),
+    "QMS_432X768":   (432,   768),
+    "QMS_396X792":   (396,   792),
+    "QMS_384X768":   (384,   768),
+    "QMS_360X720":   (360,   720),
+    "QMS_352X704":   (352,   704),
 }
+
+ALL_TRANSFORMATION_RESOLUTION_CODES: set[str] = (
+    set(OOH_MEDIA_SITE_DIMENSIONS.keys())
+    | set(FMCTV_SUPPORTED_SITE_DIMENSIONS.keys())
+)
 
 CREATION_ALLOWED_ASPECT_RATIOS = {
     "16:9",
@@ -1742,15 +1881,15 @@ CREATION_ALLOWED_PRESET_NAMES = {
 }
 
 
-def _normalize_allowed_ooh_list(current_user: dict) -> set[str]:
+def _normalize_allowed_transform_list(current_user: dict) -> set[str]:
     if not isinstance(current_user, dict):
         return set()
     org_context = current_user.get("org_context") or current_user.get("_org_context") or {}
     
-    # Bypass for AppOwner and SuperOrg - they get everything
+    # AppOwner gets full access; all other org types are restricted by allowed list.
     org_type = org_context.get("org_type") or org_context.get("org_type_name")
-    if org_type in ["AppOwner", "SuperOrg"]:
-        return set(OOH_MEDIA_SITE_DIMENSIONS.keys())
+    if org_type == "AppOwner":
+        return set(ALL_TRANSFORMATION_RESOLUTION_CODES)
 
     allowed = (
         org_context.get("allowed_transformation_resolutions")
@@ -1771,6 +1910,27 @@ def _is_creation_allowed_ratio(aspect_ratio: str) -> bool:
     return ratio.lower() in CREATION_ALLOWED_PRESET_NAMES
 
 
+def _normalize_ooh_code(aspect_ratio: str) -> str | None:
+    code = (aspect_ratio or "").strip().upper()
+    if code in OOH_MEDIA_SITE_DIMENSIONS:
+        return code
+    return None
+
+
+def _normalize_fmctv_code(aspect_ratio: str) -> str | None:
+    code = (aspect_ratio or "").strip().upper()
+    if code in FMCTV_SUPPORTED_SITE_DIMENSIONS:
+        return code
+    alias_target = FMCTV_SITE_ALIASES.get(code)
+    if alias_target and alias_target in FMCTV_SUPPORTED_SITE_DIMENSIONS:
+        return alias_target
+    return None
+
+
+def _normalize_transform_code(aspect_ratio: str) -> str | None:
+    return _normalize_ooh_code(aspect_ratio) or _normalize_fmctv_code(aspect_ratio)
+
+
 def _ooh_code_from_dims(width: int, height: int) -> str | None:
     for code, dims in OOH_MEDIA_SITE_DIMENSIONS.items():
         if dims == (width, height):
@@ -1779,12 +1939,22 @@ def _ooh_code_from_dims(width: int, height: int) -> str | None:
 
 
 def _is_ooh_aspect_ratio(aspect_ratio: str) -> bool:
-    return (aspect_ratio or "").strip().upper() in OOH_MEDIA_SITE_DIMENSIONS
+    return _normalize_ooh_code(aspect_ratio) is not None
+
+
+def _is_fmctv_aspect_ratio(aspect_ratio: str) -> bool:
+    return _normalize_fmctv_code(aspect_ratio) is not None
 
 
 def _is_ooh_allowed_for_user(current_user: dict, aspect_ratio: str) -> bool:
-    code = (aspect_ratio or "").strip().upper()
-    return code in _normalize_allowed_ooh_list(current_user)
+    return _is_transform_resolution_allowed(current_user, aspect_ratio)
+
+
+def _is_transform_resolution_allowed(current_user: dict, aspect_ratio: str) -> bool:
+    code = _normalize_transform_code(aspect_ratio)
+    if not code:
+        return False
+    return code in _normalize_allowed_transform_list(current_user)
 
 
 def _is_ooh_dimension(tw: int, th: int) -> bool:
@@ -1853,9 +2023,30 @@ def validate_aspect_ratio(aspect_ratio: str) -> Tuple[str, Optional[Tuple[int, i
     Supports: FMCTV site codes, direct Gemini ratios, named presets,
               pWxH format, W:H pixel dims, WxH pixel dims.
     """
-    # OOH site-code pass-through
+    # FMCTV / QMC site-code pass-through
     site_code = (aspect_ratio or "").strip().upper()
+    fmctv_code = site_code
+    if fmctv_code not in FMCTV_SUPPORTED_SITE_DIMENSIONS:
+        fmctv_code = FMCTV_SITE_ALIASES.get(site_code)
 
+    if fmctv_code and fmctv_code in FMCTV_SUPPORTED_SITE_DIMENSIONS:
+        width, height = FMCTV_SUPPORTED_SITE_DIMENSIONS[fmctv_code]
+        actual_ratio = width / height
+
+        if actual_ratio > 2.5:
+            closest_ratio, closest_val = "21:9", 21 / 9
+            print(
+                f"[FMCTV] Site {fmctv_code} -> {width}x{height} (Gemini {closest_ratio} FORCED for ratio {actual_ratio:.2f})"
+            )
+        else:
+            closest_ratio, closest_val = _find_closest_gemini_ratio(actual_ratio)
+            print(
+                f"[FMCTV] Site {fmctv_code} -> {width}x{height} (Gemini {closest_ratio})"
+            )
+
+        return closest_ratio, (width, height), closest_val
+
+    # OOH site-code pass-through
     if site_code in OOH_MEDIA_SITE_DIMENSIONS:
         width, height = OOH_MEDIA_SITE_DIMENSIONS[site_code]
         actual_ratio = width / height
@@ -3356,11 +3547,11 @@ async def resize_image(
                 status_code=403,
                 detail="Creation engine only supports standard presets.",
             )
-    elif _is_ooh_aspect_ratio(aspect_ratio_clean):
-        if not _is_ooh_allowed_for_user(current_user, aspect_ratio_clean):
+    elif _is_ooh_aspect_ratio(aspect_ratio_clean) or _is_fmctv_aspect_ratio(aspect_ratio_clean):
+        if not _is_transform_resolution_allowed(current_user, aspect_ratio_clean):
             raise HTTPException(
                 status_code=403,
-                detail="OOH resolution is not enabled for this organization.",
+                detail="Resolution is not enabled for this organization.",
             )
 
     # Legacy Glenn interception (kept as commented reference; do not remove):
@@ -3433,6 +3624,7 @@ async def resize_image(
             is_wide_landscape = tw > th * 1.5
             is_extreme_portrait = th > tw * 1.5
             _is_ooh = _is_ooh_dimension(tw, th)
+            _uses_decomp_pipeline = _is_ooh or is_standard_pipeline_target(tw, th)
             _tgt_ar_val = tw / th
 
             # Log all key counters at start of each request
@@ -3447,13 +3639,14 @@ async def resize_image(
             # for any AR mismatch edge-case, could distort the image a second time.
             _ooh_pipeline_succeeded = False
 
-            # ── OOH dims: full gemini_decomposition pipeline ─────────────────
+            # ── OOH + standard preset dims: full gemini_decomposition pipeline ─
             # Routes directly to ooh_pipeline.ooh_resize() — no fallback providers.
             # The pipeline handles decomposition, isolation, recomposition, and
             # exact PIL resize internally. Output is returned as-is.
-            # Exception: 2072×252 is routed to banner_2072x252.py for recomposition.
-            if _is_ooh:
-                if tw == 2072 and th == 252:
+            # Exceptions: 2072×252 and ultra-wide QMS dims are routed to banner_2072x252.py.
+            _ULTRA_WIDE_BANNER_DIMS = {(2072, 252), (2640, 288)}
+            if _uses_decomp_pipeline:
+                if _is_ooh and (tw, th) in _ULTRA_WIDE_BANNER_DIMS:
                     try:
                         import json as _json
                         from pathlib import Path as _Path
@@ -3518,24 +3711,28 @@ async def resize_image(
                             else:
                                 raise RuntimeError(f"Gemini Flash returned no image for {tw}×{th} adaptation")
                         else:
-                            if tw == 2072 and th == 252:
-                                print(f"[GLENN] 2072×252: {_n_comp} components ≥ 4, routing to banner_2072x252")
-                                from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
+                            if (tw, th) in _ULTRA_WIDE_BANNER_DIMS:
+                                _uw_module = "banner_2640x288" if (tw, th) == (2640, 288) else "banner_2072x252"
+                                print(f"[GLENN] {tw}×{th}: {_n_comp} components ≥ 4, routing to {_uw_module}")
+                                if (tw, th) == (2640, 288):
+                                    from banner_2640x288 import recompose_with_gemini_vision as _banner_recompose
+                                else:
+                                    from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
                                 _orig_path = _cache_dir / "00_original.png"
                                 _ooh_result = await _banner_recompose(
                                     output_dir=_cache_dir,
-                                    target_w=2072,
-                                    target_h=252,
+                                    target_w=tw,
+                                    target_h=th,
                                     original_image_path=_orig_path,
                                     temperature=0.40,
                                 )
                                 if _ooh_result:
                                     image_data = _ooh_result
-                                    provider_used = "banner_2072x252"
+                                    provider_used = _uw_module
                                     _ooh_pipeline_succeeded = True
-                                    print(f"[GLENN] banner_2072x252 ✅: {src_w}x{src_h} → 2072×252")
+                                    print(f"[GLENN] {_uw_module} ✅: {src_w}x{src_h} → {tw}×{th}")
                                 else:
-                                    raise RuntimeError("banner_2072x252 returned None")
+                                    raise RuntimeError(f"{_uw_module} returned None for {tw}×{th}")
                             else:
                                 print(f"[GLENN] {tw}×{th}: {_n_comp} components ≥ 4, routing to ooh_pipeline")
                                 from ooh_pipeline import ooh_resize as _ooh_resize
@@ -3573,8 +3770,8 @@ async def resize_image(
                         print(f"[GLENN] OOH pipeline failed: {_ooh_err}")
                         raise HTTPException(status_code=500, detail=f"OOH pipeline failed: {_ooh_err}")
 
-            # Non-OOH requests keep the existing Glenn prompt/provider flow.
-            if not _is_ooh:
+            # Non-pipeline targets keep the existing Glenn prompt/provider flow.
+            if not _uses_decomp_pipeline:
                 if gemini_aspect_ratio == "8:1":
                     resize_prompt = build_flash_extreme_wide_prompt(
                         user_prompt=prompt if has_custom_prompt else "",
@@ -4499,7 +4696,7 @@ async def custom_resize_image(
     if not _can_use_custom_resize(current_user, width, height):
         raise HTTPException(
             status_code=403,
-            detail="OOH resolution is not enabled for this organization.",
+            detail="Resolution is not enabled for this organization.",
         )
 
     requested_ratio = f"{width}:{height}"
@@ -4535,7 +4732,8 @@ async def custom_resize_image(
             file_bytes = await file.read()
             await file.seek(0)
 
-            if (width == 2072 and height == 252) or (width == 504 and height == 1008):
+            _CUSTOM_ULTRA_WIDE_DIMS = {(2072, 252), (2640, 288)}
+            if (width, height) in _CUSTOM_ULTRA_WIDE_DIMS or (width == 504 and height == 1008):
                 import json as _json
                 from pathlib import Path as _Path
                 from ooh_pipeline import ensure_cache_decomposed as _ensure_cache
@@ -4546,7 +4744,7 @@ async def custom_resize_image(
                 _components = _raw_comps["components"] if isinstance(_raw_comps, dict) else _raw_comps
                 _n_comp = len(_components)
                 if _n_comp < 4:
-                    _flash_ar = "8:1" if (width == 2072 and height == 252) else "9:16"
+                    _flash_ar = "8:1" if (width, height) in _CUSTOM_ULTRA_WIDE_DIMS else "9:16"
                     print(f"[CUSTOM-RESIZE] {width}×{height}: {_n_comp} components < 4, routing to build_image_adaptation_prompt + Gemini Flash ({_flash_ar})")
                     _pil_img = await run_blocking(Image.open, io.BytesIO(file_bytes))
                     _src_w, _src_h = _pil_img.size
@@ -4600,14 +4798,18 @@ async def custom_resize_image(
                     ooh_image_data = await run_blocking(safe_scale_to_exact, _flash_result, width, height, file_bytes)
                     print(f"[CUSTOM-RESIZE] image_adaptation ✅ ({_n_comp} components): {_src_w}x{_src_h} → {width}×{height}")
                 else:
-                    if width == 2072 and height == 252:
-                        print(f"[CUSTOM-RESIZE] 2072×252: {_n_comp} components ≥ 4, routing to banner_2072x252")
-                        from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
+                    if (width, height) in _CUSTOM_ULTRA_WIDE_DIMS:
+                        _uw_module = "banner_2640x288" if (width, height) == (2640, 288) else "banner_2072x252"
+                        print(f"[CUSTOM-RESIZE] {width}×{height}: {_n_comp} components ≥ 4, routing to {_uw_module}")
+                        if (width, height) == (2640, 288):
+                            from banner_2640x288 import recompose_with_gemini_vision as _banner_recompose
+                        else:
+                            from banner_2072x252 import recompose_with_gemini_vision as _banner_recompose
                         _orig_path = _cache_dir / "00_original.png"
                         ooh_image_data = await _banner_recompose(
                             output_dir=_cache_dir,
-                            target_w=2072,
-                            target_h=252,
+                            target_w=width,
+                            target_h=height,
                             original_image_path=_orig_path,
                             temperature=0.40,
                         )
