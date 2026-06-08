@@ -1,9 +1,7 @@
 import io
 import sys
 import os
-import uuid
 import json
-from datetime import datetime
 from PIL import Image
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
@@ -15,23 +13,15 @@ from main import app, get_current_user
 
 client = TestClient(app)
 
-# Original Resolutions to test
-RESOLUTIONS = [
-    "1120x360", "1152x288", "1152x384", "1188x288", "1368x324", "1376x288", "1764x468",
-    "288x608", "288x648", "324x828", "396x576", "416x480", "416x576", "416x800",
-    "432x864", "468x756", "504x864", "512x1280", "570x600", "576x396", "608x288",
-    "624x336", "794x396", "800x416", "864x432", "900x288", "928x288"
+# Standard presets to test
+VALID_PRESETS = [
+    "16:9", "9:16", "1:1", "3:4", "21:9",
+    "landscape", "story", "square", "portrait", "ultrawide"
 ]
 
-# Stress Test Resolutions (> 4:1 and other extremes)
-STRESS_TESTS = [
-    "1500x300",  # 5:1
-    "3000x300",  # 10:1
-    "6000x300",  # 20:1
-    "300x1500",  # 1:5
-    "300x3000",  # 1:10
-    "300x6000",  # 1:20
-    "5000x5000"  # Large Square
+# Non-standard presets that should be rejected
+INVALID_PRESETS = [
+    "1120x360", "2072x252", "1500x300", "5000x5000", "4:3", "3:2"
 ]
 
 # Mock User Data
@@ -58,7 +48,6 @@ def run_tests():
     img.save(img_byte_arr, format='PNG')
     img_byte_arr = img_byte_arr.getvalue()
 
-    all_tests = [(r, "NORMAL") for r in RESOLUTIONS] + [(r, "STRESS") for r in STRESS_TESTS]
     results = []
     
     # Mocks for external dependencies
@@ -66,6 +55,8 @@ def run_tests():
          patch("main.s3_client") as mock_s3_client, \
          patch("main.consume_units") as mock_consume, \
          patch("main.log_usage") as mock_log:
+        
+        mock_log.return_value = "mock_log_id"
         
         # Configure Gemini Mock
         mock_response = MagicMock()
@@ -76,55 +67,83 @@ def run_tests():
         
         # Configure S3 Mock
         mock_s3_client.put_object.return_value = {}
+        mock_consume.return_value = True
 
-        print(f"{'Resolution':<12} | {'Ratio':<10} | {'Type':<8} | {'Status':<10} | {'Message'}")
+        print(f"{'Aspect Ratio':<15} | {'Expected':<8} | {'Status':<10} | {'Message'}")
         print("-" * 70)
 
-        for res, test_type in all_tests:
+        # Test valid presets (should return 200)
+        for preset in VALID_PRESETS:
             try:
-                # Basic cleaning of input
-                clean_res = res.replace('х', 'x').strip() 
-                width, height = map(int, clean_res.split('x'))
-                ratio_val = width / height
-                aspect_ratio = f"{width}:{height}"
-                
-                # Make the request
                 response = client.post(
                     "/api/resize",
                     data={
-                        "aspect_ratio": aspect_ratio,
+                        "aspect_ratio": preset,
                         "engine_type": "transformation"
                     },
                     files={"file": ("test.png", img_byte_arr, "image/png")}
                 )
                 
-                status = "SUCCESS" if response.status_code == 200 else "FAILED"
-                msg = response.json().get("detail", "OK") if status == "FAILED" else f"Ratio: {ratio_val:.2f}:1"
+                status_code = response.status_code
+                status = "SUCCESS" if status_code == 200 else "FAILED"
+                msg = response.json().get("detail", "OK") if status == "FAILED" else "Successfully resized"
                 
                 results.append({
-                    "resolution": res,
-                    "aspect_ratio": aspect_ratio,
-                    "ratio_decimal": round(ratio_val, 2),
-                    "type": test_type,
+                    "aspect_ratio": preset,
+                    "expected": "SUCCESS",
                     "status": status,
+                    "status_code": status_code,
                     "message": msg
                 })
-                
-                print(f"{res:<12} | {ratio_val:>9.2f} | {test_type:<8} | {status:<10} | {msg}")
-                
+                print(f"{preset:<15} | SUCCESS  | {status:<10} | {msg}")
+                assert status_code == 200, f"Expected 200 for {preset}, got {status_code}"
             except Exception as e:
                 results.append({
-                    "resolution": res,
-                    "type": test_type,
+                    "aspect_ratio": preset,
+                    "expected": "SUCCESS",
                     "status": "ERROR",
                     "message": str(e)
                 })
-                print(f"{res:<12} | {'N/A':<10} | {test_type:<8} | {'ERROR':<10} | {str(e)}")
+                print(f"{preset:<15} | SUCCESS  | ERROR      | {str(e)}")
+
+        # Test invalid presets (should return 400)
+        for preset in INVALID_PRESETS:
+            try:
+                response = client.post(
+                    "/api/resize",
+                    data={
+                        "aspect_ratio": preset,
+                        "engine_type": "transformation"
+                    },
+                    files={"file": ("test.png", img_byte_arr, "image/png")}
+                )
+                
+                status_code = response.status_code
+                status = "SUCCESS" if status_code == 400 else "FAILED"
+                msg = response.json().get("detail", "OK")
+                
+                results.append({
+                    "aspect_ratio": preset,
+                    "expected": "REJECTED",
+                    "status": status,
+                    "status_code": status_code,
+                    "message": msg
+                })
+                print(f"{preset:<15} | REJECTED | {status:<10} | {msg}")
+                assert status_code == 400, f"Expected 400 for {preset}, got {status_code}"
+            except Exception as e:
+                results.append({
+                    "aspect_ratio": preset,
+                    "expected": "REJECTED",
+                    "status": "ERROR",
+                    "message": str(e)
+                })
+                print(f"{preset:<15} | REJECTED | ERROR      | {str(e)}")
 
     # Clear overrides
     app.dependency_overrides = {}
     
-    # Save results to a file for the user
+    # Save results to a file
     with open("resolution_test_results_v2.json", "w") as f:
         json.dump(results, f, indent=4)
     
