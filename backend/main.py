@@ -44,7 +44,7 @@ if not validate_stripe_configuration():
     print("⚠️  WARNING: Stripe configuration validation failed.")
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Visual Engine API", root_path="/secure")
+app = FastAPI(title="Visual Engine API", root_path=os.getenv("ROOT_PATH", ""))
 
 ALLOWED_ORIGINS = [
     o.strip() for o in (
