@@ -544,7 +544,7 @@ function HeroCards() {
     return () => { window.removeEventListener("mousemove", onMove); cancelAnimationFrame(raf); };
   }, []);
 
-  const renderLayer = (cards: typeof HC_L1, ref: React.RefObject<HTMLDivElement>, op: number) => (
+  const renderLayer = (cards: typeof HC_L1, ref: React.RefObject<HTMLDivElement | null>, op: number) => (
     <div ref={ref} style={{ position:"absolute", inset:0, pointerEvents:"none" }}>
       {cards.map((c, i) => (
         <div key={i} style={{ position:"absolute", left:c.l, top:c.t, transform:`rotate(${c.rot}deg)` }}>
