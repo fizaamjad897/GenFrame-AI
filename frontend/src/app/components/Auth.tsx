@@ -39,6 +39,24 @@ type FormData = {
 
 export type ActiveForm = "signup" | "login" | "forgot" | "reset";
 
+const LogoIcon = ({ size = 36, gradId }: { size?: number; gradId: string }) => (
+  <svg width={size} height={size} viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id={gradId} x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+        <stop stopColor="#0C4A6E" /><stop offset="1" stopColor="#0EA5E9" />
+      </linearGradient>
+    </defs>
+    <rect width="36" height="36" rx="10" fill={`url(#${gradId})`} />
+    {/* Frame corners */}
+    <path d="M9 9L9 14M9 9L14 9" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+    <path d="M27 9L22 9M27 9L27 14" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+    <path d="M9 27L9 22M9 27L14 27" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+    <path d="M27 27L22 27M27 27L27 22" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+    {/* AI sparkle */}
+    <path d="M18 12L19.3 16.7L24 18L19.3 19.3L18 24L16.7 19.3L12 18L16.7 16.7Z" fill="white" />
+  </svg>
+);
+
 const BRAND_FEATURES = [
   { icon: <AutoAwesomeIcon sx={{ fontSize: 16, color: "rgba(255,255,255,0.9)" }} />, text: "47+ platform format presets included" },
   { icon: <BoltIcon sx={{ fontSize: 16, color: "rgba(255,255,255,0.9)" }} />,        text: "AI adaptation in under 4 seconds" },
@@ -141,9 +159,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess, initialTab, initialToken, re
 
         {/* Logo mark */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "auto", position: "relative", zIndex: 1 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 11, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.2)" }}>
-            <AutoAwesomeIcon sx={{ fontSize: 18, color: "white" }} />
-          </div>
+          <LogoIcon size={38} gradId="logo-left" />
           <div>
             <div style={{ fontSize: 17, fontWeight: 700, color: "white", letterSpacing: "-0.02em" }}>GenFrame</div>
             <div style={{ fontSize: 10, color: "rgba(255,255,255,0.55)", letterSpacing: "0.04em" }}>AI Image Adaptation</div>
@@ -232,6 +248,15 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess, initialTab, initialToken, re
           <button className="auth-back-link" onClick={() => router.push("/")}>
             <ArrowBackIcon sx={{ fontSize: 15 }} /> Back to home
           </button>
+
+          {/* Logo — always visible on form side */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
+            <LogoIcon size={36} gradId="logo-right" />
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>GenFrame</div>
+              <div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: "0.06em", textTransform: "uppercase" }}>AI Image Adaptation</div>
+            </div>
+          </div>
 
           {/* B2C anticipation banner */}
           {isB2C && activeForm === "signup" && (
