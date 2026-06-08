@@ -50,14 +50,6 @@ const ResetPasswordForm: React.FC<FormProps> = ({
         alignItems: "center",
       }}
     >
-      <Box>
-        <img
-          src="/logo.svg"
-          alt="GenFrame Logo"
-          style={{ width: 210, height: 64, marginBottom: 20 }}
-        />
-      </Box>
-
       <Typography
         gutterBottom
         sx={{
