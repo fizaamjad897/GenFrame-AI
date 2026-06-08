@@ -1,0 +1,2192 @@
+"use client";
+import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Box,
+  Container,
+  Typography,
+  Button,
+  TextField,
+  Radio,
+  Paper,
+  IconButton,
+  Stack,
+  Modal,
+  CircularProgress,
+  ThemeProvider,
+  createTheme,
+  Switch,
+  FormControlLabel,
+  Tooltip,
+} from "@mui/material";
+import UsageDisplay from "./dashboard/UsageDisplay";
+import { useUser } from "../context/AuthContext";
+import { usePageHeader } from "../context/PageHeaderContext";
+import { toast } from "react-toastify";
+import { extractApiErrorMessage } from "@/lib/errorMessage";
+import { decodeJwtToken } from "@/lib/jwtUtils";
+import {
+  AutoAwesome as AutoAwesomeIcon,
+  Download as DownloadIcon,
+  Fullscreen as FullscreenIcon,
+  Close as CloseIcon,
+  Image as ImageIcon,
+  Speed as SpeedIcon,
+  Palette as PaletteIcon,
+  ExpandMore as ExpandMoreIcon,
+} from "@mui/icons-material";
+
+interface ProcessedImage {
+  id: string;
+  preset: string;
+  url: string;
+  ratio: string;
+}
+
+interface UploadedImageFile {
+  id: string;
+  file: File;
+  url: string;
+  name: string;
+}
+
+// Local theme removed to use global ThemeRegistry
+
+// ── Client-side image compression to prevent 413 errors ──────────────────
+const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB target max
+const MAX_DIMENSION = 2048; // Max width/height for the compressed image
+
+/**
+ * Compress an image file client-side so it fits within MAX_UPLOAD_SIZE_BYTES.
+ * Uses canvas resize + JPEG compression with adaptive quality.
+ * Returns the original file if it's already small enough.
+ */
+async function compressImage(file: File): Promise<File> {
+  // Skip if already under limit
+  if (file.size <= MAX_UPLOAD_SIZE_BYTES) {
+    return file;
+  }
+
+  return new Promise<File>((resolve, reject) => {
+    const img = new window.Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      // Calculate new dimensions (scale down if needed)
+      let { width, height } = img;
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        const scale = MAX_DIMENSION / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Canvas context not available"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Adaptive quality: start higher, reduce until under limit
+      const tryQuality = (quality: number) => {
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error("Canvas toBlob failed"));
+              return;
+            }
+            if (blob.size <= MAX_UPLOAD_SIZE_BYTES || quality <= 0.3) {
+              const compressedFile = new File(
+                [blob],
+                file.name.replace(/\.[^.]+$/, ".jpg"),
+                { type: "image/jpeg" },
+              );
+              console.log(
+                `🗜️ Compressed ${(file.size / 1024 / 1024).toFixed(1)}MB → ${(compressedFile.size / 1024 / 1024).toFixed(1)}MB (q=${quality.toFixed(1)}, ${width}×${height})`,
+              );
+              resolve(compressedFile);
+            } else {
+              // Try again at lower quality
+              tryQuality(quality - 0.1);
+            }
+          },
+          "image/jpeg",
+          quality,
+        );
+      };
+
+      tryQuality(0.85);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      // If we can't load it, return the original and let the server handle it
+      resolve(file);
+    };
+
+    img.src = objectUrl;
+  });
+}
+
+type PresetGroup = 'standard' | 'client' | 'ooh' | 'custom';
+
+const STANDARD_PRESETS: { id: string; label: string; ratio: string; group: PresetGroup }[] = [
+  { id: 'landscape', label: 'Landscape', ratio: '16:9', group: 'standard' },
+  { id: 'story', label: 'Story/Reel', ratio: '9:16', group: 'standard' },
+  { id: 'square', label: 'Square', ratio: '1:1', group: 'standard' },
+  { id: 'portrait', label: 'Portrait', ratio: '3:4', group: 'standard' },
+  { id: 'ultrawide', label: 'Ultrawide', ratio: '21:9', group: 'standard' },
+];
+
+const OOH_MEDIA_PRESETS: { id: string; label: string; ratio: string; group: PresetGroup }[] = [
+  { id: 'ooh_792x216',  label: 'OOH 792×216',   ratio: 'OOH_792x216',  group: 'ooh' },
+  { id: 'ooh_800x400',  label: 'OOH 800×400',   ratio: 'OOH_800x400',  group: 'ooh' },
+  { id: 'ooh_840x360',  label: 'OOH 840×360',   ratio: 'OOH_840x360',  group: 'ooh' },
+  { id: 'ooh_960x576',  label: 'OOH 960×576',   ratio: 'OOH_960x576',  group: 'ooh' },
+  { id: 'ooh_1024x320', label: 'OOH 1024×320',  ratio: 'OOH_1024x320', group: 'ooh' },
+  { id: 'ooh_1060x360', label: 'OOH 1060×360',  ratio: 'OOH_1060x360', group: 'ooh' },
+  { id: 'ooh_1232x672', label: 'OOH 1232×672',  ratio: 'OOH_1232x672', group: 'ooh' },
+  { id: 'ooh_1280x384', label: 'OOH 1280×384',  ratio: 'OOH_1280x384', group: 'ooh' },
+  { id: 'ooh_1344x432', label: 'OOH 1344×432',  ratio: 'OOH_1344x432', group: 'ooh' },
+  { id: 'ooh_1836x432', label: 'OOH 1836×432',  ratio: 'OOH_1836x432', group: 'ooh' },
+  { id: 'ooh_1952x896', label: 'OOH 1952×896',  ratio: 'OOH_1952x896', group: 'ooh' },
+  { id: 'ooh_2072x252', label: 'OOH 2072×252',  ratio: 'OOH_2072x252', group: 'ooh' },
+  { id: 'ooh_3924x972', label: 'OOH 3924×972',  ratio: 'OOH_3924x972', group: 'ooh' },
+  { id: 'ooh_504x1008', label: 'OOH 504×1008',  ratio: 'OOH_504x1008', group: 'ooh' },
+  { id: 'ooh_768x1152', label: 'OOH 768×1152',  ratio: 'OOH_768x1152', group: 'ooh' },
+];
+
+const ImageProcessor = (props: { engineType?: string }) => {
+  const engineType = props.engineType || "transformation";
+  const { user, refreshUser } = useUser();
+  const { setHeader } = usePageHeader();
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(
+    null,
+  );
+  const [selectedPresets, setSelectedPresets] = useState<string[]>([]);
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [processedImages, setProcessedImages] = useState<ProcessedImage[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadedImages, setUploadedImages] = useState<UploadedImageFile[]>([]);
+  const [idCounter, setIdCounter] = useState(0);
+  const [selectedImage, setSelectedImage] = useState<{
+    url: string;
+    preset: string;
+    ratio: string;
+  } | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [isLimitExceeded, setIsLimitExceeded] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [showPresetLimit, setShowPresetLimit] = useState(false);
+  const [canViewCustomRatios, setCanViewCustomRatios] = useState(false);
+  const [expandedOoh, setExpandedOoh] = useState(false);
+  const [useJsonPipeline, setUseJsonPipeline] = useState(false);
+
+  const presets: { id: string; label: string; ratio: string; group: PresetGroup }[] = [
+    ...STANDARD_PRESETS,
+    ...OOH_MEDIA_PRESETS,
+  ];
+
+  const isCustomDimPreset = (presetId: string) => {
+    const preset = presets.find((p) => p.id === presetId);
+    return preset?.group === "client" || preset?.group === "ooh" || preset?.group === "custom";
+  };
+
+  const parseDims = (ratio: string): { w: number; h: number } | null => {
+    const parts = ratio.split(":").map(Number);
+    if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
+      return { w: parts[0], h: parts[1] };
+    }
+    return null;
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('No image files found');
+      return;
+    }
+
+    // Revoke previous URLs to prevent memory leaks
+    uploadedImages.forEach(img => {
+      if (img.url.startsWith('blob:')) {
+        URL.revokeObjectURL(img.url);
+      }
+    });
+
+    const newId = idCounter + 1;
+    setIdCounter(newId);
+
+    const newImage: UploadedImageFile = {
+      id: `img-${newId}`,
+      file,
+      url: URL.createObjectURL(file),
+      name: file.name,
+    };
+
+    setUploadedImages([newImage]);
+    setUploadedImage(newImage.file);
+    setPreviewUrl(newImage.url);
+    setProcessedImages([]);
+
+    // Reset file input so user can re-upload the same file
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleImageSelect = (image: UploadedImageFile) => {
+    setUploadedImage(image.file);
+    setPreviewUrl(image.url);
+    setProcessedImages([]);
+  };
+
+  const MAX_PRESETS = 2;
+  const handleRemoveImage = (imageId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setUploadedImages((prev) => {
+      const imageToRemove = prev.find((img) => img.id === imageId);
+      if (imageToRemove && imageToRemove.url.startsWith("blob:")) {
+        URL.revokeObjectURL(imageToRemove.url);
+      }
+      return prev.filter((img) => img.id !== imageId);
+    });
+
+    // If the removed image was selected, clear the preview
+    const removedImage = uploadedImages.find((img) => img.id === imageId);
+    if (removedImage && previewUrl === removedImage.url) {
+      setUploadedImage(null);
+      setPreviewUrl("");
+      setProcessedImages([]);
+    }
+  };
+
+  const handlePresetChange = (presetId: string) => {
+    // Deselect — always allowed
+    if (selectedPresets.includes(presetId)) {
+      setSelectedPresets(selectedPresets.filter((p) => p !== presetId));
+      return;
+    }
+    // Block if at limit
+    if (selectedPresets.length >= MAX_PRESETS) {
+      setShowPresetLimit(true);
+      return;
+    }
+    setSelectedPresets([...selectedPresets, presetId]);
+  };
+
+  useEffect(() => {
+    const GLEN_ORG_ID = "d9f031dc-ba8f-4397-9534-81612cc8a686";
+    const HAMZA_ORG_ID = "35cd976c-d4ac-4e76-8dde-d8065334fa42";
+
+    let hasAccess = false;
+
+    // Check 1: User object's _org_context
+    const orgContext = (user as any)?._org_context || {};
+    const orgId = String(orgContext.org_id || "").trim();
+    const parentOrgId = String(orgContext.parent_org_id || "").trim();
+    
+    if (orgId === HAMZA_ORG_ID || parentOrgId === HAMZA_ORG_ID) {
+      hasAccess = true;
+    }
+    // Only Glen's main org, NOT sub-orgs
+    if (orgId === GLEN_ORG_ID) {
+      hasAccess = true;
+    }
+
+    // Check 2: JWT token (fallback)
+    if (!hasAccess) {
+      try {
+        const token = localStorage.getItem("auth_token");
+        const decoded = token ? decodeJwtToken(token) : null;
+        const jwtOrgId = String(decoded?.orgId || decoded?.org_id || "").trim();
+        const jwtParentOrgId = String(
+          decoded?.parentOrgId ||
+            decoded?.org_parent_id ||
+            decoded?.orgParentId ||
+            "",
+        ).trim();
+        
+        if (jwtOrgId === HAMZA_ORG_ID || jwtParentOrgId === HAMZA_ORG_ID) {
+          hasAccess = true;
+        }
+        if (jwtOrgId === GLEN_ORG_ID) {
+          hasAccess = true;
+        }
+      } catch {
+        hasAccess = false;
+      }
+    }
+
+    // Check 3: Email/domain fallback for testing
+    if (!hasAccess) {
+      const email = String(user?.email || "")
+        .trim()
+        .toLowerCase();
+      const domain = email.includes("@") ? email.split("@")[1] : "";
+      hasAccess =
+        email === "muhammadhamzafaisal146@gmail.com" ||
+        domain === "fmctv.co.nz";
+    }
+
+    setCanViewCustomRatios(hasAccess);
+  }, [user]);
+
+  useEffect(() => {
+    if (!canViewCustomRatios) {
+      setSelectedPresets((prev) =>
+        prev.filter((id) => {
+          const preset = presets.find((p) => p.id === id);
+          return preset?.group !== "client" && preset?.group !== "ooh";
+        }),
+      );
+    }
+  }, [canViewCustomRatios]);
+
+  // Helper: extract image URL from a response (handles binary and JSON)
+  const extractImageUrl = async (response: Response): Promise<string> => {
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.startsWith("image/")) {
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    }
+    try {
+      const text = await response.text();
+      const data = JSON.parse(text);
+      return data.url || data.image_url || data.data?.url || previewUrl;
+    } catch {
+      return previewUrl;
+    }
+  };
+
+  const extractResponseErrorMessage = async (
+    response: Response,
+    fallback: string,
+  ): Promise<string> => {
+    try {
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await response.json();
+        return data?.detail || data?.message || data?.error || fallback;
+      }
+
+      const text = (await response.text())?.trim();
+      return text || response.statusText || fallback;
+    } catch {
+      return response.statusText || fallback;
+    }
+  };
+
+  const handleProcessImage = async () => {
+    if (!user) {
+      toast.error("Please login to process images");
+      router.push("/auth");
+      return;
+    }
+
+    // Validation
+    const isImageMissing = !uploadedImage;
+    const isPromptMissing = !prompt || !prompt.trim();
+    const hasPresets = selectedPresets.length > 0;
+
+    if (engineType === "transformation" && isImageMissing) {
+      toast.error("Please upload an image for the Transformation engine");
+      return;
+    }
+
+    if (engineType === "creation" && isImageMissing && isPromptMissing) {
+      toast.error(
+        "Please provide either an image or a prompt for the Creation engine",
+      );
+      return;
+    }
+
+    if (!hasPresets) {
+      if (engineType === "creation" && prompt.trim()) {
+        // Allow creation engine with prompt to default to square
+      } else {
+        toast.error("Please select at least one preset");
+        return;
+      }
+    }
+
+    const isPostpaid = Boolean((user as any).is_postpaid);
+    if (
+      !isPostpaid &&
+      (!user.maxUnits || user.maxUnits === 0 || user.units >= user.maxUnits)
+    ) {
+      setIsLimitExceeded(true);
+      return;
+    }
+
+    setIsProcessing(true);
+    setProcessedImages([]);
+    const toastId = toast.loading(
+      engineType === "transformation"
+        ? "Processing transformation..."
+        : "Processing creation request...",
+    );
+
+    const token = localStorage.getItem("auth_token");
+    const API_BASE_URL =
+      process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api";
+
+    // Compress the image once up front so every preset reuses the same blob
+    let imageToUpload: File | null = null;
+    if (uploadedImage) {
+      try {
+        imageToUpload = await compressImage(uploadedImage);
+      } catch (err) {
+        console.warn("Image compression failed, using original:", err);
+        imageToUpload = uploadedImage;
+      }
+    }
+
+    try {
+      const results: ProcessedImage[] = [];
+      const failedMessages: string[] = [];
+
+      // Helper: make a single resize request and parse the result
+      const callResize = async (
+        aspectRatio: string,
+        label: string,
+        id: string,
+        useCustomEndpoint = false,
+      ): Promise<ProcessedImage | null> => {
+        const formData = new FormData();
+        if (imageToUpload) formData.append("file", imageToUpload);
+        formData.append("engine_type", engineType);
+        if (prompt.trim()) formData.append("prompt", prompt);
+
+        let endpoint = `${API_BASE_URL}/resize`;
+        if (useCustomEndpoint) {
+          const dimMatch = aspectRatio.match(/^(\d+)[x:](\d+)$/i);
+          if (!dimMatch) {
+            throw new Error("Invalid custom dimensions format");
+          }
+          formData.append("width", dimMatch[1]);
+          formData.append("height", dimMatch[2]);
+          endpoint = `${API_BASE_URL}/custom-resize`;
+        } else {
+          formData.append("aspect_ratio", aspectRatio);
+          if (useJsonPipeline) formData.append("use_json_pipeline", "true");
+        }
+
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          // Surface the real error to the user for known status codes
+          if (response.status === 413) {
+            throw new Error(
+              `Image is too large for ${label}. Please use a smaller image (under 2 MB).`,
+            );
+          }
+          const errText = await response
+            .text()
+            .catch(() => response.statusText);
+          console.error(
+            `Failed to process ${label}: ${response.status} ${errText}`,
+          );
+          return null;
+        }
+
+        const imageUrl = await extractImageUrl(response);
+        return { id, preset: label, url: imageUrl, ratio: aspectRatio };
+      };
+
+      // Process selected presets
+      const presetsToProcess = hasPresets
+        ? selectedPresets
+        : engineType === "creation" && prompt.trim()
+          ? ["square"]
+          : [];
+
+      const failedLabels: string[] = [];
+
+      const presetPromises = presetsToProcess.map(async (presetId, index) => {
+        const preset = presets.find((p) => p.id === presetId);
+        if (!preset) return;
+
+        try {
+          const dims = parseDims(preset.ratio);
+          const useCustomEndpoint =
+            canViewCustomRatios && isCustomDimPreset(preset.id) && !!dims;
+
+          const result = await callResize(
+            preset.ratio,
+            preset.label,
+            `res-${Date.now()}-${preset.id}-${index}`,
+            useCustomEndpoint,
+          );
+          if (result) {
+            results.push(result);
+          } else {
+            failedLabels.push(preset.label);
+          }
+        } catch (e) {
+          failedLabels.push(preset.label);
+        }
+      });
+
+      await Promise.all(presetPromises);
+
+      setProcessedImages(results);
+
+      const totalExpected = presetsToProcess.length;
+
+      if (results.length === totalExpected && results.length > 0) {
+        toast.update(toastId, {
+          render: `Successfully generated ${results.length} images!`,
+          type: "success",
+          isLoading: false,
+          autoClose: 3000,
+        });
+      } else if (results.length > 0) {
+        toast.update(toastId, {
+          render: `Partial success: Generated ${results.length} images, but failed on: ${failedLabels.join(", ")}`,
+          type: "warning",
+          isLoading: false,
+          autoClose: 5000,
+        });
+      } else {
+        toast.update(toastId, {
+          render: `Failed to process image(s). Ensure you have enough credits or try again.`,
+          type: "error",
+          isLoading: false,
+          autoClose: 5000,
+        });
+      }
+    } catch (error: any) {
+      console.error("Error processing image:", error);
+      toast.update(toastId, {
+        render: extractApiErrorMessage(error, "Failed to process image"),
+        type: "error",
+        isLoading: false,
+        autoClose: 5000,
+      });
+    } finally {
+      setIsProcessing(false);
+      refreshUser();
+    }
+  };
+
+  const handleOpenModal = (image: {
+    url: string;
+    preset: string;
+    ratio: string;
+  }) => {
+    setSelectedImage(image);
+    setModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setModalOpen(false);
+    setSelectedImage(null);
+  };
+
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error("Error downloading image:", error);
+      toast.error(extractApiErrorMessage(error, "Failed to download image"));
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    if (processedImages.length === 0) return;
+    for (const image of processedImages) {
+      await handleDownload(image.url, `${image.preset}-${image.ratio}.png`);
+      // Add a slight delay between downloads to prevent browser throttling
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  };
+
+  useEffect(() => {
+    setHeader({
+      actionLabel: "Download Output",
+      actionDisabled: processedImages.length === 0,
+      onAction: handleDownloadAll,
+    });
+
+    return () => {
+      setHeader({
+        actionLabel: undefined,
+        actionDisabled: undefined,
+        onAction: undefined,
+      });
+    };
+  }, [processedImages, setHeader]);
+
+  return (
+    <Box sx={{ minHeight: "100vh", bgcolor: "#f9fafb" }}>
+      {/* Description Section */}
+      <Box
+        sx={{
+          position: "relative",
+          bgcolor: "#f9fafb",
+          // borderBottom: '1px solid #e5e7eb',
+          py: { xs: 1.5, md: 2 },
+          // px: { xs: 1.5, sm: 2, md: 3, lg: 3 },
+          overflow: "hidden",
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            overflow: 'hidden',
+            zIndex: 0,
+          }}
+        >
+          <video
+            autoPlay
+            muted
+            loop
+            playsInline
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              opacity: '0.08',
+            }}
+          >
+            <source src="/bg-video-new.mp4" type="video/mp4" />
+          </video>
+        </Box>
+        <Container
+          maxWidth={false}
+          sx={{
+            px: 0,
+            position: "relative",
+            zIndex: 1,
+          }}
+        >
+          <Box
+            sx={{
+              maxWidth: "1200px",
+              mx: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: 3,
+            }}
+          >
+            {/* 
+            <Box sx={{ flex: 1, textAlign: { xs: 'center', md: 'left' }, pt: { xs: 2, md: 4 } }}>
+              <Typography
+                variant="h4"
+                sx={{
+                  fontSize: { xs: '32px', md: '42px', lg: '48px' },
+                  fontWeight: 700,
+                  color: '#111827',
+                  mb: 2.5,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.1,
+                }}
+              >
+                Neural <br />
+                <Box
+                  component="span"
+                  sx={{
+                    color: 'rgba(3, 105, 161, 1)',
+                  }}
+                >
+                  {engineType === 'transformation' ? 'Transformation Engine' : 'Creation Engine'}
+                </Box>
+              </Typography>
+              <Typography
+                sx={{
+                  fontSize: '15px',
+                  color: '#4b5563',
+                  lineHeight: 1.6,
+                  maxWidth: '600px',
+                  mx: { xs: 'auto', md: 0 },
+                  fontWeight: 450,
+                }}
+              >
+                Provision, resize, and optimize high-density content in sub-seconds.
+                The intelligent infrastructure layer for automated visual batch operations.
+              </Typography>
+            </Box>
+            */}
+            {/* Feature Cards and Usage Display Banner - Responsive Grid */}
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  sm: "repeat(2, 1fr)",
+                  lg: "repeat(4, 1fr)",
+                },
+                gap: 2,
+                width: "100%",
+                maxWidth: "1200px",
+                mx: "auto",
+              }}
+            >
+              {[
+                {
+                  icon: <ImageIcon sx={{ fontSize: 20 }} />,
+                  label: "Presets",
+                  value: "5 aspect ratios",
+                  sub: "Social ready",
+                },
+                {
+                  icon: <SpeedIcon sx={{ fontSize: 20 }} />,
+                  label: "Speed",
+                  value: "Instant Process",
+                  sub: "No waiting",
+                },
+                {
+                  icon: <PaletteIcon sx={{ fontSize: 20 }} />,
+                  label: "Enhance",
+                  value: "AI Powered",
+                  sub: "Smart Upscaling",
+                },
+              ].map((item, idx) => (
+                <Box
+                  key={idx}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1.5,
+                    px: 2,
+                    py: 1.5,
+                    bgcolor: "rgba(255, 255, 255, 0.4)",
+                    backdropFilter: "blur(12px)",
+                    border: "1px solid rgba(3, 105, 161, 0.08)",
+                    borderRadius: "12px",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+                    transition: "all 0.2s ease-in-out",
+                    cursor: "default",
+                    height: "100%",
+                    "&:hover": {
+                      transform: "translateY(-2px)",
+                      bgcolor: "rgba(255, 255, 255, 0.7)",
+                      borderColor: "rgba(3, 105, 161, 0.3)",
+                    },
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: "10px",
+                      bgcolor: "rgba(3, 105, 161, 0.05)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "rgba(3, 105, 161, 1)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {item.icon}
+                  </Box>
+                  <Box>
+                    <Typography
+                      sx={{
+                        fontSize: "9px",
+                        fontWeight: 700,
+                        color: "rgba(3, 105, 161, 0.6)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        mb: 0.2,
+                      }}
+                    >
+                      {item.label}
+                    </Typography>
+                    <Typography
+                      sx={{
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        color: "#111827",
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      {item.value}
+                    </Typography>
+                    <Typography
+                      sx={{
+                        fontSize: "11px",
+                        color: "#6b7280",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {item.sub}
+                    </Typography>
+                  </Box>
+                </Box>
+              ))}
+
+              {/* Usage Display as the 4th Grid Item */}
+              <Box sx={{ height: "100%" }}>
+                <UsageDisplay horizontal engineType={engineType as any} />
+              </Box>
+            </Box>
+          </Box>
+        </Container>
+      </Box>
+
+      <Container
+        maxWidth={false}
+        sx={{
+          py: { xs: 2, md: 3 },
+          px: { xs: 1.5, sm: 2, md: 3, lg: 3 },
+          width: "100%",
+          maxWidth: "100%",
+        }}
+      >
+        {/* Subheader: Credit Usage */}
+        {/* <UsageDisplay horizontal engineType={engineType as any} /> */}
+
+        {/* Main Grid - 3 Columns */}
+        <Box
+          sx={{
+            display: "flex",
+            gap: { xs: 2, lg: 3 },
+            flexDirection: { xs: "column", xl: "row" },
+            alignItems: "flex-start",
+          }}
+        >
+          {/* Column 1 - Prompt + Upload/Presets (with sub-columns) + Button */}
+          <Box
+            sx={{
+              width: { xs: "100%", xl: "calc(50% - 16px)" },
+              flexShrink: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 3,
+            }}
+          >
+            {/* Sub-columns container (row-wise) */}
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "row",
+                gap: 2,
+                width: "100%",
+                flexWrap: "wrap",
+              }}
+            >
+              {/* Sub-column 1: Prompt Section - Show ONLY if Creation Engine */}
+              {engineType === "creation" && (
+                <Box sx={{ flex: "1 1 48%", minWidth: "250px" }}>
+                  <Typography
+                    sx={{
+                      fontSize: "15px",
+                      fontWeight: 600,
+                      color: "#111827",
+                      mb: 1.5,
+                    }}
+                  >
+                    Neural Prompt
+                  </Typography>
+                  <Paper
+                    elevation={0}
+                    onClick={() => promptInputRef.current?.focus()}
+                    sx={{
+                      border: "1px solid rgba(3, 105, 161, 0.08)",
+                      borderRadius: "16px",
+                      overflow: "hidden",
+                      display: "flex",
+                      flexDirection: "column",
+                      height: "500px",
+                      cursor: "text",
+                      bgcolor: "white",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.02)",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        flex: 1,
+                        p: { xs: 2, md: 3 },
+                        position: "relative",
+                        bgcolor: "white",
+                      }}
+                    >
+                      {!prompt && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            top: 24,
+                            left: 24,
+                            pointerEvents: "none",
+                            zIndex: 1,
+                          }}
+                        >
+                          <Typography
+                            sx={{
+                              fontSize: "14px",
+                              color: "#9ca3af",
+                              mb: 0.5,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            Describe your enhancement...
+                          </Typography>
+                          <Typography
+                            sx={{
+                              fontSize: "14px",
+                              color: "#9ca3af",
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            e.g. &apos;Make this look like a vintage
+                            photograph&apos;
+                          </Typography>
+                        </Box>
+                      )}
+                      <TextField
+                        multiline
+                        fullWidth
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        inputRef={promptInputRef}
+                        variant="standard"
+                        InputProps={{
+                          disableUnderline: true,
+                        }}
+                        sx={{
+                          "& .MuiInputBase-root": {
+                            height: "100%",
+                            alignItems: "flex-start",
+                            p: 0,
+                          },
+                          "& .MuiInputBase-input": {
+                            fontSize: "14px",
+                            color: "#374151",
+                            lineHeight: 1.6,
+                            "&::placeholder": {
+                              opacity: 0,
+                            },
+                          },
+                        }}
+                      />
+                    </Box>
+
+                    {/* Bottom Info */}
+                    <Box
+                      sx={{
+                        borderTop: "1px solid #f3f4f6",
+                        px: 3,
+                        py: 2,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        bgcolor: "#f9fafb",
+                      }}
+                    >
+                      <Typography
+                        sx={{
+                          fontSize: "12px",
+                          color: "#6b7280",
+                          fontWeight: 500,
+                        }}
+                      >
+                        Optional AI enhancement
+                      </Typography>
+                      <AutoAwesomeIcon
+                        sx={{ fontSize: 18, color: "rgba(3, 105, 161, 0.5)" }}
+                      />
+                    </Box>
+                  </Paper>
+                </Box>
+              )}
+
+              {/* Sub-column 2: Upload & Options Section */}
+              <Box
+                sx={{
+                  flex:
+                    engineType === "transformation" ? "1 1 48%" : "1 1 100%",
+                  minWidth: "250px",
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: "15px",
+                    fontWeight: 600,
+                    color: "#111827",
+                    mb: 1.5,
+                  }}
+                >
+                  {engineType === "creation"
+                    ? "Generative Options"
+                    : "Scaling Options"}
+                </Typography>
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    height: "500px",
+                    overflowY: "auto",
+                    "&::-webkit-scrollbar": {
+                      width: "4px",
+                    },
+                    "&::-webkit-scrollbar-thumb": {
+                      bgcolor: "#e5e7eb",
+                      borderRadius: "4px",
+                    },
+                  }}
+                >
+                  <Stack spacing={3}>
+                    {/* Uploaded Images Folder View */}
+                    {uploadedImages.length > 0 && (
+                      <Paper
+                        elevation={0}
+                        sx={{
+                          border: "1px solid rgba(3, 105, 161, 0.08)",
+                          borderRadius: "12px",
+                          p: 2,
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            fontSize: "14px",
+                            fontWeight: 600,
+                            color: "#111827",
+                            mb: 2,
+                          }}
+                        >
+                          Uploaded Images
+                        </Typography>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "row",
+                            overflowX: "auto",
+                            gap: 2,
+                            pt: 1.5,
+                            pb: 1.5,
+                            "&::-webkit-scrollbar": {
+                              height: "6px",
+                            },
+                            "&::-webkit-scrollbar-track": {
+                              background: "rgba(0,0,0,0.02)",
+                              borderRadius: "10px",
+                            },
+                            "&::-webkit-scrollbar-thumb": {
+                              background: "rgba(3, 105, 161, 0.15)",
+                              borderRadius: "10px",
+                              "&:hover": {
+                                background: "rgba(3, 105, 161, 0.3)",
+                              },
+                            },
+                          }}
+                        >
+                          {uploadedImages.map((img) => (
+                            <Box
+                              key={img.id}
+                              sx={{ minWidth: "140px", flexShrink: 0 }}
+                            >
+                              <Paper
+                                elevation={0}
+                                onClick={() => handleImageSelect(img)}
+                                sx={{
+                                  border:
+                                    previewUrl === img.url
+                                      ? "1.5px solid rgba(3, 105, 161, 1)"
+                                      : "1px solid #e5e7eb",
+                                  borderRadius: "8px",
+                                  p: 1.5,
+                                  cursor: "pointer",
+                                  textAlign: "center",
+                                  transition: "all 0.2s ease",
+                                  position: "relative",
+                                  "&:hover": {
+                                    bgcolor: "#f9fafb",
+                                    borderColor: "rgba(3, 105, 161, 0.4)",
+                                    transform: "translateY(-2px)",
+                                  },
+                                }}
+                              >
+                                <IconButton
+                                  onClick={(e) => handleRemoveImage(img.id, e)}
+                                  sx={{
+                                    position: "absolute",
+                                    top: 4,
+                                    right: 4,
+                                    bgcolor: "rgba(0, 0, 0, 0.5)",
+                                    color: "white",
+                                    width: 24,
+                                    height: 24,
+                                    "&:hover": {
+                                      bgcolor: "rgba(0, 0, 0, 0.7)",
+                                    },
+                                  }}
+                                  size="small"
+                                >
+                                  <CloseIcon sx={{ fontSize: "16px" }} />
+                                </IconButton>
+                                <Box
+                                  sx={{
+                                    width: "100%",
+                                    height: 80,
+                                    mb: 1,
+                                    borderRadius: "4px",
+                                    overflow: "hidden",
+                                    bgcolor: "#f3f4f6",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                >
+                                  <Box
+                                    component="img"
+                                    src={img.url}
+                                    alt={img.name}
+                                    sx={{
+                                      maxWidth: "100%",
+                                      maxHeight: "100%",
+                                      objectFit: "cover",
+                                    }}
+                                  />
+                                </Box>
+                                <Typography
+                                  sx={{
+                                    fontSize: "11px",
+                                    color: "#6b7280",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {img.name}
+                                </Typography>
+                              </Paper>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Paper>
+                    )}
+
+                    {/* Upload & Presets Box */}
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        border: "1px solid rgba(3, 105, 161, 0.08)",
+
+                        borderRadius: "12px",
+                        p: 2.5,
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
+                      }}
+                    >
+                      {/* Upload Area */}
+                      <Box
+                        component="label"
+                        sx={{
+                          display: "block",
+                          cursor: "pointer",
+                          mb: 3,
+                        }}
+                      >
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          style={{ display: "none" }}
+                        />
+                        <Box
+                          sx={{
+                            border: "2px dashed #d1d5db",
+                            borderRadius: "12px",
+                            py: 8,
+                            textAlign: "center",
+                            transition: "all 0.2s ease",
+                            "&:hover": {
+                              borderColor: "rgba(3, 105, 161, 0.4)",
+                              bgcolor: "rgba(3, 105, 161, 0.02)",
+                            },
+                          }}
+                        >
+                          <Typography
+                            sx={{
+                              fontSize: "14px",
+                              color: "#9ca3af",
+                            }}
+                          >
+                            {engineType === "creation"
+                              ? "Click to upload image (Optional)"
+                              : "Click to upload image"}
+                          </Typography>
+                        </Box>
+                      </Box>
+
+                      {/* Presets Section */}
+                      <Typography
+                        sx={{
+                          fontSize: "14px",
+                          fontWeight: 600,
+                          color: "#111827",
+                          mb: 1.5,
+                        }}
+                      >
+                        Select Presets
+                      </Typography>
+                      <Box sx={{ mb: 3 }}>
+                        <Typography
+                          sx={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            color: "#9ca3af",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            mb: 1,
+                          }}
+                        >
+                          Standard Ratios
+                        </Typography>
+                        <Stack spacing={1} sx={{ mb: canViewCustomRatios ? 3 : 0 }}>
+                          {presets
+                            .filter((p) => p.group === "standard")
+                            .map((preset) => (
+                              <Paper
+                                key={preset.id}
+                                elevation={0}
+                                component="label"
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  px: 2,
+                                  py: 1.5,
+                                  border: `1px solid ${selectedPresets.includes(preset.id) ? "rgba(3, 105, 161, 0.5)" : "#e5e7eb"}`,
+                                  bgcolor: selectedPresets.includes(preset.id)
+                                    ? "rgba(242, 240, 255, 0.3)"
+                                    : "transparent",
+                                  borderRadius: "8px",
+                                  cursor: "pointer",
+                                  transition: "all 0.2s ease",
+                                  "&:hover": { bgcolor: "#f9fafb" },
+                                }}
+                              >
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                                  <Radio
+                                    checked={selectedPresets.includes(preset.id)}
+                                    onClick={() => handlePresetChange(preset.id)}
+                                    sx={{
+                                      color: "rgba(3, 105, 161, 0.5)",
+                                      "&.Mui-checked": { color: "rgba(3, 105, 161, 1)" },
+                                      p: 0.5,
+                                    }}
+                                  />
+                                  <Typography
+                                    sx={{
+                                      fontSize: "14px",
+                                      color: "#374151",
+                                      fontWeight: selectedPresets.includes(preset.id) ? 600 : 400,
+                                    }}
+                                  >
+                                    {preset.label}
+                                  </Typography>
+                                </Box>
+                                <Typography sx={{ fontSize: "12px", color: "#9ca3af" }}>
+                                  ({preset.ratio})
+                                </Typography>
+                              </Paper>
+                            ))}
+                        </Stack>
+
+                        {canViewCustomRatios && (
+                          <>
+                            {/* OOH Media Screens Section */}
+                            <Box sx={{ borderTop: "1px solid #e5e7eb", my: 2.5 }} />
+                            <Typography
+                              sx={{
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                color: "#9ca3af",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.05em",
+                                mb: 1.5,
+                              }}
+                            >
+                              OOH Media
+                            </Typography>
+
+                            <Box sx={{ mb: 0.75 }}>
+                              <Box
+                                onClick={() => setExpandedOoh((v) => !v)}
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  px: 1.5,
+                                  py: 0.9,
+                                  bgcolor: OOH_MEDIA_PRESETS.some((p) => selectedPresets.includes(p.id))
+                                    ? "rgba(236,253,245,0.6)"
+                                    : "#f3f4f6",
+                                  border: `1px solid ${OOH_MEDIA_PRESETS.some((p) => selectedPresets.includes(p.id)) ? "rgba(16,185,129,0.3)" : "#e5e7eb"}`,
+                                  borderRadius: "8px",
+                                  cursor: "pointer",
+                                  userSelect: "none",
+                                  transition: "all 0.15s ease",
+                                  "&:hover": { bgcolor: "#e6f9f2" },
+                                }}
+                              >
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                  <Typography sx={{ fontSize: "13px", fontWeight: 600, color: "#374151" }}>
+                                    OOH Media
+                                  </Typography>
+                                  <Typography sx={{ fontSize: "11px", color: "#9ca3af", fontWeight: 500 }}>
+                                    {OOH_MEDIA_PRESETS.length}
+                                  </Typography>
+                                </Box>
+                                <ExpandMoreIcon
+                                  sx={{
+                                    fontSize: 16,
+                                    color: "#9ca3af",
+                                    transform: expandedOoh ? "rotate(180deg)" : "rotate(0deg)",
+                                    transition: "transform 0.2s ease",
+                                  }}
+                                />
+                              </Box>
+
+                              {expandedOoh && (
+                                <Stack spacing={0.5} sx={{ mt: 0.5, pl: 1 }}>
+                                  {OOH_MEDIA_PRESETS.map((preset) => (
+                                    <Paper
+                                      key={preset.id}
+                                      elevation={0}
+                                      component="label"
+                                      sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                        px: 1.5,
+                                        py: 1,
+                                        border: `1px solid ${selectedPresets.includes(preset.id) ? "rgba(16,185,129,0.5)" : "#e5e7eb"}`,
+                                        bgcolor: selectedPresets.includes(preset.id)
+                                          ? "rgba(236,253,245,0.4)"
+                                          : "transparent",
+                                        borderRadius: "7px",
+                                        cursor: "pointer",
+                                        transition: "all 0.15s ease",
+                                        "&:hover": { bgcolor: "#e6f9f2" },
+                                      }}
+                                    >
+                                      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                                        <Radio
+                                          checked={selectedPresets.includes(preset.id)}
+                                          onClick={() => handlePresetChange(preset.id)}
+                                          sx={{
+                                            color: "rgba(16, 185, 129, 0.5)",
+                                            "&.Mui-checked": { color: "rgba(16, 185, 129, 1)" },
+                                            p: 0.5,
+                                          }}
+                                        />
+                                        <Typography
+                                          sx={{
+                                            fontSize: "13px",
+                                            color: "#374151",
+                                            fontWeight: selectedPresets.includes(preset.id) ? 600 : 400,
+                                          }}
+                                        >
+                                          {preset.label}
+                                        </Typography>
+                                      </Box>
+                                      <Typography sx={{ fontSize: "11px", color: "#9ca3af", whiteSpace: "nowrap" }}>
+                                        {preset.ratio.replace("OOH_", "").replace("x", "×")}px
+                                      </Typography>
+                                    </Paper>
+                                  ))}
+                                </Stack>
+                              )}
+                            </Box>
+                          </>
+                        )}
+                      </Box>
+                    </Paper>
+                  </Stack>
+                </Box>
+              </Box>
+            </Box>
+
+            {/* JSON Pipeline toggle — transformation engine only */}
+            {engineType === "transformation" && (
+              <Tooltip
+                title="Converts the image to a structured JSON layout, mathematically resizes every element, then reconstructs the image. More precise than prompt-only resizing."
+                placement="top"
+                arrow
+              >
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    px: 1.5,
+                    py: 0.75,
+                    borderRadius: "8px",
+                    border: useJsonPipeline
+                      ? "1px solid rgba(3, 105, 161, 0.4)"
+                      : "1px solid #e5e7eb",
+                    bgcolor: useJsonPipeline
+                      ? "rgba(3, 105, 161, 0.04)"
+                      : "transparent",
+                    transition: "all 0.2s ease",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setUseJsonPipeline((v) => !v)}
+                >
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={useJsonPipeline}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          setUseJsonPipeline(e.target.checked);
+                        }}
+                        size="small"
+                        sx={{
+                          "& .MuiSwitch-switchBase.Mui-checked": {
+                            color: "rgba(3, 105, 161, 1)",
+                          },
+                          "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track":
+                            {
+                              bgcolor: "rgba(3, 105, 161, 0.45)",
+                            },
+                        }}
+                      />
+                    }
+                    label={
+                      <Box>
+                        <Typography
+                          sx={{
+                            fontSize: "13px",
+                            fontWeight: 600,
+                            color: useJsonPipeline ? "rgba(3, 105, 161, 1)" : "#374151",
+                            lineHeight: 1.3,
+                          }}
+                        >
+                          JSON Pipeline
+                        </Typography>
+                        <Typography
+                          sx={{ fontSize: "11px", color: "#9ca3af", lineHeight: 1.3 }}
+                        >
+                          structured layout control
+                        </Typography>
+                      </Box>
+                    }
+                    sx={{ m: 0, gap: 0.5 }}
+                  />
+                </Box>
+              </Tooltip>
+            )}
+
+            {/* Main Action Button */}
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={handleProcessImage}
+              disabled={
+                isProcessing ||
+                (engineType === "transformation" &&
+                  (!uploadedImage || selectedPresets.length === 0)) ||
+                (engineType === "creation" && !prompt.trim())
+              }
+              sx={{
+                py: 1.2,
+                borderRadius: "8px",
+                textTransform: "none",
+                fontSize: "14px",
+                fontWeight: 600,
+                bgcolor: "rgba(3, 105, 161, 1)",
+                boxShadow: "0 8px 16px -4px rgba(3, 105, 161, 0.25)",
+                transition: "all 0.3s ease",
+                "&:hover": {
+                  bgcolor: "rgba(3, 105, 161, 0.9)",
+                  transform: "translateY(-1px)",
+                  boxShadow: "0 12px 20px -5px rgba(3, 105, 161, 0.3)",
+                },
+                "&.Mui-disabled": {
+                  background: "#f3f4f6",
+                  color: "#9ca3af",
+                },
+                flex: "1 1 100%",
+              }}
+            >
+              {isProcessing ? (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <CircularProgress size={20} color="inherit" />
+                  Processing {selectedPresets.length} items...
+                </Box>
+              ) : (
+                "Process & Enhance Media"
+              )}
+            </Button>
+          </Box>
+
+          {/* Column 2 - Image Preview */}
+          <Box
+            sx={{
+              flex: 1,
+              width: "100%",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                mb: 1.5,
+              }}
+            >
+              <Typography
+                sx={{
+                  fontSize: "15px",
+                  fontWeight: 600,
+                  color: "#111827",
+                }}
+              >
+                Preview Pipeline
+              </Typography>
+              {previewUrl && processedImages.length > 0 && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setShowOriginal(!showOriginal)}
+                  sx={{
+                    textTransform: "none",
+                    fontSize: "13px",
+                    fontWeight: 500,
+                    borderColor: "#e5e7eb",
+                    color: "#6b7280",
+                    py: 0.5,
+                    px: 1.5,
+                    borderRadius: "8px",
+                    "&:hover": {
+                      borderColor: "rgba(142, 45, 226, 0.4)",
+                      bgcolor: "rgba(142, 45, 226, 0.02)",
+                      color: "rgba(142, 45, 226, 1)",
+                    },
+                  }}
+                >
+                  {showOriginal ? "View Results" : "View Original"}
+                </Button>
+              )}
+            </Box>
+            <Paper
+              elevation={0}
+              sx={{
+                border: "1px solid #e5e7eb",
+                borderRadius: "20px",
+                p: { xs: 2, md: 3 },
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "stretch",
+                justifyContent: "flex-start",
+                height: "590px",
+                overflowY: "auto",
+                position: "relative",
+                boxShadow: "0 4px 20px -5px rgba(0,0,0,0.05)",
+                "&::-webkit-scrollbar": {
+                  width: "0px",
+                  display: "none",
+                },
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+              }}
+            >
+              {isProcessing && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    bgcolor: "rgba(255, 255, 255, 0.9)",
+                    zIndex: 2,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 2,
+                  }}
+                >
+                  <CircularProgress
+                    size={40}
+                    thickness={4}
+                    sx={{ color: "rgba(142, 45, 226, 1)" }}
+                  />
+                  <Typography
+                    sx={{
+                      color: "rgba(142, 45, 226, 1)",
+                      fontWeight: 600,
+                      fontSize: "13px",
+                    }}
+                  >
+                    Neural Inference in progress...
+                  </Typography>
+                </Box>
+              )}
+              {processedImages.length > 0 && !showOriginal ? (
+                <Box
+                  sx={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 0,
+                    overflow: "hidden",
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      fontSize: { xs: "13px", md: "14px" },
+                      fontWeight: 600,
+                      color: "#111827",
+                      mb: 2,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Processed Images ({processedImages.length})
+                  </Typography>
+                  <Box
+                    sx={{
+                      flex: 1,
+                      overflowX: "auto",
+                      overflowY: "hidden",
+                      minHeight: 0,
+                      pb: 2,
+                      "&::-webkit-scrollbar": {
+                        height: "8px",
+                      },
+                      "&::-webkit-scrollbar-track": {
+                        background: "#f1f1f1",
+                        borderRadius: "4px",
+                      },
+                      "&::-webkit-scrollbar-thumb": {
+                        background: "#cbd5e1",
+                        borderRadius: "4px",
+                        "&:hover": {
+                          background: "#94a3b8",
+                        },
+                      },
+                    }}
+                  >
+                    <Stack
+                      direction="row"
+                      spacing={3}
+                      sx={{ minWidth: "max-content", height: "100%" }}
+                    >
+                      {processedImages.map((image) => (
+                        <Paper
+                          key={image.id}
+                          elevation={0}
+                          sx={{
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "12px",
+                            overflow: "hidden",
+                            width: "340px",
+                            flexShrink: 0,
+                            display: "flex",
+                            flexDirection: "column",
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              bgcolor: "#f9fafb",
+                              px: { xs: 1.5, md: 2 },
+                              py: 1,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                            }}
+                          >
+                            <Typography
+                              sx={{
+                                fontSize: { xs: "13px", md: "14px" },
+                                fontWeight: 500,
+                                color: "#111827",
+                              }}
+                            >
+                              {image.preset}
+                              <Typography
+                                component="span"
+                                sx={{
+                                  fontSize: { xs: "13px", md: "14px" },
+                                  color: "#9ca3af",
+                                  ml: 1,
+                                }}
+                              >
+                                ({image.ratio})
+                              </Typography>
+                            </Typography>
+                            <Box sx={{ display: "flex", gap: 0.5 }}>
+                              <IconButton
+                                size="small"
+                                onClick={() =>
+                                  handleOpenModal({
+                                    url: image.url,
+                                    preset: image.preset,
+                                    ratio: image.ratio,
+                                  })
+                                }
+                                sx={{
+                                  p: 0.75,
+                                  "&:hover": {
+                                    bgcolor: "#e5e7eb",
+                                  },
+                                }}
+                              >
+                                <FullscreenIcon
+                                  sx={{ fontSize: 18, color: "#6b7280" }}
+                                />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={() =>
+                                  handleDownload(
+                                    image.url,
+                                    `${image.preset}-${image.ratio}.png`,
+                                  )
+                                }
+                                sx={{
+                                  p: 0.75,
+                                  "&:hover": {
+                                    bgcolor: "#e5e7eb",
+                                  },
+                                }}
+                              >
+                                <DownloadIcon
+                                  sx={{ fontSize: 18, color: "#6b7280" }}
+                                />
+                              </IconButton>
+                            </Box>
+                          </Box>
+                          <Box
+                            sx={{
+                              p: { xs: 1.5, md: 2 },
+                              width: "100%",
+                              flex: 1,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              bgcolor: "#f8f9fa",
+                              position: "relative",
+                            }}
+                          >
+                            <Box
+                              component="img"
+                              src={image.url}
+                              alt={image.preset}
+                              onClick={() =>
+                                handleOpenModal({
+                                  url: image.url,
+                                  preset: image.preset,
+                                  ratio: image.ratio,
+                                })
+                              }
+                              sx={{
+                                maxWidth: "100%",
+                                maxHeight: "380px",
+                                width: "auto",
+                                height: "auto",
+                                borderRadius: "8px",
+                                objectFit: "contain",
+                                display: "block",
+                                cursor: "pointer",
+                                transition: "transform 0.2s",
+                                "&:hover": {
+                                  transform: "scale(1.02)",
+                                },
+                              }}
+                            />
+                          </Box>
+                        </Paper>
+                      ))}
+                    </Stack>
+                  </Box>
+                </Box>
+              ) : previewUrl ? (
+                <Box
+                  sx={{
+                    textAlign: "center",
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Box
+                    component="img"
+                    src={previewUrl}
+                    alt="Preview"
+                    sx={{
+                      maxWidth: "100%",
+                      maxHeight: { xs: "300px", md: "500px" },
+                      width: "auto",
+                      height: "auto",
+                      objectFit: "contain",
+                      borderRadius: "8px",
+                      mb: 2,
+                    }}
+                  />
+                  <Typography
+                    sx={{
+                      fontSize: { xs: "13px", md: "14px" },
+                      color: "#6b7280",
+                    }}
+                  >
+                    Original image. Select presets to process.
+                  </Typography>
+                </Box>
+              ) : (
+                <Typography
+                  sx={{
+                    fontSize: { xs: "13px", md: "14px" },
+                    color: "#9ca3af",
+                    textAlign: "center",
+                  }}
+                >
+                  {engineType === "creation"
+                    ? "Enter a prompt and select presets to start generating."
+                    : "Select an image and presets to start processing."}
+                </Typography>
+              )}
+            </Paper>
+          </Box>
+        </Box>
+      </Container>
+
+      {/* Full Image Preview Modal */}
+      <Modal
+        open={modalOpen}
+        onClose={handleCloseModal}
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          p: 2,
+        }}
+      >
+        <Box
+          sx={{
+            position: "relative",
+            bgcolor: "white",
+            borderRadius: "12px",
+            p: 3,
+            maxWidth: "90vw",
+            maxHeight: "90vh",
+            display: "flex",
+            flexDirection: "column",
+            outline: "none",
+          }}
+        >
+          {/* Modal Header */}
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              mb: 2,
+            }}
+          >
+            <Typography
+              sx={{
+                fontSize: "14px",
+                fontWeight: 600,
+                color: "#111827",
+              }}
+            >
+              {selectedImage?.preset} ({selectedImage?.ratio})
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+              <IconButton
+                onClick={() =>
+                  selectedImage &&
+                  handleDownload(
+                    selectedImage.url,
+                    `${selectedImage.preset}-${selectedImage.ratio}.png`,
+                  )
+                }
+                sx={{
+                  bgcolor: "#f3f4f6",
+                  "&:hover": {
+                    bgcolor: "#e5e7eb",
+                  },
+                }}
+              >
+                <DownloadIcon sx={{ fontSize: 20, color: "#374151" }} />
+              </IconButton>
+              <IconButton
+                onClick={handleCloseModal}
+                sx={{
+                  bgcolor: "#f3f4f6",
+                  "&:hover": {
+                    bgcolor: "#e5e7eb",
+                  },
+                }}
+              >
+                <CloseIcon sx={{ fontSize: 20, color: "#374151" }} />
+              </IconButton>
+            </Box>
+          </Box>
+
+          {/* Modal Image */}
+          {selectedImage && (
+            <Box
+              sx={{
+                width: "100%",
+                height: "auto",
+                maxHeight: "calc(90vh - 120px)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "auto",
+              }}
+            >
+              <Box
+                component="img"
+                src={selectedImage.url}
+                alt={selectedImage.preset}
+                sx={{
+                  maxWidth: "100%",
+                  maxHeight: "calc(90vh - 120px)",
+                  width: "auto",
+                  height: "auto",
+                  objectFit: "contain",
+                  borderRadius: "8px",
+                }}
+              />
+            </Box>
+          )}
+        </Box>
+      </Modal>
+
+      {/* Credit Limit Exceeded Modal */}
+      <Modal
+        open={isLimitExceeded}
+        onClose={() => setIsLimitExceeded(false)}
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          p: 2,
+        }}
+      >
+        <Paper
+          sx={{
+            width: "100%",
+            maxWidth: 450,
+            borderRadius: "24px",
+            p: 4,
+            textAlign: "center",
+            position: "relative",
+            overflow: "hidden",
+            outline: "none",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+          }}
+        >
+          {/* Top Gradient Bar */}
+          <Box
+            sx={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: "8px",
+              background: "linear-gradient(90deg, #4A00E0 0%, #8E2DE2 100%)",
+            }}
+          />
+
+          <Box
+            sx={{
+              mb: 3,
+              display: "inline-flex",
+              p: 2,
+              bgcolor: "rgba(142, 45, 226, 0.05)",
+              borderRadius: "16px",
+            }}
+          >
+            <AutoAwesomeIcon
+              sx={{ fontSize: 32, color: "rgba(142, 45, 226, 1)" }}
+            />
+          </Box>
+
+          <Typography
+            sx={{ fontSize: "18px", fontWeight: 600, color: "#111827", mb: 1 }}
+          >
+            Infrastructure Upgrade Needed
+          </Typography>
+
+          <Typography
+            variant="body2"
+            sx={{ color: "#6b7280", mb: 4, lineHeight: 1.6 }}
+          >
+            Provision additional credits to continue high-density batch
+            operations. Your current quota has been reached.
+          </Typography>
+
+          <Stack spacing={2}>
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={() => {
+                setIsLimitExceeded(false);
+                window.location.href = "/pricing";
+              }}
+              sx={{
+                py: 1.2,
+                borderRadius: "8px",
+                bgcolor: "rgba(142, 45, 226, 1)",
+                textTransform: "none",
+                fontWeight: 600,
+                fontSize: "14px",
+                boxShadow: "0 8px 16px -4px rgba(142, 45, 226, 0.25)",
+                "&:hover": {
+                  bgcolor: "rgba(142, 45, 226, 0.9)",
+                },
+              }}
+            >
+              Provision Credits
+            </Button>
+
+            <Button
+              fullWidth
+              variant="text"
+              onClick={() => setIsLimitExceeded(false)}
+              sx={{
+                py: 1.5,
+                borderRadius: "14px",
+                textTransform: "none",
+                color: "#6b7280",
+                fontWeight: 600,
+                "&:hover": { bgcolor: "#f9fafb" },
+              }}
+            >
+              Maybe later
+            </Button>
+          </Stack>
+
+          <Typography
+            variant="caption"
+            sx={{ display: "block", mt: 3, color: "#9ca3af", fontWeight: 500 }}
+          >
+            Questions?{" "}
+            <Box
+              component="span"
+              sx={{ color: "rgba(74, 0, 224, 1)", cursor: "pointer" }}
+            >
+              Talk to support
+            </Box>
+          </Typography>
+        </Paper>
+      </Modal>
+      {/* Preset Limit Modal */}
+      <Modal open={showPresetLimit}>
+        <Paper
+          elevation={24}
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: { xs: "90%", sm: 400 },
+            borderRadius: "20px",
+            p: 4,
+            textAlign: "center",
+            outline: "none",
+            bgcolor: "white",
+            overflow: "hidden",
+          }}
+        >
+          {/* Warning icon */}
+          <Box
+            sx={{
+              width: 56,
+              height: 56,
+              borderRadius: "16px",
+              bgcolor: "rgba(234, 88, 12, 0.08)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              mx: "auto",
+              mb: 2,
+            }}
+          >
+            <Typography sx={{ fontSize: "28px" }}>⚠️</Typography>
+          </Box>
+
+          <Typography
+            sx={{
+              fontSize: "18px",
+              fontWeight: 700,
+              color: "#111827",
+              mb: 1,
+            }}
+          >
+            Selection Limit Reached
+          </Typography>
+          <Typography
+            sx={{
+              fontSize: "14px",
+              color: "#6b7280",
+              mb: 3,
+              lineHeight: 1.6,
+            }}
+          >
+            You can select up to <strong>{MAX_PRESETS} ratios</strong> at a
+            time. Deselect one first to choose a different ratio.
+          </Typography>
+
+          <Button
+            onClick={() => setShowPresetLimit(false)}
+            fullWidth
+            sx={{
+              py: 1.5,
+              borderRadius: "12px",
+              fontSize: "14px",
+              fontWeight: 600,
+              textTransform: "none",
+              background:
+                "linear-gradient(135deg, rgba(3, 105, 161, 1) 0%, rgba(14, 165, 233, 1) 100%)",
+              color: "white",
+              boxShadow: "0 4px 14px -3px rgba(3, 105, 161, 0.4)",
+              "&:hover": {
+                background:
+                  "linear-gradient(135deg, rgba(80, 50, 150, 1) 0%, rgba(110, 75, 192, 1) 100%)",
+              },
+            }}
+          >
+            Got it
+          </Button>
+        </Paper>
+      </Modal>
+    </Box>
+  );
+};
+
+export default ImageProcessor;

@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+ooh_decomposition_cache/
+ooh_test_outputs/
+child/
+desk/
+fonts/
+qms_test_outputs/

@@ -1,0 +1,308 @@
+"use client";
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+import { Box, CircularProgress, Container, Typography, Button, Paper, Stack } from '@mui/material';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import type { EngineType } from '@/types/billing';
+import { getPlanLabel, hasActiveSubscription, hasEngineActiveSubscription, getEnginePlan } from '@/types/billing';
+import { useUser } from '@/app/context/AuthContext';
+import UsageDisplay from '../components/dashboard/UsageDisplay';
+import Header from '../components/Header';
+
+const ImageProcessor = dynamic(() => import('../components/ImageProcessor'), {
+    ssr: false,
+    loading: () => (
+        <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CircularProgress />
+        </Box>
+    ),
+});
+
+export default function Dashboard() {
+    const router = useRouter();
+    const { user, loading: authLoading, refreshUser } = useUser();
+    const [selectedEngine, setSelectedEngine] = useState<EngineType>(user?.engineType as EngineType || 'transformation');
+    const [bootLoading, setBootLoading] = useState(true);
+
+    useEffect(() => {
+        const token = localStorage.getItem('auth_token');
+
+        if (!token) {
+            router.push('/auth');
+        } else {
+            // Ensure we have freshest subscription/credits right after landing
+            refreshUser().finally(() => {
+                setBootLoading(false);
+            });
+        }
+    }, [router, refreshUser]);
+
+    // Sync selected engine with user profile on load or when user data changes significantly
+    useEffect(() => {
+        if (user?.engineType && !bootLoading) {
+            setSelectedEngine(user.engineType as EngineType);
+        }
+    }, [user?.engineType, bootLoading]);
+
+    if (authLoading || bootLoading) {
+        return (
+            <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#ffffff' }}>
+                <CircularProgress size={32} sx={{ color: 'rgba(97, 64, 172, 1)' }} />
+            </Box>
+        );
+    }
+
+    if (!user) return null;
+
+    // Check if THIS SPECIFIC ENGINE has an active subscription
+    const hasSubscription = hasEngineActiveSubscription(user, selectedEngine);
+    const enginePlan = getEnginePlan(user, selectedEngine);
+    const planLabel = hasSubscription ? getPlanLabel(enginePlan) : 'No active subscription';
+
+    // Check credits specifically for the SELECTED engine
+    // If no subscription, monthly credits are effectively 0
+    const selectedCredits = user.engine_data?.[selectedEngine]?.credits;
+    const effectiveCredits = hasSubscription ? (selectedCredits || user.credits) : null;
+
+    // Calculate remaining units: monthly + addons
+    // If no subscription, only addons count (if any)
+    const monthlyRemaining = hasSubscription
+        ? Math.max(0, (effectiveCredits?.monthly_units_max || 0) - (effectiveCredits?.monthly_units_used || 0))
+        : 0;
+    const addonCredits = selectedCredits || user.credits;
+    const addonRemaining = Math.max(0, (addonCredits?.addon_units_max || 0) - (addonCredits?.addon_units_used || 0));
+
+    const remainingUnits = monthlyRemaining + addonRemaining;
+    const hasNoCredits = remainingUnits <= 0;
+
+    return (
+        <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'rgba(97, 64, 172, 0.02)' }}>
+
+            {/* Main Content Area */}
+            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+
+                <Header />
+
+                {/* Content */}
+                <Box sx={{ p: { xs: 2, md: 3 }, flexGrow: 1 }}>
+
+                    {/* Engine Toggle */}
+                    <Container maxWidth="sm" sx={{ mb: 4 }}>
+                        <Paper
+                            elevation={0}
+                            sx={{
+                                p: 0.5,
+                                display: 'flex',
+                                bgcolor: 'rgba(255, 255, 255, 0.6)',
+                                backdropFilter: 'blur(20px)',
+                                border: '1px solid rgba(97, 64, 172, 0.1)',
+                                borderRadius: '12px',
+                                position: 'relative',
+                                overflow: 'hidden'
+                            }}
+                        >
+                            <Box
+                                sx={{
+                                    position: 'absolute',
+                                    top: 4,
+                                    bottom: 4,
+                                    left: 4,
+                                    width: 'calc(50% - 4px)',
+                                    bgcolor: 'white',
+                                    borderRadius: '8px',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                                    transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    transform: selectedEngine === 'transformation' ? 'translateX(0)' : 'translateX(calc(100% + 4px))',
+                                    zIndex: 0
+                                }}
+                            />
+                            {[
+                                { id: 'creation', label: 'Creation Engine' },
+                                { id: 'transformation', label: 'Transformation Engine' }
+                            ].map((engine) => (
+                                <Button
+                                    key={engine.id}
+                                    fullWidth
+                                    onClick={() => setSelectedEngine(engine.id as EngineType)}
+                                    sx={{
+                                        position: 'relative',
+                                        zIndex: 1,
+                                        color: selectedEngine === engine.id ? 'rgba(97, 64, 172, 1)' : '#6b7280',
+                                        fontWeight: selectedEngine === engine.id ? 700 : 500,
+                                        textTransform: 'none',
+                                        borderRadius: '8px',
+                                        py: 1,
+                                        transition: 'all 0.2s',
+                                        '&:hover': {
+                                            color: selectedEngine === engine.id ? 'rgba(97, 64, 172, 1)' : '#4b5563',
+                                            bgcolor: 'transparent'
+                                        }
+                                    }}
+                                >
+                                    {engine.label}
+                                </Button>
+                            ))}
+                        </Paper>
+                    </Container>
+
+                    {!hasSubscription ? (
+                        <Container maxWidth="md" sx={{ py: { xs: 4, md: 6 } }}>
+                            <Paper
+                                elevation={0}
+                                sx={{
+                                    p: { xs: 4, md: 8 },
+                                    textAlign: 'center',
+                                    borderRadius: '24px',
+                                    border: '1px solid rgba(97, 64, 172, 0.1)',
+                                    bgcolor: 'rgba(255, 255, 255, 0.8)',
+                                    backdropFilter: 'blur(20px)',
+                                    transition: 'all 0.3s ease',
+                                    '&:hover': { boxShadow: '0 25px 50px -12px rgba(97, 64, 172, 0.1)' }
+                                }}
+                            >
+                                <Box sx={{
+                                    mb: 3,
+                                    width: 80,
+                                    height: 80,
+                                    borderRadius: '20px',
+                                    bgcolor: 'rgba(97, 64, 172, 0.05)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    mx: 'auto'
+                                }}>
+                                    <AccountBalanceWalletIcon sx={{ fontSize: 36, color: 'rgba(97, 64, 172, 1)' }} />
+                                </Box>
+                                <Typography variant="h4" gutterBottom sx={{ fontWeight: 600, color: '#111827' }}>
+                                    Subscription required
+                                </Typography>
+                                <Typography variant="body2" sx={{ mb: 4, color: '#6b7280', fontWeight: 400, maxWidth: '500px', mx: 'auto', lineHeight: 1.6 }}>
+                                    Your account has <b>{planLabel}</b>. Choose a plan to activate monthly units and start using the {selectedEngine === 'transformation' ? 'Transformation' : 'Creation'} engine.
+                                </Typography>
+
+                                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="center">
+                                    <Button
+                                        variant="contained"
+                                        size="large"
+                                        onClick={() => router.push('/pricing')}
+                                        sx={{
+                                            borderRadius: '8px',
+                                            px: 4,
+                                            py: 1.2,
+                                            fontSize: '13px',
+                                            bgcolor: 'rgba(97, 64, 172, 1)',
+                                            fontWeight: 600,
+                                            '&:hover': { bgcolor: 'rgba(97, 64, 172, 0.9)' }
+                                        }}
+                                    >
+                                        View Plans
+                                    </Button>
+                                    <Button
+                                        variant="outlined"
+                                        size="large"
+                                        onClick={() => router.push('/')}
+                                        sx={{
+                                            borderRadius: '8px',
+                                            px: 4,
+                                            py: 1.2,
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            borderWidth: 1,
+                                            borderColor: 'rgba(97, 64, 172, 0.1)',
+                                            color: '#4b5563',
+                                            '&:hover': { borderWidth: 1, borderColor: 'rgba(97, 64, 172, 0.3)', bgcolor: 'rgba(97, 64, 172, 0.02)' }
+                                        }}
+                                    >
+                                        View Documentation
+                                    </Button>
+                                </Stack>
+                            </Paper>
+                        </Container>
+                    ) : hasNoCredits ? (
+                        <Container maxWidth="md" sx={{ py: { xs: 4, md: 6 } }}>
+                            <Paper
+                                elevation={0}
+                                sx={{
+                                    p: { xs: 4, md: 8 },
+                                    textAlign: 'center',
+                                    borderRadius: '24px',
+                                    border: '1px solid rgba(97, 64, 172, 0.1)',
+                                    bgcolor: 'rgba(255, 255, 255, 0.8)',
+                                    backdropFilter: 'blur(20px)',
+                                }}
+                            >
+                                <Box sx={{
+                                    mb: 3,
+                                    width: 80,
+                                    height: 80,
+                                    borderRadius: '20px',
+                                    bgcolor: 'rgba(97, 64, 172, 0.05)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    mx: 'auto'
+                                }}>
+                                    <AccountBalanceWalletIcon sx={{ fontSize: 36, color: 'rgba(97, 64, 172, 1)' }} />
+                                </Box>
+                                <Typography variant="h4" gutterBottom sx={{ fontWeight: 600, color: '#111827' }}>
+                                    No units available
+                                </Typography>
+                                <Typography variant="body2" sx={{ mb: 4, color: '#6b7280', fontWeight: 400, maxWidth: '520px', mx: 'auto', lineHeight: 1.6 }}>
+                                    Your {selectedEngine === 'transformation' ? 'Transformation' : 'Creation'} engine currently has 0 remaining units. Buy addon credits or change your plan.
+                                </Typography>
+                                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="center">
+                                    <Button
+                                        variant="contained"
+                                        size="large"
+                                        onClick={() => router.push('/billing')}
+                                        sx={{
+                                            borderRadius: '8px',
+                                            px: 4,
+                                            py: 1.2,
+                                            fontSize: '13px',
+                                            bgcolor: 'rgba(97, 64, 172, 1)',
+                                            fontWeight: 600,
+                                            '&:hover': { bgcolor: 'rgba(97, 64, 172, 0.9)' }
+                                        }}
+                                    >
+                                        Billing & Addons
+                                    </Button>
+                                    <Button
+                                        variant="outlined"
+                                        size="large"
+                                        onClick={() => router.push('/pricing')}
+                                        sx={{
+                                            borderRadius: '8px',
+                                            px: 4,
+                                            py: 1.2,
+                                            fontSize: '13px',
+                                            fontWeight: 600,
+                                            borderWidth: 1,
+                                            borderColor: 'rgba(97, 64, 172, 0.1)',
+                                            color: '#4b5563',
+                                            '&:hover': { borderWidth: 1, borderColor: 'rgba(97, 64, 172, 0.3)', bgcolor: 'rgba(97, 64, 172, 0.02)' }
+                                        }}
+                                    >
+                                        Manage Plan
+                                    </Button>
+                                </Stack>
+                            </Paper>
+                        </Container>
+                    ) : (
+                        <ImageProcessor engineType={selectedEngine} />
+                    )}
+                </Box>
+
+                {/* Footer */}
+                <Box sx={{ py: 2, px: 4, borderTop: '1px solid rgba(97, 64, 172, 0.05)', display: 'flex', justifyContent: 'center' }}>
+
+                    <Typography variant="caption" sx={{ color: '#9ca3af', fontWeight: 500 }}>
+                        Infrastructure v2.0 • Neural Compute Dashboard
+                    </Typography>
+                </Box>
+            </Box>
+        </Box>
+    );
+}
