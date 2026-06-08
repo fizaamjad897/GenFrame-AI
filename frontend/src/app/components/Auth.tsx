@@ -158,7 +158,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess, initialTab, initialToken, re
         </svg>
 
         {/* Logo mark */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "auto", position: "relative", zIndex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 40, position: "relative", zIndex: 1 }}>
           <LogoIcon size={38} gradId="logo-left" />
           <div>
             <div style={{ fontSize: 17, fontWeight: 700, color: "white", letterSpacing: "-0.02em" }}>GenFrame</div>
@@ -248,15 +248,6 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess, initialTab, initialToken, re
           <button className="auth-back-link" onClick={() => router.push("/")}>
             <ArrowBackIcon sx={{ fontSize: 15 }} /> Back to home
           </button>
-
-          {/* Logo — always visible on form side */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
-            <LogoIcon size={36} gradId="logo-right" />
-            <div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>GenFrame</div>
-              <div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: "0.06em", textTransform: "uppercase" }}>AI Image Adaptation</div>
-            </div>
-          </div>
 
           {/* B2C anticipation banner */}
           {isB2C && activeForm === "signup" && (
