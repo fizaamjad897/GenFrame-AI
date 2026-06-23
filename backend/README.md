@@ -133,4 +133,4 @@ with open('image.jpg', 'rb') as f:
 - **Backend**: FastAPI, Google GenAI SDK (`google-genai`)
 - **Frontend**: HTML5, CSS3, JavaScript (Vanilla)
 - **Storage**: Digital Ocean Spaces (S3-compatible)
-- **AI Model**: Google Gemini 3 Pro (`gemini-3-pro-image-preview`)
+- **AI Model**: Google Gemini 3 Pro (`gemini-3-pro-image`)

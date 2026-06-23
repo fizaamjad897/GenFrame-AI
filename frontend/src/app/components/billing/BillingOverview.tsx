@@ -83,7 +83,7 @@ const BillingOverview: React.FC<BillingOverviewProps> = ({
                 bgcolor: 'white', mb: 4, boxShadow: '0 4px 20px -5px rgba(0,0,0,0.05)',
             }}
         >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, flexWrap: 'wrap' }}>
                 <CreditCardIcon sx={{ fontSize: 28, color: 'rgba(3, 105, 161, 1)' }} />
                 <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 600, color: '#111827' }}>
                     Your Current Plan
@@ -104,11 +104,12 @@ const BillingOverview: React.FC<BillingOverviewProps> = ({
                     <Box sx={{
                         p: 2.5, borderRadius: '16px', bgcolor: 'rgba(3, 105, 161, 0.03)',
                         border: '1px solid rgba(3, 105, 161, 0.1)', mb: 1,
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                        display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2,
+                        alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between'
                     }}>
                         <Box>
                             <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 0.5 }}>Current Usage (Total)</Typography>
-                            <Typography sx={{ fontSize: '32px', fontWeight: 700, color: '#111827', lineHeight: 1 }}>
+                            <Typography sx={{ fontSize: { xs: '26px', md: '32px' }, fontWeight: 700, color: '#111827', lineHeight: 1 }}>
                                 {((credits.monthly_units_used || 0) + (credits.addon_units_used || 0)).toLocaleString()} / {((credits.monthly_units_max || 0) + (credits.addon_units_max || 0)).toLocaleString()}
                             </Typography>
                         </Box>
@@ -156,7 +157,7 @@ const BillingOverview: React.FC<BillingOverviewProps> = ({
                 <Grid size={12}>
                     <Box sx={{ p: 2, borderRadius: '12px', bgcolor: '#f9fafb', border: '1px solid #e5e7eb' }}>
                         <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>Overall Capacity (Used / Total)</Typography>
-                        <Typography sx={{ fontSize: '28px', fontWeight: 700, color: '#111827' }}>
+                        <Typography sx={{ fontSize: { xs: '24px', md: '28px' }, fontWeight: 700, color: '#111827' }}>
                             {((credits.monthly_units_used || 0) + (credits.addon_units_used || 0)).toLocaleString()} / {((credits.monthly_units_max || 0) + (credits.addon_units_max || 0)).toLocaleString()}
                         </Typography>
                     </Box>

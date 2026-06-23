@@ -19,6 +19,7 @@ import {
   Logout as LogoutIcon,
   Person as PersonIcon,
   CreditCard as CreditCardIcon,
+  Insights as InsightsIcon,
   Star as StarIcon,
   PhotoLibrary as PhotoLibraryIcon,
   AutoAwesome as AutoAwesomeIcon,
@@ -95,13 +96,13 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
       position="sticky"
       elevation={0}
       sx={{
-        background: "rgba(255, 255, 255, 0.6)",
+        background: "rgba(255, 255, 255, 0.78)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
-        minHeight: { xs: 50, md: 60 },
-        boxShadow: "0 4px 24px rgba(3, 105, 161, 0.03)",
+        minHeight: { xs: 60, md: 72 },
+        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.06)",
         color: "text.primary",
-        borderBottom: "1px solid rgba(3, 105, 161, 0.08)",
+        borderBottom: "1px solid rgba(3, 105, 161, 0.10)",
         zIndex: (theme) => theme.zIndex.drawer + 1,
       }}
     >
@@ -110,17 +111,18 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          px: { xs: 2, sm: 3 },
-          minHeight: { xs: 50, md: 60 },
+          px: { xs: 1.5, sm: 3 },
+          minHeight: { xs: 60, md: 72 },
         }}
       >
         <Box
           sx={{
             width: "100%",
-            maxWidth: "1440px",
+            maxWidth: "1600px",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: 2,
           }}
         >
           {/* Logo Section */}
@@ -182,65 +184,46 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
             </Box>
           </Box>
 
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, flex: 1, justifyContent: "center" }}>
             {/* Navigation Links */}
-            <Box sx={{ display: { xs: "none", md: "flex" }, gap: 2, ml: 2 }}>
+            <Box sx={{ display: { xs: "none", md: "flex" }, gap: 1.25, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
               {user && (
                 <>
-                  <Button
-                    onClick={() => router.push("/billing")}
-                    sx={{
-                      textTransform: "none",
-                      color:
-                        pathname === "/billing"
-                          ? "#0369A1"
-                          : "#6b7280",
-                      fontWeight: 600,
-                      fontSize: "13px",
-                      "&:hover": {
-                        color: "#0369A1",
-                        bgcolor: "transparent",
-                      },
-                    }}
-                  >
-                    Billing
-                  </Button>
-                  <Button
-                    onClick={() => router.push("/dashboard")}
-                    sx={{
-                      textTransform: "none",
-                      color:
-                        pathname === "/dashboard"
-                          ? "#0369A1"
-                          : "#6b7280",
-                      fontWeight: 600,
-                      fontSize: "13px",
-                      "&:hover": {
-                        color: "#0369A1",
-                        bgcolor: "transparent",
-                      },
-                    }}
-                  >
-                    Home
-                  </Button>
-                  <Button
-                    onClick={() => router.push("/archive")}
-                    sx={{
-                      textTransform: "none",
-                      color:
-                        pathname === "/archive"
-                          ? "#0369A1"
-                          : "#6b7280",
-                      fontWeight: 600,
-                      fontSize: "13px",
-                      "&:hover": {
-                        color: "#0369A1",
-                        bgcolor: "transparent",
-                      },
-                    }}
-                  >
-                    Archive
-                  </Button>
+                  {[
+                    { label: "Home", path: "/dashboard" },
+                    { label: "Billing", path: "/billing" },
+                    { label: "Archive", path: "/archive" },
+                    { label: "Design Analytics", path: "/reports", icon: <InsightsIcon sx={{ fontSize: 15 }} /> },
+                  ].map((item) => {
+                    const active = pathname === item.path;
+                    const isAnalytics = item.path === "/reports";
+                    return (
+                      <Button
+                        key={item.path}
+                        onClick={() => router.push(item.path)}
+                        startIcon={item.icon}
+                        sx={{
+                          textTransform: "none",
+                          borderRadius: "999px",
+                          px: isAnalytics ? 2.2 : 1.6,
+                          py: 0.9,
+                          minHeight: 38,
+                          color: active ? "#0369A1" : "#475569",
+                          fontWeight: 700,
+                          fontSize: "13px",
+                          border: active ? "1px solid rgba(3, 105, 161, 0.18)" : "1px solid transparent",
+                          bgcolor: active ? "rgba(3, 105, 161, 0.08)" : "transparent",
+                          boxShadow: active ? "0 8px 18px rgba(3, 105, 161, 0.08)" : "none",
+                          "&:hover": {
+                            bgcolor: "rgba(3, 105, 161, 0.08)",
+                            borderColor: "rgba(3, 105, 161, 0.14)",
+                          },
+                        }}
+                      >
+                        {item.label}
+                      </Button>
+                    );
+                  })}
                 </>
               )}
             </Box>
@@ -251,11 +234,33 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
             sx={{
               display: "flex",
               alignItems: "center",
-              gap: { xs: 1.5, sm: 2, md: 3 },
+              gap: { xs: 1.25, sm: 1.5, md: 2 },
             }}
           >
             {pathname !== "/pricing" && (
               <Box sx={{ display: { xs: "none", sm: "block" } }}>
+                <Button
+                  onClick={() => router.push("/reports")}
+                  variant="outlined"
+                  startIcon={<InsightsIcon sx={{ fontSize: 17 }} />}
+                  sx={{
+                    textTransform: "none",
+                    borderRadius: "999px",
+                    px: 2,
+                    py: 0.9,
+                    height: 40,
+                    borderColor: "rgba(3, 105, 161, 0.14)",
+                    color: "#0369A1",
+                    fontWeight: 700,
+                    bgcolor: "rgba(3, 105, 161, 0.04)",
+                    "&:hover": {
+                      borderColor: "rgba(3, 105, 161, 0.22)",
+                      bgcolor: "rgba(3, 105, 161, 0.08)",
+                    },
+                  }}
+                >
+                  Design Analytics
+                </Button>
                 {/* <Button
                   onClick={handleDownloadAll}
                   disabled={processedImages.length === 0}
@@ -321,11 +326,11 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                   color: "white",
                   fontSize: "12.5px",
                   fontWeight: 600,
-                  borderRadius: "8px",
-                  boxShadow: "0 4px 12px rgba(3, 105, 161, 0.2)",
+                  borderRadius: "999px",
+                  boxShadow: "0 10px 22px rgba(3, 105, 161, 0.18)",
                   "&:hover": {
                     bgcolor: "rgba(3, 105, 161, 0.9)",
-                    boxShadow: "0 6px 16px rgba(3, 105, 161, 0.3)",
+                    boxShadow: "0 14px 28px rgba(3, 105, 161, 0.24)",
                   },
                   px: 3,
                   py: 0.75,
@@ -363,6 +368,15 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                         }}
                       >
                         {user.fullName || "User"}
+                      </Typography>
+                      <Typography
+                        sx={{
+                          fontSize: 11,
+                          color: "#6b7280",
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {pathname === "/dashboard" ? "Dashboard" : pathname.replace("/", "") || "Workspace"}
                       </Typography>
                     </Box>
                     <Avatar

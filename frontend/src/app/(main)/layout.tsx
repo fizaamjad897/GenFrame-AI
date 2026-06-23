@@ -60,7 +60,7 @@ export function LayoutWrapper({
         >
             <ImpersonationHeader />
             {isSimpleMode ? (
-                <div className="bg-gray-100 min-h-screen">
+                <div className="bg-gray-100 min-h-screen w-full">
                     {!header.hideHeader && (
                         <Header
                             title={header.title}
@@ -79,11 +79,11 @@ export function LayoutWrapper({
                             sidebarCollapsed={!showDesktopSidebar}
                         />
                     )}
-                    <div className="px-4 mt-4">{children}</div>
+                    <div className="px-4 mt-4 w-full">{children}</div>
                 </div>
             ) : (
                 <>
-                    <div className="mb-4 flex flex-col items-center gap-2">
+                    <div className="mb-4 flex w-full flex-col gap-2">
                         {!header.hideHeader && (
                             <Header
                                 title={header.title}
@@ -103,7 +103,7 @@ export function LayoutWrapper({
                             />
                         )}
                     </div>
-                    <div className="px-6">{children}</div>
+                    <div className="px-6 w-full">{children}</div>
                 </>
             )}
         </SidebarLayout>

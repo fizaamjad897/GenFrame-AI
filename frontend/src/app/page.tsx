@@ -857,7 +857,7 @@ function IntroAnimation({ onDone }: { onDone: () => void }) {
 ════════════════════════════════════════════════════════════════ */
 export default function LandingPage() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
   const { isMobile, isTablet } = useBreakpoint();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [expandedProblem, setExpandedProblem] = useState<number|null>(null);
@@ -878,11 +878,7 @@ export default function LandingPage() {
   const { scrollY } = useScroll();
   const heroY = useTransform(scrollY, [0,500], [0,-40]);
 
-  useEffect(() => {
-    if (!loading && user) router.push("/dashboard");
-  }, [user, loading, router]);
-
-  if (loading || user) return null;
+  if (loading) return null;
 
   const handleCTA = () => { setConfetti(true); setTimeout(()=>setConfetti(false),2200); setTimeout(()=>router.push("/auth?tab=signup&redirect=/pricing"),350); };
 

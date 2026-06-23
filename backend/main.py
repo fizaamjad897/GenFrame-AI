@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header, Request, Body
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, Header, Request, Body, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -30,6 +30,7 @@ from auth import (
 )
 import auth as auth_module
 import org_auth
+import compliance_service
 from stripe_manager import (
     create_checkout_session, create_portal_session,
     handle_webhook_event, cancel_subscription,
@@ -165,6 +166,11 @@ PRESET_MAPPING = {
     "3:4": "3:4",
     "21:9": "21:9",
 }
+
+def _is_creation_allowed_ratio(aspect_ratio: str) -> bool:
+    key = (aspect_ratio or "").strip().lower().replace("x", ":").replace("-", ":")
+    return key in PRESET_MAPPING
+
 
 def validate_aspect_ratio(aspect_ratio: str) -> Tuple[str, Tuple[int, int]]:
     """Map any aspect ratio string to (gemini_ratio, (width, height))."""
@@ -579,6 +585,7 @@ async def generate_bill(current_user=Depends(get_current_user)):
 # ── Image resize ──────────────────────────────────────────────────────────────
 @app.post("/api/resize", response_class=JSONResponse)
 async def resize_image(
+    background_tasks: BackgroundTasks,
     aspect_ratio: str = Form("1:1"),
     engine_type: str = Form("transformation"),
     file: UploadFile = File(None),
@@ -635,7 +642,38 @@ async def resize_image(
         eng_credits = (eng_data.get(engine_type) or {}).get("credits") or {}
         if not eng_credits and current_user.get("engineType") == engine_type:
             eng_credits = current_user.get("credits") or {}
-        remaining = float(eng_credits.get("remaining_units", 0.0))
+
+        # Recompute remaining defensively from source ledger fields so stale
+        # remaining_units values don't incorrectly block valid requests.
+        monthly_used = float(eng_credits.get("monthly_units_used", 0.0))
+        monthly_max = float(eng_credits.get("monthly_units_max", 0.0))
+        addon_used = float(eng_credits.get("addon_units_used", 0.0))
+        addon_max = float(eng_credits.get("addon_units_max", 0.0))
+        computed_remaining = max(0.0, monthly_max - monthly_used) + max(
+            0.0, addon_max - addon_used
+        )
+        stored_remaining = float(eng_credits.get("remaining_units", computed_remaining))
+        remaining = computed_remaining
+
+        # Best-effort self-heal for documents where remaining_units drifted.
+        if abs(stored_remaining - computed_remaining) > 1e-9:
+            try:
+                from bson import ObjectId
+
+                patch = {
+                    "updatedAt": datetime.utcnow(),
+                    f"engine_data.{engine_type}.credits.remaining_units": computed_remaining,
+                }
+                if current_user.get("engineType") == engine_type:
+                    patch["credits.remaining_units"] = computed_remaining
+                auth_module.users_collection.update_one(
+                    {"_id": ObjectId(user_id)},
+                    {"$set": patch},
+                )
+            except Exception:
+                # Non-fatal: request flow should continue using computed value.
+                pass
+
         if remaining < tokens_to_deduct:
             raise HTTPException(
                 status_code=429,
@@ -663,7 +701,7 @@ async def resize_image(
 
     try:
         response = await call_gemini_with_retry(
-            model_name="gemini-3-pro-image-preview",
+            model_name="gemini-3-pro-image",
             contents=contents,
             config=types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
@@ -709,7 +747,18 @@ async def resize_image(
     log_id = log_usage(user_id, "resize", aspect_ratio, True, uploaded_url, prompt, [tw, th])
     image_name = f"{timestamp}_{unique_id}.png"
 
-    return JSONResponse(content={"url": uploaded_url, "name": image_name, "logId": log_id}, status_code=200)
+    report_id = str(uuid.uuid4())
+    compliance_service.create_pending_report(
+        report_id, log_id, user_id, engine_type, uploaded_url, prompt, aspect_ratio, (tw, th),
+    )
+    background_tasks.add_task(
+        compliance_service.run_compliance_analysis, report_id, image_data, prompt, aspect_ratio, (tw, th),
+    )
+
+    return JSONResponse(
+        content={"url": uploaded_url, "name": image_name, "logId": log_id, "reportId": report_id},
+        status_code=200,
+    )
 
 # ── History & feedback ────────────────────────────────────────────────────────
 @app.get("/api/history")
@@ -734,6 +783,33 @@ async def get_history(current_user=Depends(get_current_user)):
         return JSONResponse(content={"history": history})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {e}")
+
+# ── Design compliance reports ─────────────────────────────────────────────────
+@app.get("/api/reports/history")
+async def get_reports_history(
+    engine_type: str = None,
+    status: str = None,
+    limit: int = 50,
+    skip: int = 0,
+    current_user=Depends(get_current_user),
+):
+    reports = compliance_service.get_report_history(
+        str(current_user["_id"]), engine_type=engine_type, status=status, limit=limit, skip=skip,
+    )
+    return JSONResponse(content={"reports": reports})
+
+
+@app.get("/api/reports/summary")
+async def get_reports_summary(current_user=Depends(get_current_user)):
+    return compliance_service.get_report_summary(str(current_user["_id"]))
+
+
+@app.get("/api/reports/{report_id}")
+async def get_report_detail(report_id: str, current_user=Depends(get_current_user)):
+    report = compliance_service.get_report(report_id, str(current_user["_id"]))
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
 
 
 @app.post("/api/feedback")

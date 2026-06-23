@@ -53,14 +53,14 @@ export function Header({
         "w-full",
         simpleMode ? "bg-gray-100" : "bg-background",
         "border-b border-gray-200",
-        simpleMode ? "py-3" : "pt-2",
+        simpleMode ? "py-3" : "py-3.5",
         !simpleMode && "lg:rounded-t-lg",
       )}
     >
       <div
         className={clsx(
           "max-w-full mx-auto grid grid-cols-[1fr_auto] items-center gap-4",
-          simpleMode ? "px-6" : "pb-2",
+          simpleMode ? "px-6" : "px-4",
           "max-lg:py-2",
           simpleMode && sidebarCollapsed && "lg:pl-12",
         )}
@@ -94,14 +94,14 @@ export function Header({
             </>
           ) : (
             <div
-              className="h-8 w-8 rounded-md flex items-center justify-center mr-2 ml-1 flex-shrink-0 cursor-pointer"
+              className="h-9 w-9 rounded-lg flex items-center justify-center mr-2 flex-shrink-0 cursor-pointer transition-colors hover:bg-gray-100"
               onClick={handleToggleSidebar}
             >
               <Columns2 className="h-5 w-5 text-foreground" />
             </div>
           )}
           {!simpleMode && (
-            <div className="w-px h-3.5 bg-gray-300 mr-3 flex-shrink-0" />
+            <div className="w-px h-5 bg-gray-300 mr-3 flex-shrink-0" />
           )}
 
           <div className="min-w-0">
@@ -117,7 +117,7 @@ export function Header({
           </div>
         </div>
 
-        <div className="flex items-center justify-end flex-shrink-0 mr-6">
+        <div className="flex items-center justify-end flex-shrink-0">
           {secondaryActionLabel ? (
             <Button
               outline

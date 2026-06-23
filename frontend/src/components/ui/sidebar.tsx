@@ -40,6 +40,7 @@ import {
   Settings,
   HomeIcon,
   Archive,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/app/context/AuthContext";
 import { decodeJwtToken } from "@/lib/jwtUtils";
@@ -55,7 +56,6 @@ const useChat = () => ({
 type ChatMessage = any;
 const AIChatSidebar = (props: any) => null;
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 // import { useGetFolderSidebarInfoQuery } from "@/graphql/apis/playerApi";
 import ProgressBar from "./progress-bar";
 import { Divider } from "./divider";
@@ -463,6 +463,8 @@ export function SignageXSidebar({
     pathname === "/settings" || pathname.startsWith("/settings/");
   const archiveActive =
     pathname === "/archive" || pathname.startsWith("/archive/");
+  const reportsActive =
+    pathname === "/reports" || pathname.startsWith("/reports/");
 
   let base = "w-64";
   let placement = fixed
@@ -507,32 +509,35 @@ export function SignageXSidebar({
     >
       <div className="flex flex-col flex-1 min-h-0">
         <SidebarHeader>
-          {/* SignageX Logo/Brand */}
-          <div className="flex items-center gap-3 px-2 py-1 cursor-pointer">
-            {/* <h2
-            className="text-lg text-heading-h2 font-extrabold cursor-pointer hover:scale-105"
-            style={{
-              fontFamily: "var(--font-family-display)",
-              color: "var(--foreground)",
-            }}
+          {/* GenFrame Logo/Brand */}
+          <div
+            className="flex items-center gap-2.5 px-2 py-1 cursor-pointer"
             onClick={() => {
-              router.push("/content");
+              router.push("/dashboard");
             }}
           >
-            SignageX
-          </h2> */}
-
-            <Image
-              onClick={() => {
-                router.push("/dashboard");
-              }}
-              src="/logo.svg"
-              alt="SignageX Logo"
-              width={140}
-              height={32}
-              priority
-              className="object-contain"
-            />
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="sidebar-logo-grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#0C4A6E" />
+                  <stop offset="1" stopColor="#0EA5E9" />
+                </linearGradient>
+              </defs>
+              <rect width="36" height="36" rx="10" fill="url(#sidebar-logo-grad)" />
+              <path d="M9 9L9 14M9 9L14 9" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+              <path d="M27 9L22 9M27 9L27 14" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+              <path d="M9 27L9 22M9 27L14 27" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+              <path d="M27 27L22 27M27 27L27 22" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+              <path d="M18 12L19.3 16.7L24 18L19.3 19.3L18 24L16.7 19.3L12 18L16.7 16.7Z" fill="white" />
+            </svg>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>
+                GenFrame
+              </div>
+              <div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                AI Image Adaptation
+              </div>
+            </div>
           </div>
         </SidebarHeader>
 
@@ -593,6 +598,11 @@ export function SignageXSidebar({
             <SidebarItem href="/archive" current={archiveActive}>
               <Archive className="h-5 w-5" />
               <SidebarLabel>Archive</SidebarLabel>
+            </SidebarItem>
+            {/* Compliance Reports */}
+            <SidebarItem href="/reports" current={reportsActive}>
+              <ShieldCheck className="h-5 w-5" />
+              <SidebarLabel>Compliance Reports</SidebarLabel>
             </SidebarItem>
             {/* Settings */}
             <SidebarItem href="/settings" current={settingsActive}>
@@ -690,7 +700,7 @@ export function SignageXSidebar({
               }}
             >
               <img
-                src={isClient && user?.avatar ? user.avatar : "/logo.png"}
+                src={isClient && user?.avatar ? user.avatar : "/logo.svg"}
                 alt={isClient ? user?.fullName || "User Avatar" : "User Avatar"}
                 className="h-10 w-10 rounded-md object-contain"
               />
