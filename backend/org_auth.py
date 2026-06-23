@@ -121,12 +121,14 @@ def validate_org_module_jwt(token: str) -> dict:
             update_set = {"updatedAt": datetime.utcnow()}
             should_update = False
 
-            if (
-                is_postpaid is not None
-                and bool(visual_engine_user.get("is_postpaid", False)) != is_postpaid
-            ):
-                update_set["is_postpaid"] = is_postpaid
-                visual_engine_user["is_postpaid"] = is_postpaid
+            # Only ever promote to postpaid here (org genuinely upgraded). Never
+            # demote: a locally-granted is_postpaid=True (e.g. a comp/demo
+            # account) must not be silently revoked just because the linked
+            # org's own billing type is prepaid — a real downgrade should be
+            # an explicit action, not an automatic side-effect of login.
+            if is_postpaid is True and not bool(visual_engine_user.get("is_postpaid", False)):
+                update_set["is_postpaid"] = True
+                visual_engine_user["is_postpaid"] = True
                 should_update = True
 
             engine_data = visual_engine_user.get("engine_data", {}) or {}
