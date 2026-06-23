@@ -107,16 +107,16 @@ export function SidebarLayout({
 
       {/* Content */}
       <main
-        className={`flex flex-1 flex-col lg:min-w-0 ${isSimpleMode ? "" : "pb-2 lg:pt-2 lg:pr-2 lg:pl-2"
+        className={`relative flex w-full flex-1 flex-col lg:min-w-0 ${isSimpleMode ? "" : "pb-2 lg:pt-2 lg:pr-2 lg:pl-2"
           } ${position === "left" && showDesktopSidebar ? "lg:ml-64" : ""}`}
       >
         <div
-          className={`grow ${isSimpleMode ? "" : "lg:bg-gray-50"} ${isSimpleMode
+          className={`grow w-full ${isSimpleMode ? "" : "lg:bg-gray-50"} ${isSimpleMode
             ? ""
             : "lg:rounded-lg lg:shadow-xs lg:ring-1 lg:ring-zinc-950/5 dark:lg:ring-white/10"
             }`}
         >
-          <div className="mx-auto">{children}</div>
+          <div className="mx-auto w-full max-w-[1600px]">{children}</div>
         </div>
       </main>
     </div>

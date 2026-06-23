@@ -58,18 +58,19 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                     gap: 1.5,
                     px: 2,
                     py: 1.5,
-                    bgcolor: 'rgba(255, 255, 255, 0.4)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid rgba(3, 105, 161, 0.08)',
-                    borderRadius: '12px',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                    bgcolor: 'rgba(255, 255, 255, 0.72)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid rgba(3, 105, 161, 0.14)',
+                    borderRadius: '14px',
+                    boxShadow: '0 8px 24px -12px rgba(3, 105, 161, 0.18)',
                     transition: 'all 0.2s ease-in-out',
                     height: '100%',
                     cursor: 'pointer',
                     '&:hover': {
                         transform: 'translateY(-2px)',
-                        bgcolor: 'rgba(255, 255, 255, 0.7)',
-                        borderColor: 'rgba(3, 105, 161, 0.3)',
+                        bgcolor: 'rgba(255, 255, 255, 0.92)',
+                        borderColor: 'rgba(3, 105, 161, 0.35)',
+                        boxShadow: '0 14px 30px -14px rgba(3, 105, 161, 0.28)',
                     }
                 }}
                 onClick={() => router.push('/billing')}
@@ -79,19 +80,19 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         width: 40,
                         height: 40,
                         borderRadius: '10px',
-                        bgcolor: 'rgba(3, 105, 161, 0.05)',
+                        background: 'linear-gradient(135deg, #075985, #0369A1)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        color: 'rgba(3, 105, 161, 1)',
+                        color: '#fff',
                         flexShrink: 0,
-                        border: '1px solid rgba(3, 105, 161, 0.1)',
+                        boxShadow: '0 4px 10px -3px rgba(3, 105, 161, 0.45)',
                     }}
                 >
-                    <Typography sx={{ fontSize: '10px', fontWeight: 800 }}>PAYG</Typography>
+                    <Typography sx={{ fontSize: '10px', fontWeight: 600 }}>PAYG</Typography>
                 </Box>
                 <Box sx={{ flex: 1 }}>
-                    <Typography sx={{ fontSize: '9px', fontWeight: 700, color: 'rgba(3, 105, 161, 0.6)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.2 }}>
+                    <Typography sx={{ fontSize: '9px', fontWeight: 500, color: 'rgba(3, 105, 161, 0.6)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.2 }}>
                         Credit Usage
                     </Typography>
                     <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#111827', lineHeight: 1.2 }}>
@@ -224,11 +225,11 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         gap: 1.5,
                         px: 2,
                         py: 1.5,
-                        bgcolor: 'rgba(255, 255, 255, 0.4)',
-                        backdropFilter: 'blur(12px)',
-                        border: '1px solid rgba(3, 105, 161, 0.08)',
-                        borderRadius: '12px',
-                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                        bgcolor: 'rgba(255, 255, 255, 0.72)',
+                        backdropFilter: 'blur(16px)',
+                        border: '1px solid rgba(3, 105, 161, 0.14)',
+                        borderRadius: '14px',
+                        boxShadow: '0 8px 24px -12px rgba(3, 105, 161, 0.18)',
                         transition: 'all 0.2s ease-in-out',
                         cursor: 'pointer',
                         height: '100%',
@@ -236,8 +237,9 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         position: 'relative',
                         '&:hover': {
                             transform: 'translateY(-2px)',
-                            bgcolor: 'rgba(255, 255, 255, 0.7)',
-                            borderColor: 'rgba(3, 105, 161, 0.3)',
+                            bgcolor: 'rgba(255, 255, 255, 0.92)',
+                            borderColor: 'rgba(3, 105, 161, 0.35)',
+                            boxShadow: '0 14px 30px -14px rgba(3, 105, 161, 0.28)',
                         }
                     }}
                     onClick={() => router.push('/pricing')}
@@ -247,15 +249,17 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                             width: 40,
                             height: 40,
                             borderRadius: '10px',
-                            bgcolor: badgeColors.bg,
+                            background: isOverage
+                                ? 'linear-gradient(135deg, #b91c1c, #ef4444)'
+                                : 'linear-gradient(135deg, #075985, #0369A1)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: badgeColors.color,
+                            color: '#fff',
                             flexShrink: 0,
-                            border: `1px solid ${badgeColors.border}`,
                             overflow: 'hidden',
-                            position: 'relative'
+                            position: 'relative',
+                            boxShadow: '0 4px 10px -3px rgba(3, 105, 161, 0.45)',
                         }}
                     >
                         <Box sx={{
@@ -264,18 +268,17 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                             left: 0,
                             right: 0,
                             height: `${Math.min(usagePercent, 100)}%`,
-                            opacity: 0.2,
-                            background: getProgressColor(),
+                            bgcolor: 'rgba(0,0,0,0.18)',
                             transition: 'height 0.5s ease'
                         }} />
-                        <Typography sx={{ fontSize: '10px', fontWeight: 800, zIndex: 1 }}>{Math.round(usagePercent)}%</Typography>
+                        <Typography sx={{ fontSize: '10px', fontWeight: 600, zIndex: 1 }}>{Math.round(usagePercent)}%</Typography>
                     </Box>
                     <Box sx={{ flex: 1 }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.2 }}>
                             <Typography
                                 sx={{
                                     fontSize: '9px',
-                                    fontWeight: 700,
+                                    fontWeight: 500,
                                     color: 'rgba(3, 105, 161, 0.6)',
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.05em',

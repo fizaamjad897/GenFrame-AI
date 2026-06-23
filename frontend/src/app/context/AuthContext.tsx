@@ -34,14 +34,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const userData = await response.json();
                 setUser(userData);
                 localStorage.setItem('user', JSON.stringify(userData));
-            } else if (response.status === 401) {
-                // If token is invalid/expired, clear it
+            } else {
+                // Token invalid/expired, or backend rejected the request — don't trust the stale cache
                 localStorage.removeItem('auth_token');
                 localStorage.removeItem('user');
                 setUser(null);
             }
         } catch (error) {
+            // Backend unreachable — can't verify the session, so don't keep showing a stale logged-in state
             console.error('Error refreshing user:', error);
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user');
+            setUser(null);
         }
     }, []);
 
