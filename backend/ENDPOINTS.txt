@@ -1,0 +1,133 @@
+GenFrame-AI Backend — API Endpoint Reference
+=============================================
+Base URL: http://localhost:8000  (mobile/emulator: http://10.0.2.2:8000)
+All "/api/*" paths are prefixed as shown. Auth = "Bearer <JWT>" in the
+Authorization header, unless noted otherwise.
+
+Source of truth: backend/main.py (verified against actual code, not docs).
+
+
+AUTH
+----
+POST   /api/users/register
+       Body (JSON): { email, password, fullName?, fingerprint?, presentationId? }
+       Returns: { access_token, token_type, user }
+
+POST   /api/users/login
+       Body (JSON): { email, password }
+       Returns: { access_token, token_type, user }
+
+POST   /api/users/request-password-reset
+       Body (JSON): { email }
+
+POST   /api/users/reset-password
+       Body (JSON): { token, newPassword }
+
+GET    /api/users/me                          [auth required]
+       Returns: current user object
+
+POST   /api/users/api-key                     [auth required]
+       Query: type?
+       Creates/rotates an API key for the user.
+
+DELETE /api/users/api-key                     [auth required]
+       Query: type?
+
+
+BILLING / STRIPE
+----------------
+Each of these is also registered without the "/api" prefix
+(e.g. "/stripe/create-checkout", "/create-checkout") — kept for
+backward compatibility. Use the "/api/..." form for new clients.
+
+POST   /api/stripe/create-checkout            [auth required]
+       Body (JSON): arbitrary checkout params (plan, engine_type, etc.)
+
+POST   /api/stripe/create-portal              [auth required]
+       Opens a Stripe customer billing portal session.
+
+POST   /api/stripe/create-test-checkout       [auth required]
+       Test/QA checkout flow (uses STRIPE_PRICE_TEST_DAILY).
+
+POST   /api/stripe/webhook                    [Stripe signature, not user JWT]
+       Header: Stripe-Signature
+       Also aliased at /stripe/webhook and /secure/api/stripe/webhook.
+
+POST   /api/stripe/cancel-subscription        [auth required]
+       Body (JSON, optional): cancellation params
+
+POST   /api/stripe/manual-sync
+       Body (JSON): { user_id / email / stripe_customer_id / session_id }
+       Manually reconciles a user's subscription state with Stripe.
+
+POST   /api/stripe/refresh-subscription       [auth required]
+
+GET    /api/plans
+       Returns available subscription plans.
+
+GET    /api/users/usage                       [auth required]
+       Query: engine_type?
+
+GET    /api/users/billing-history             [auth required]
+
+POST   /api/billing/generate                  [auth required]
+
+
+IMAGE GENERATION
+----------------
+POST   /api/resize                            [auth required]
+       Content-Type: multipart/form-data
+       Fields:
+         aspect_ratio  (str, default "1:1")     e.g. square/story/landscape/
+                                                 portrait/ultrawide or "W:H"
+         engine_type   (str, default "transformation")  "creation" | "transformation"
+         file          (file, optional)          required for "transformation"
+         prompt        (str, optional)           required for "creation" w/o file
+       Returns: { url, name, logId, reportId }
+       Notes: enforces per-engine credit/subscription gating; "creation"
+       engine only supports standard presets, not custom W:H values.
+
+
+HISTORY & FEEDBACK
+------------------
+GET    /api/history                           [auth required]
+       Returns last 100 successful generations for the user.
+
+POST   /api/feedback                          [auth required]
+       Body (JSON): { logId, feedback: "like" | "dislike" }
+
+
+DESIGN COMPLIANCE REPORTS
+--------------------------
+GET    /api/reports/history                   [auth required]
+       Query: engine_type?, status?, limit=50, skip=0
+
+GET    /api/reports/summary                   [auth required]
+
+GET    /api/reports/{report_id}               [auth required]
+
+
+ADMIN / DEV
+-----------
+DELETE /api/dev/clean-user-archive            [auth required]
+       Body (JSON): { email }
+       Dev utility — deletes a user's archived S3 images.
+
+POST   /api/admin/trigger-billing-rollover    [admin auth required]
+       Manually triggers the monthly credit rollover job.
+
+
+MISC
+----
+GET    /api/status
+       Lightweight health/status check.
+
+GET    /
+       Root — { status, version }.
+
+
+NOT YET IMPLEMENTED (frontend calls these, backend has no route)
+------------------------------------------------------------------
+The web frontend's ImageProcessor.tsx references a "/custom-resize"
+endpoint and a "use_json_pipeline" flag that do not exist in this
+backend. Pre-existing mismatch, not something to build against.
