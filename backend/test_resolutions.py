@@ -76,7 +76,7 @@ def run_tests():
         for preset in VALID_PRESETS:
             try:
                 response = client.post(
-                    "/api/resize",
+                    "/api-v2/resize",
                     data={
                         "aspect_ratio": preset,
                         "engine_type": "transformation"
@@ -110,7 +110,7 @@ def run_tests():
         for preset in INVALID_PRESETS:
             try:
                 response = client.post(
-                    "/api/resize",
+                    "/api-v2/resize",
                     data={
                         "aspect_ratio": preset,
                         "engine_type": "transformation"

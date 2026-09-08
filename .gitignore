@@ -1,0 +1,6 @@
+# AI tool / agent configuration directories — local to this machine, not part of the app
+.agents/
+.claude/
+.codex/
+.cursor/
+.impeccable/

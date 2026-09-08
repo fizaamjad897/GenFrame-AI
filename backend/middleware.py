@@ -151,7 +151,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         method = request.method
         
         # For file upload endpoints
-        if path in ["/api/resize", "/api/create"] and method == "POST":
+        if path in ["/api-v2/resize", "/api-v2/create"] and method == "POST":
             content_type = request.headers.get("content-type", "")
             if not content_type.startswith("multipart/form-data"):
                 raise ValidationError(
@@ -159,7 +159,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
                 )
         
         # For JSON endpoints
-        json_endpoints = ["/api/users/register", "/api/users/login"]
+        json_endpoints = ["/api-v2/users/register", "/api-v2/users/login"]
         if path in json_endpoints and method == "POST":
             content_type = request.headers.get("content-type", "")
             if "application/json" not in content_type:

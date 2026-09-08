@@ -7,6 +7,11 @@ import { usePageHeader } from '@/app/context/PageHeaderContext';
 import { Person as PersonIcon, Email as EmailIcon, Badge as BadgeIcon, Security as SecurityIcon } from '@mui/icons-material';
 import { getPlanLabel } from '@/types/billing';
 import { cancelSubscription, redirectToPortal } from '@/lib/stripe';
+import { CREAM, INK, ACCENT, TEXT_MUTED_L, BORDER_L, GOOD, MONO } from '@/app/theme/terminal';
+import { PopIn } from '@/components/motion/Reveal';
+
+const sectionSx = { p: 4, borderRadius: '18px', border: `1px solid ${BORDER_L}`, bgcolor: '#FFFFFF', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)' };
+const labelSx = { color: TEXT_MUTED_L, fontFamily: MONO, fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '0.06em', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 };
 
 export default function SettingsPage() {
     const { user, refreshUser } = useUser();
@@ -73,84 +78,77 @@ export default function SettingsPage() {
 
                 <Stack spacing={4}>
                     {/* Profile Section */}
-                    <Paper elevation={0} sx={{ p: 4, borderRadius: '24px', border: '1px solid #e5e7eb' }}>
+                    <PopIn>
+                    <Paper elevation={0} sx={sectionSx}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mb: 4 }}>
                             <Avatar
                                 src={user.avatar}
-                                sx={{ width: 80, height: 80, border: '4px solid rgba(3, 105, 161, 0.1)' }}
+                                sx={{ width: 80, height: 80, border: `2px solid ${ACCENT}33`, bgcolor: INK, color: CREAM, fontFamily: MONO }}
                             >
                                 {user.fullName?.charAt(0)}
                             </Avatar>
                             <Box>
-                                <Typography variant="h6" sx={{ fontWeight: 700 }}>{user.fullName}</Typography>
-                                <Typography variant="body2" color="text.secondary">{user.email}</Typography>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: INK }}>{user.fullName}</Typography>
+                                <Typography variant="body2" sx={{ color: TEXT_MUTED_L }}>{user.email}</Typography>
                             </Box>
                         </Box>
 
-                        <Divider sx={{ mb: 4 }} />
+                        <Divider sx={{ mb: 4, borderColor: BORDER_L, borderStyle: 'solid' }} />
 
                         <Stack spacing={3}>
                             <Box>
-                                <Typography variant="subtitle2" sx={{ color: '#6b7280', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="subtitle2" sx={labelSx}>
                                     <PersonIcon fontSize="small" /> Full Name
                                 </Typography>
-                                <Typography variant="body1" sx={{ fontWeight: 500 }}>{user.fullName}</Typography>
+                                <Typography variant="body1" sx={{ fontWeight: 500, color: INK }}>{user.fullName}</Typography>
                             </Box>
 
                             <Box>
-                                <Typography variant="subtitle2" sx={{ color: '#6b7280', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="subtitle2" sx={labelSx}>
                                     <EmailIcon fontSize="small" /> Email Address
                                 </Typography>
-                                <Typography variant="body1" sx={{ fontWeight: 500 }}>{user.email}</Typography>
+                                <Typography variant="body1" sx={{ fontWeight: 500, color: INK }}>{user.email}</Typography>
                             </Box>
 
                             <Box>
-                                <Typography variant="subtitle2" sx={{ color: '#6b7280', mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="subtitle2" sx={labelSx}>
                                     <BadgeIcon fontSize="small" /> Account ID
                                 </Typography>
-                                <Typography variant="body1" sx={{ color: '#9ca3af', fontSize: '14px' }}>{user.id}</Typography>
+                                <Typography variant="body1" sx={{ color: TEXT_MUTED_L, fontSize: '13px', fontFamily: MONO }}>{user.id}</Typography>
                             </Box>
                         </Stack>
                     </Paper>
+                    </PopIn>
 
                     {/* Subscription Section */}
                     {!isPostpaid && (
-                    <Paper elevation={0} sx={{ p: 4, borderRadius: '24px', border: '1px solid #e5e7eb' }}>
-                        <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>Subscription & Usage</Typography>
+                    <PopIn delay={0.06}>
+                    <Paper elevation={0} sx={sectionSx}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, color: INK }}>Subscription & Usage</Typography>
 
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3, bgcolor: '#f8fafc', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 3, bgcolor: CREAM, borderRadius: '18px', border: `1px solid ${BORDER_L}` }}>
                             <Box>
-                                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#475569', mb: 0.5 }}>Current Plan</Typography>
+                                <Typography sx={{ fontSize: '11px', fontFamily: MONO, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, color: TEXT_MUTED_L, mb: 0.5 }}>Current Plan</Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                    <Typography variant="h5" sx={{ fontWeight: 800, color: 'rgba(3, 105, 161, 1)' }}>
+                                    <Typography variant="h5" sx={{ fontWeight: 600, color: ACCENT }}>
                                         {getPlanLabel(user.plan)}
                                     </Typography>
                                     <Chip
                                         label={hasSubscription ? "Active" : "Inactive"}
                                         size="small"
                                         sx={{
-                                            bgcolor: hasSubscription ? 'rgba(34, 197, 94, 0.1)' : 'rgba(148, 163, 184, 0.15)',
-                                            color: hasSubscription ? '#16a34a' : '#64748b',
-                                            fontWeight: 600,
+                                            borderRadius: '18px',
+                                            bgcolor: 'transparent',
+                                            border: `1px solid ${hasSubscription ? GOOD : BORDER_L}`,
+                                            color: hasSubscription ? GOOD : TEXT_MUTED_L,
+                                            fontWeight: 500,
+                                            fontFamily: MONO,
                                             fontSize: '11px'
                                         }}
                                     />
                                 </Box>
                             </Box>
                             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ alignItems: { sm: 'center' } }}>
-                                {/* <Button
-                                    variant="outlined"
-                                    href="/pricing"
-                                    sx={{
-                                        borderRadius: '10px',
-                                        textTransform: 'none',
-                                        borderColor: '#e2e8f0',
-                                        color: '#475569',
-                                        '&:hover': { borderColor: 'rgba(3, 105, 161, 1)', bgcolor: 'rgba(3, 105, 161, 0.02)' }
-                                    }}
-                                >
-                                    Change Plan
-                                </Button> */}
                                 {hasSubscription && (
                                     <>
                                         <Button
@@ -158,23 +156,26 @@ export default function SettingsPage() {
                                             onClick={handleOpenPortal}
                                             disabled={processing !== null}
                                             sx={{
-                                                borderRadius: '10px',
+                                                borderRadius: '18px',
                                                 textTransform: 'none',
-                                                borderColor: '#e2e8f0',
-                                                color: '#475569',
+                                                borderColor: BORDER_L,
+                                                color: INK,
+                                                '&:hover': { borderColor: ACCENT, bgcolor: 'transparent' },
                                             }}
                                         >
                                             {processing === 'portal' ? 'Opening…' : 'Manage Billing'}
                                         </Button>
                                         <Button
-                                            variant="contained"
-                                            color="error"
+                                            variant="outlined"
                                             onClick={handleCancelNow}
                                             disabled={processing !== null}
                                             sx={{
-                                                borderRadius: '10px',
+                                                borderRadius: '18px',
                                                 textTransform: 'none',
-                                                fontWeight: 800,
+                                                fontWeight: 600,
+                                                borderColor: '#EF444455',
+                                                color: '#EF4444',
+                                                '&:hover': { borderColor: '#EF4444', bgcolor: 'transparent' },
                                             }}
                                         >
                                             {processing === 'cancel' ? 'Cancelling…' : 'Cancel Plan'}
@@ -186,35 +187,38 @@ export default function SettingsPage() {
 
                         <Box sx={{ mt: 3, display: 'flex', gap: 4 }}>
                             <Box>
-                                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Available Credits</Typography>
-                                <Typography variant="h6" sx={{ fontWeight: 700 }}>{(user.maxUnits - user.units).toLocaleString()}</Typography>
+                                <Typography variant="caption" sx={{ color: TEXT_MUTED_L, fontFamily: MONO, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Available Credits</Typography>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: INK, fontFamily: MONO }}>{(user.maxUnits - user.units).toLocaleString()}</Typography>
                             </Box>
                             <Box>
-                                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Total Capacity</Typography>
-                                <Typography variant="h6" sx={{ fontWeight: 700 }}>{user.maxUnits.toLocaleString()}</Typography>
+                                <Typography variant="caption" sx={{ color: TEXT_MUTED_L, fontFamily: MONO, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total Capacity</Typography>
+                                <Typography variant="h6" sx={{ fontWeight: 600, color: INK, fontFamily: MONO }}>{user.maxUnits.toLocaleString()}</Typography>
                             </Box>
                         </Box>
                     </Paper>
+                    </PopIn>
                     )}
 
                     {/* Security Section (Placeholder) */}
-                    <Paper elevation={0} sx={{ p: 4, borderRadius: '24px', border: '1px solid #e5e7eb' }}>
-                        <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>Security</Typography>
+                    <PopIn delay={0.12}>
+                    <Paper elevation={0} sx={sectionSx}>
+                        <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, color: INK }}>Security</Typography>
                         <Button
                             startIcon={<SecurityIcon />}
-                            variant="contained"
+                            variant="outlined"
                             disabled
                             sx={{
-                                borderRadius: '12px',
+                                borderRadius: '18px',
                                 textTransform: 'none',
-                                bgcolor: '#f1f5f9',
-                                color: '#94a3b8',
-                                boxShadow: 'none'
+                                borderColor: BORDER_L,
+                                color: TEXT_MUTED_L,
+                                boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)'
                             }}
                         >
                             Password Reset (Disabled in Demo)
                         </Button>
                     </Paper>
+                    </PopIn>
                 </Stack>
             </Container>
         </Box>

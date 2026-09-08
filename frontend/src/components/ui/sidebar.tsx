@@ -18,24 +18,12 @@ import { TouchTarget } from "./button";
 import { Link } from "./link";
 import { Button } from "@/components/ui/button";
 import {
-  Building2,
-  ListVideo,
-  SquarePlay,
-  ChartColumnBig,
-  Group,
   ChevronDown,
   ChevronRight,
   LogOut,
-  CodeXml,
   MousePointerClick,
-  UserCog,
   Sparkles,
-  Navigation,
-  Megaphone,
-  CreditCard as CreditCardIcon,
-  Settings as SettingsIcon,
   Users as UsersIcon,
-  DollarSign,
   CreditCard,
   Settings,
   HomeIcon,
@@ -43,6 +31,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/app/context/AuthContext";
+import GridMark from "@/app/theme/GridMark";
+import { CREAM, INK, ACCENT, TEXT_MUTED_L, TEXT_MUTED_D, BORDER_L, MONO } from "@/app/theme/terminal";
 import { decodeJwtToken } from "@/lib/jwtUtils";
 // import { sidebarRouteAccess } from "@/lib/routeAccessConfig";
 const sidebarRouteAccess = (path: string, type: any, role: any) => true;
@@ -509,32 +499,19 @@ export function SignageXSidebar({
     >
       <div className="flex flex-col flex-1 min-h-0">
         <SidebarHeader>
-          {/* GenFrame Logo/Brand */}
+          {/* Recreative AI Logo/Brand */}
           <div
             className="flex items-center gap-2.5 px-2 py-1 cursor-pointer"
             onClick={() => {
               router.push("/dashboard");
             }}
           >
-            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="sidebar-logo-grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
-                  <stop stopColor="#0C4A6E" />
-                  <stop offset="1" stopColor="#0EA5E9" />
-                </linearGradient>
-              </defs>
-              <rect width="36" height="36" rx="10" fill="url(#sidebar-logo-grad)" />
-              <path d="M9 9L9 14M9 9L14 9" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-              <path d="M27 9L22 9M27 9L27 14" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-              <path d="M9 27L9 22M9 27L14 27" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-              <path d="M27 27L22 27M27 27L27 22" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-              <path d="M18 12L19.3 16.7L24 18L19.3 19.3L18 24L16.7 19.3L12 18L16.7 16.7Z" fill="white" />
-            </svg>
+            <GridMark size={36} />
             <div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: "#0f172a", letterSpacing: "-0.02em" }}>
-                GenFrame
+              <div style={{ fontSize: 17, fontWeight: 600, color: INK, letterSpacing: "-0.02em" }}>
+                Recreative AI
               </div>
-              <div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              <div style={{ fontSize: 10, color: TEXT_MUTED_L, letterSpacing: "0.06em", textTransform: "uppercase" }}>
                 AI Image Adaptation
               </div>
             </div>
@@ -554,9 +531,9 @@ export function SignageXSidebar({
               <SidebarLabel>Dashboard</SidebarLabel>
             </SidebarItem>
             {/* Engines */}
-            <div className=" flex items-center gap-2 mt-4 mb-2">
-              <span className="text-purple-300 font-semibold">Engines</span>
-              <div className="flex-1 border-t border-gray-200"></div>
+            <div className="flex items-center gap-2 mt-5 mb-2 px-2">
+              <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, color: ACCENT, letterSpacing: "0.08em", textTransform: "uppercase" }}>Engines</span>
+              <div className="flex-1" style={{ borderTop: `1px solid ${BORDER_L}` }} />
             </div>
             {canAccessCreation && (
               <SidebarItem
@@ -576,24 +553,17 @@ export function SignageXSidebar({
                 <SidebarLabel>Transformation Engine</SidebarLabel>
               </SidebarItem>
             )}
-            <div className=" flex items-center gap-2 mt-4 mb-2">
-              <span className="text-purple-300 font-semibold">
+            <div className="flex items-center gap-2 mt-5 mb-2 px-2">
+              <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, color: TEXT_MUTED_L, letterSpacing: "0.08em", textTransform: "uppercase" }}>
                 Administration
               </span>
-              <div className="flex-1 border-t border-gray-200"></div>
+              <div className="flex-1" style={{ borderTop: `1px solid ${BORDER_L}` }} />
             </div>
             {/* Billing */}
             <SidebarItem href="/billing" current={billingActive}>
               <CreditCard className="h-5 w-5" />
               <SidebarLabel>Billing</SidebarLabel>
             </SidebarItem>
-            {/* Pricing */}
-            {/* {!isPostpaid && (
-              <SidebarItem href="/pricing" current={pricingActive}>
-                <DollarSign className="h-5 w-5" />
-                <SidebarLabel>Pricing</SidebarLabel>
-              </SidebarItem>
-            )} */}
             {/* Archive */}
             <SidebarItem href="/archive" current={archiveActive}>
               <Archive className="h-5 w-5" />
@@ -621,9 +591,11 @@ export function SignageXSidebar({
         {!isSimpleMode && folderInfo && !isPostpaid && (
           <div>
             <div
-              className="rounded-lg pb-4 pt-2 px-2 text-white shadow-md relative overflow-hidden"
+              className="rounded-lg pb-4 pt-2 px-2 shadow-md relative overflow-hidden"
               style={{
-                background: "linear-gradient(135deg, #075985 0%, #0369A1 100%)",
+                background: INK,
+                border: `1px solid ${BORDER_L}`,
+                color: CREAM,
               }}
             >
               <div className="relative flex justify-center mb-2">
@@ -636,7 +608,7 @@ export function SignageXSidebar({
                     cx="50"
                     cy="50"
                     r="40"
-                    stroke="rgba(255,255,255,0.18)"
+                    stroke="rgba(244,239,230,0.18)"
                     strokeWidth="8"
                     fill="transparent"
                   />
@@ -646,7 +618,7 @@ export function SignageXSidebar({
                     cx="50"
                     cy="50"
                     r="40"
-                    stroke="white"
+                    stroke={ACCENT}
                     strokeWidth="8"
                     fill="transparent"
                     strokeDasharray={251.32} // 2 * PI * 40
@@ -664,7 +636,7 @@ export function SignageXSidebar({
                     y="50"
                     textAnchor="middle"
                     dominantBaseline="central"
-                    fill="white"
+                    fill={CREAM}
                     fontSize="14"
                     fontWeight={700}
                     transform="rotate(90 50 50)"
@@ -679,7 +651,7 @@ export function SignageXSidebar({
               </div>
               <p
                 className="text-[11px] leading-relaxed"
-                style={{ color: "rgba(255,255,255,0.9)" }}
+                style={{ color: TEXT_MUTED_D }}
               >
                 You're using {folderInfo.used_players.toLocaleString()} of your{" "}
                 {folderInfo.total_players.toLocaleString()} available credits.
@@ -699,11 +671,15 @@ export function SignageXSidebar({
                 background: "var(--color-gray-200)",
               }}
             >
-              <img
-                src={isClient && user?.avatar ? user.avatar : "/logo.svg"}
-                alt={isClient ? user?.fullName || "User Avatar" : "User Avatar"}
-                className="h-10 w-10 rounded-md object-contain"
-              />
+              {isClient && user?.avatar ? (
+                <img
+                  src={user.avatar}
+                  alt={user?.fullName || "User Avatar"}
+                  className="h-10 w-10 rounded-md object-contain"
+                />
+              ) : (
+                <GridMark size={40} />
+              )}
 
               <div className="flex-1 text-left">
                 <div className="flex items-center justify-between">
@@ -741,71 +717,11 @@ export function SignageXSidebar({
             leaveFrom="transform opacity-100 scale-100"
             leaveTo="transform opacity-0 scale-95"
           >
-            <MenuItems className="absolute bottom-14 left-0 w-full origin-bottom rounded-md bg-white shadow-lg ring-1 ring-black/10 focus:outline-none z-50">
+            <MenuItems
+              className="absolute bottom-14 left-0 w-full origin-bottom focus:outline-none z-50"
+              style={{ background: CREAM, border: `1px solid ${BORDER_L}`, borderRadius: 3, boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)" }}
+            >
               <div className="px-1 py-1">
-                {isClient && (
-                  <>
-                    {/* <MenuItem>
-                      {({ active }) => (
-                        <button
-                          onClick={() => {
-                            router.push("/pricing");
-                          }}
-                          className={`${active ? "bg-gray-100" : ""
-                            } group flex w-full items-center rounded-md px-4 py-2 text-sm text-gray-700`}
-                        >
-                          <CreditCardIcon className="mr-2 h-4 w-4" />
-                          Pricing
-                        </button>
-                      )}
-                    </MenuItem>
-                    <MenuItem>
-                      {({ active }) => (
-                        <button
-                          onClick={() => {
-                            router.push("/billing");
-                          }}
-                          className={`${active ? "bg-gray-100" : ""
-                            } group flex w-full items-center rounded-md px-4 py-2 text-sm text-gray-700`}
-                        >
-                          <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
-                          </svg>
-                          Billing
-                        </button>
-                      )}
-                    </MenuItem>
-                    <MenuItem>
-                      {({ active }) => (
-                        <button
-                          onClick={() => {
-                            router.push("/settings");
-                          }}
-                          className={`${active ? "bg-gray-100" : ""
-                            } group flex w-full items-center rounded-md px-4 py-2 text-sm text-gray-700`}
-                        >
-                          <SettingsIcon className="mr-2 h-4 w-4" />
-                          Settings
-                        </button>
-                      )}
-                    </MenuItem> */}
-                    {/* <MenuItem>
-                      {({ active }) => (
-                        <button
-                          onClick={() => {
-                            router.push("/users");
-                          }}
-                          className={`${active ? "bg-gray-100" : ""
-                            } group flex w-full items-center rounded-md px-4 py-2 text-sm text-gray-700`}
-                        >
-                          <UsersIcon className="mr-2 h-4 w-4" />
-                          Users Manager
-                        </button>
-                      )}
-                    </MenuItem> */}
-                  </>
-                )}
-
                 <MenuItem>
                   {({ focus }) => (
                     <button
@@ -813,9 +729,8 @@ export function SignageXSidebar({
                         logout();
                         router.push("/");
                       }}
-                      className={`${
-                        focus ? "bg-gray-100" : ""
-                      } group flex w-full items-center rounded-md px-4 py-2 text-sm text-gray-700`}
+                      className="group flex w-full items-center px-4 py-2 text-sm"
+                      style={{ background: focus ? "var(--color-gray-200)" : "transparent", color: INK, borderRadius: 2 }}
                     >
                       <LogOut className="mr-2 h-4 w-4" />
                       Sign out

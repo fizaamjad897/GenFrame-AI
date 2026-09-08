@@ -96,13 +96,11 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
       position="sticky"
       elevation={0}
       sx={{
-        background: "rgba(255, 255, 255, 0.78)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
+        background: "#FFFFFF",
         minHeight: { xs: 60, md: 72 },
-        boxShadow: "0 10px 30px rgba(15, 23, 42, 0.06)",
+        boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
         color: "text.primary",
-        borderBottom: "1px solid rgba(3, 105, 161, 0.10)",
+        borderBottom: "1px solid #E5E7EB",
         zIndex: (theme) => theme.zIndex.drawer + 1,
       }}
     >
@@ -141,16 +139,16 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
               sx={{
                 width: 32,
                 height: 32,
-                borderRadius: "9px",
-                background: "linear-gradient(135deg, #075985, #0369A1)",
+                borderRadius: "18px",
+                background: "#8B5CF6",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
-                boxShadow: "0 0 10px rgba(3, 105, 161, 0.2)",
+                boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
               }}
             >
-              <AutoAwesomeIcon sx={{ fontSize: 15, color: "white" }} />
+              <AutoAwesomeIcon sx={{ fontSize: 15, color: "#111827" }} />
             </Box>
             <Box
               sx={{
@@ -162,19 +160,19 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
               <Typography
                 sx={{
                   fontSize: { xs: "14px", md: "15px" },
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: "#111827",
                   letterSpacing: "-0.02em",
                   lineHeight: 1.1,
                 }}
               >
-                GenFrame
+                Recreative AI
               </Typography>
               <Typography
                 sx={{
                   fontSize: "9px",
                   fontWeight: 500,
-                  color: "#94a3b8",
+                  color: "#9CA3AF",
                   letterSpacing: "0.02em",
                   lineHeight: 1,
                 }}
@@ -204,19 +202,19 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                         startIcon={item.icon}
                         sx={{
                           textTransform: "none",
-                          borderRadius: "999px",
+                          borderRadius: "18px",
                           px: isAnalytics ? 2.2 : 1.6,
                           py: 0.9,
                           minHeight: 38,
-                          color: active ? "#0369A1" : "#475569",
-                          fontWeight: 700,
+                          color: active ? "#8B5CF6" : "#57534A",
+                          fontWeight: 600,
                           fontSize: "13px",
-                          border: active ? "1px solid rgba(3, 105, 161, 0.18)" : "1px solid transparent",
-                          bgcolor: active ? "rgba(3, 105, 161, 0.08)" : "transparent",
-                          boxShadow: active ? "0 8px 18px rgba(3, 105, 161, 0.08)" : "none",
+                          border: active ? "1px solid #8B5CF6" : "1px solid transparent",
+                          bgcolor: "transparent",
+                          boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
                           "&:hover": {
-                            bgcolor: "rgba(3, 105, 161, 0.08)",
-                            borderColor: "rgba(3, 105, 161, 0.14)",
+                            bgcolor: "rgba(139, 92, 246, 0.06)",
+                            borderColor: "rgba(139, 92, 246, 0.3)",
                           },
                         }}
                       >
@@ -245,17 +243,18 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                   startIcon={<InsightsIcon sx={{ fontSize: 17 }} />}
                   sx={{
                     textTransform: "none",
-                    borderRadius: "999px",
+                    borderRadius: "18px",
                     px: 2,
                     py: 0.9,
                     height: 40,
-                    borderColor: "rgba(3, 105, 161, 0.14)",
-                    color: "#0369A1",
-                    fontWeight: 700,
-                    bgcolor: "rgba(3, 105, 161, 0.04)",
+                    borderColor: "#8B5CF6",
+                    borderStyle: "solid",
+                    color: "#8B5CF6",
+                    fontWeight: 600,
+                    bgcolor: "transparent",
                     "&:hover": {
-                      borderColor: "rgba(3, 105, 161, 0.22)",
-                      bgcolor: "rgba(3, 105, 161, 0.08)",
+                      borderColor: "#8B5CF6",
+                      bgcolor: "rgba(139, 92, 246, 0.06)",
                     },
                   }}
                 >
@@ -268,15 +267,15 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                   variant="contained"
                   sx={{
                     textTransform: 'none',
-                    bgcolor: 'rgba(3, 105, 161, 1)',
+                    bgcolor: 'rgba(139, 92, 246, 1)',
                     color: 'white',
                     fontSize: '12.5px',
-                    fontWeight: 600,
+                    fontWeight: 500,
                     borderRadius: '8px',
-                    boxShadow: '0 4px 12px rgba(3, 105, 161, 0.2)',
+                    boxShadow: '0 4px 12px rgba(139, 92, 246, 0.2)',
                     '&:hover': {
-                      bgcolor: 'rgba(3, 105, 161, 0.9)',
-                      boxShadow: '0 6px 16px rgba(3, 105, 161, 0.3)',
+                      bgcolor: 'rgba(139, 92, 246, 0.9)',
+                      boxShadow: '0 6px 16px rgba(139, 92, 246, 0.3)',
                     },
                     px: 2,
                     py: 0.75,
@@ -296,19 +295,17 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                   sx={{
                     bgcolor:
                       processedImages.length === 0
-                        ? "#f3f4f6"
-                        : "rgba(3, 105, 161, 1)",
-                    color: processedImages.length === 0 ? "#9ca3af" : "white",
+                        ? "#FFFFFF"
+                        : "rgba(139, 92, 246, 1)",
+                    color: processedImages.length === 0 ? "#9CA3AF" : "#111827",
                     "&:hover": {
-                      bgcolor: "rgba(3, 105, 161, 0.9)",
+                      bgcolor: "rgba(139, 92, 246, 1)",
+                      filter: "brightness(0.92)",
                     },
                     width: 32,
                     height: 32,
-                    borderRadius: "8px",
-                    boxShadow:
-                      processedImages.length === 0
-                        ? "none"
-                        : "0 4px 10px rgba(3, 105, 161, 0.2)",
+                    borderRadius: "18px",
+                    boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
                   }}
                 >
                   <DownloadIcon sx={{ fontSize: 20 }} />
@@ -322,15 +319,16 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                 variant="contained"
                 sx={{
                   textTransform: "none",
-                  bgcolor: "rgba(3, 105, 161, 1)",
-                  color: "white",
+                  bgcolor: "rgba(139, 92, 246, 1)",
+                  color: "#111827",
                   fontSize: "12.5px",
-                  fontWeight: 600,
-                  borderRadius: "999px",
-                  boxShadow: "0 10px 22px rgba(3, 105, 161, 0.18)",
+                  fontWeight: 500,
+                  borderRadius: "18px",
+                  boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
                   "&:hover": {
-                    bgcolor: "rgba(3, 105, 161, 0.9)",
-                    boxShadow: "0 14px 28px rgba(3, 105, 161, 0.24)",
+                    bgcolor: "rgba(139, 92, 246, 1)",
+                    filter: "brightness(0.92)",
+                    boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
                   },
                   px: 3,
                   py: 0.75,
@@ -362,7 +360,7 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                       <Typography
                         sx={{
                           fontSize: "14px",
-                          fontWeight: 600,
+                          fontWeight: 500,
                           color: "#111827",
                           lineHeight: 2,
                         }}
@@ -372,7 +370,7 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                       <Typography
                         sx={{
                           fontSize: 11,
-                          color: "#6b7280",
+                          color: "#6B7280",
                           lineHeight: 1.2,
                         }}
                       >
@@ -385,12 +383,12 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                       sx={{
                         width: { xs: 38, md: 42 },
                         height: { xs: 38, md: 42 },
-                        border: "2px solid rgba(3, 105, 161, 0.1)",
-                        boxShadow: "0 4px 12px rgba(3, 105, 161, 0.08)",
-                        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                        borderRadius: "18px",
+                        border: "1px solid rgba(139, 92, 246, 0.4)",
+                        boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+                        transition: "all 0.2s ease",
                         "&:hover": {
-                          transform: "scale(1.08)",
-                          borderColor: "rgba(3, 105, 161, 0.4)",
+                          borderColor: "#8B5CF6",
                         },
                       }}
                     >
@@ -411,9 +409,10 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                   onClose={handleCloseUserMenu}
                   PaperProps={{
                     sx: {
-                      borderRadius: "16px",
-                      boxShadow: "0 10px 25px rgba(0,0,0,0.1)",
-                      border: "1px solid #f3f4f6",
+                      borderRadius: "18px",
+                      boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+                      border: "1px solid #E5E7EB",
+                      bgcolor: "#FFFFFF",
                       minWidth: "200px",
                       p: 1,
                     },
@@ -423,17 +422,17 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                     sx={{
                       px: 2,
                       py: 1.5,
-                      borderBottom: "1px solid #f3f4f6",
+                      borderBottom: "1px solid #FFFFFF",
                       mb: 1,
                     }}
                   >
                     <Typography
                       variant="subtitle2"
-                      sx={{ fontWeight: 600, color: "#111827" }}
+                      sx={{ fontWeight: 500, color: "#111827" }}
                     >
                       {user.fullName}
                     </Typography>
-                    <Typography variant="caption" sx={{ color: "#6b7280" }}>
+                    <Typography variant="caption" sx={{ color: "#6B7280" }}>
                       {user.email}
                     </Typography>
                   </Box>
@@ -444,7 +443,7 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                     }}
                   >
                     <PersonIcon
-                      sx={{ mr: 1.5, fontSize: 20, color: "#6b7280" }}
+                      sx={{ mr: 1.5, fontSize: 20, color: "#6B7280" }}
                     />
                     <Typography textAlign="center">Home</Typography>
                   </MenuItem>
@@ -455,7 +454,7 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                     }}
                   >
                     <CreditCardIcon
-                      sx={{ mr: 1.5, fontSize: 20, color: "#6b7280" }}
+                      sx={{ mr: 1.5, fontSize: 20, color: "#6B7280" }}
                     />
                     <Typography textAlign="center">Billing</Typography>
                   </MenuItem>
@@ -466,11 +465,11 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                     }}
                   >
                     <PhotoLibraryIcon
-                      sx={{ mr: 1.5, fontSize: 20, color: "#6b7280" }}
+                      sx={{ mr: 1.5, fontSize: 20, color: "#6B7280" }}
                     />
                     <Typography textAlign="center">Archive</Typography>
                   </MenuItem>
-                  <MenuItem onClick={handleLogout} sx={{ color: "#ef4444" }}>
+                  <MenuItem onClick={handleLogout} sx={{ color: "#EF4444" }}>
                     <LogoutIcon sx={{ mr: 1.5, fontSize: 20 }} />
                     <Typography textAlign="center">Logout</Typography>
                   </MenuItem>

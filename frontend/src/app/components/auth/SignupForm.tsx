@@ -1,16 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  Box,
-  Typography,
-  TextField,
-  InputAdornment,
-  Button,
-  FormControlLabel,
-  Checkbox,
-  IconButton,
-} from '@mui/material';
 import { Eye, EyeOff } from 'lucide-react';
 
 import { ActiveForm } from '../Auth';
@@ -26,267 +16,102 @@ export interface FormProps {
   handleChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   switchForm: React.Dispatch<React.SetStateAction<ActiveForm>>;
+  loading?: boolean;
 }
 
-const SignupForm: React.FC<FormProps> = ({ formData, handleChange, handleSubmit, switchForm }) => {
+const SignupForm: React.FC<FormProps> = ({ formData, handleChange, handleSubmit, switchForm, loading }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
-  const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
 
-  const handleTogglePasswordVisibility = () => {
-    setShowPassword(!showPassword);
-  };
-
-  const handleToggleConfirmPasswordVisibility = () => {
-    setShowConfirmPassword(!showConfirmPassword);
-  };
   return (
-    <Box
-      sx={{
-        width: '100%',
-        maxWidth: 400,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-      }}
-    >
-      <Typography
-        gutterBottom
-        sx={{
-          fontWeight: 600,
-          fontSize: 30,
-          lineHeight: '38px',
-          textAlign: 'center',
-        }}
-      >
-        Sign Up
-      </Typography>
+    <div style={{ width: '100%' }}>
+      <h1 className="auth-title">Create your account</h1>
+      <p className="auth-subtitle">Enter your details to get started</p>
 
-      <Typography
-        gutterBottom
-        sx={{
-          fontWeight: 500,
-          fontSize: 16,
-          lineHeight: '24px',
-          textAlign: 'center',
-          mb: 2,
-        }}
-      >
-        Enter the following details to sign up
-      </Typography>
-
-      <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
-        {/* Full Name */}
-        <Box sx={{ width: '100%', mb: 2 }}>
-          <Typography
-            sx={{
-              fontFamily: 'Raleway',
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: '20px',
-              color: 'rgba(69,69,69,1)',
-              mb: 0.5,
-            }}
-          >
-            Full Name
-          </Typography>
-          <TextField
-            fullWidth
+      <form onSubmit={handleSubmit}>
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="fullName">full name</label>
+          <input
+            id="fullName"
+            className="auth-input"
             name="fullName"
             placeholder="Enter full name"
-            variant="outlined"
             value={formData.fullName}
             onChange={handleChange}
             required
-            sx={{ '& .MuiOutlinedInput-root': { height: 48 } }}
           />
-        </Box>
+        </div>
 
-        {/* Email */}
-        <Box sx={{ width: '100%', mb: 2 }}>
-          <Typography
-            component="label"
-            htmlFor="email"
-            sx={{
-              fontFamily: 'Raleway',
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: '20px',
-              color: 'rgba(69,69,69,1)',
-              mb: 0.5,
-              display: 'block',
-            }}
-          >
-            Email
-          </Typography>
-          <TextField
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="email">email</label>
+          <input
             id="email"
-            fullWidth
+            className="auth-input"
             name="email"
             type="email"
-            placeholder="Enter email"
-            variant="outlined"
+            placeholder="you@company.com"
             value={formData.email}
             onChange={handleChange}
             required
-            sx={{ '& .MuiOutlinedInput-root': { height: 48 } }}
           />
-        </Box>
+        </div>
 
-        {/* Password */}
-        <Box sx={{ width: '100%', mb: 2 }}>
-          <Typography
-            component="label"
-            htmlFor="password"
-            sx={{
-              fontFamily: 'Raleway',
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: '20px',
-              color: 'rgba(69,69,69,1)',
-              mb: 0.5,
-              display: 'block',
-            }}
-          >
-            Password
-          </Typography>
-          <TextField
-            id="password"
-            fullWidth
-            name="password"
-            type={showPassword ? 'text' : 'password'}
-            placeholder="Enter password"
-            variant="outlined"
-            value={formData.password}
-            onChange={handleChange}
-            onFocus={() => setPasswordFocused(true)}
-            onBlur={() => setPasswordFocused(false)}
-            required
-            sx={{ '& .MuiOutlinedInput-root': { height: 48 } }}
-            InputProps={{
-              endAdornment: passwordFocused ? (
-                <InputAdornment position="end">
-                  <IconButton
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleTogglePasswordVisibility();
-                    }}
-                    edge="end"
-                    sx={{ color: '#0369A1' }}
-                  >
-                    {showPassword ? (
-                      <EyeOff size={20} />
-                    ) : (
-                      <Eye size={20} />
-                    )}
-                  </IconButton>
-                </InputAdornment>
-              ) : undefined,
-            }}
-          />
-        </Box>
-
-        {/* Confirm Password */}
-        <Box sx={{ width: '100%', mb: 2 }}>
-          <Typography
-            component="label"
-            htmlFor="confirmPassword"
-            sx={{
-              fontFamily: 'Raleway',
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: '20px',
-              color: 'rgba(69,69,69,1)',
-              mb: 0.5,
-              display: 'block',
-            }}
-          >
-            Confirm Password
-          </Typography>
-          <TextField
-            id="confirmPassword"
-            fullWidth
-            name="confirmPassword"
-            type={showConfirmPassword ? 'text' : 'password'}
-            placeholder="Confirm password"
-            variant="outlined"
-            value={formData.confirmPassword}
-            onChange={handleChange}
-            onFocus={() => setConfirmPasswordFocused(true)}
-            onBlur={() => setConfirmPasswordFocused(false)}
-            required
-            sx={{ '& .MuiOutlinedInput-root': { height: 48 } }}
-            InputProps={{
-              endAdornment: confirmPasswordFocused ? (
-                <InputAdornment position="end">
-                  <IconButton
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleToggleConfirmPasswordVisibility();
-                    }}
-                    edge="end"
-                    sx={{ color: '#0369A1' }}
-                  >
-                    {showConfirmPassword ? (
-                      <EyeOff size={20} />
-                    ) : (
-                      <Eye size={20} />
-                    )}
-                  </IconButton>
-                </InputAdornment>
-              ) : undefined,
-            }}
-          />
-        </Box>
-
-        {/* Terms */}
-        <FormControlLabel
-          control={
-            <Checkbox
-              name="agree"
-              checked={formData.agree}
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="password">password</label>
+          <div style={{ position: 'relative' }}>
+            <input
+              id="password"
+              className="auth-input"
+              style={{ paddingRight: 42 }}
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Enter password"
+              value={formData.password}
               onChange={handleChange}
               required
             />
-          }
-          label="I agree to the Terms of Service and Privacy Policy"
-          sx={{
-            fontFamily: 'Raleway',
-            fontWeight: 500,
-            fontSize: 12,
-            lineHeight: '18px',
-            mt: 1,
-          }}
-        />
+            <button type="button" className="auth-eye-btn" style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}
+              onClick={() => setShowPassword(p => !p)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
+              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
+        </div>
 
-        {/* Submit */}
-        <Button
-          type="submit"
-          fullWidth
-          variant="contained"
-          sx={{
-            mt: 3,
-            mb: 2,
-            backgroundColor: '#0369A1',
-            borderRadius: 2,
-          }}
-        >
-          Sign Up
-        </Button>
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="confirmPassword">confirm password</label>
+          <div style={{ position: 'relative' }}>
+            <input
+              id="confirmPassword"
+              className="auth-input"
+              style={{ paddingRight: 42 }}
+              name="confirmPassword"
+              type={showConfirmPassword ? 'text' : 'password'}
+              placeholder="Confirm password"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              required
+            />
+            <button type="button" className="auth-eye-btn" style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}
+              onClick={() => setShowConfirmPassword(p => !p)} aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}>
+              {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
+        </div>
 
-        {/* Switch to Login */}
-        <Typography variant="body2" align="center">
-          Already have an account?{' '}
-          <span
-            onClick={() => switchForm('login')}
-            style={{ color: '#0369A1', cursor: 'pointer' }}
-          >
-            Login
-          </span>
-        </Typography>
-      </Box>
-    </Box>
+        <div className="auth-checkbox-row">
+          <input id="agree" type="checkbox" name="agree" checked={formData.agree} onChange={handleChange} required />
+          <label htmlFor="agree">I agree to the Terms of Service and Privacy Policy</label>
+        </div>
+
+        <button type="submit" className="auth-submit" disabled={loading}>
+          {loading ? 'creating account…' : 'sign up'}
+        </button>
+
+        <p className="auth-foot">
+          Already have an account? <span className="auth-link" onClick={() => switchForm('login')}>sign in</span>
+        </p>
+      </form>
+    </div>
   );
 };
 

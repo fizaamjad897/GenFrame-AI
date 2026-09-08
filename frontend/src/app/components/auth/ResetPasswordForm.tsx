@@ -1,14 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  Box,
-  Typography,
-  TextField,
-  Button,
-  InputAdornment,
-  IconButton,
-} from "@mui/material";
 import { Eye, EyeOff } from "lucide-react";
 
 import { ActiveForm } from "../Auth";
@@ -26,170 +18,71 @@ export interface FormProps {
   ) => void;
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   switchForm: React.Dispatch<React.SetStateAction<ActiveForm>>;
+  loading?: boolean;
 }
 
 const ResetPasswordForm: React.FC<FormProps> = ({
   formData,
   handleChange,
   handleSubmit,
-  switchForm,
+  loading,
 }) => {
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [newPasswordFocused, setNewPasswordFocused] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const handleToggleNewPasswordVisibility = () => {
-    setShowNewPassword(!showNewPassword);
-  };
   return (
-    <Box
-      sx={{
-        width: "100%",
-        maxWidth: 400,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-      }}
-    >
-      <Typography
-        gutterBottom
-        sx={{
-          fontWeight: 600,
-          fontSize: 30,
-          lineHeight: "38px",
-          textAlign: "center",
-        }}
-      >
-        Reset Password
-      </Typography>
+    <div style={{ width: "100%" }}>
+      <h1 className="auth-title">Reset password</h1>
+      <p className="auth-subtitle">Enter your new password below</p>
 
-      <Typography
-        gutterBottom
-        sx={{
-          fontWeight: 500,
-          fontSize: 16,
-          lineHeight: "24px",
-          textAlign: "center",
-          mb: 2,
-        }}
-      >
-        Enter the following details to reset password
-      </Typography>
+      <form onSubmit={handleSubmit}>
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="newPassword">new password</label>
+          <div style={{ position: "relative" }}>
+            <input
+              id="newPassword"
+              className="auth-input"
+              style={{ paddingRight: 42 }}
+              name="newPassword"
+              type={showNewPassword ? "text" : "password"}
+              placeholder="Enter new password"
+              value={formData.newPassword || ""}
+              onChange={handleChange}
+              required
+            />
+            <button type="button" className="auth-eye-btn" style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)" }}
+              onClick={() => setShowNewPassword(p => !p)} aria-label={showNewPassword ? "Hide password" : "Show password"}>
+              {showNewPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
+        </div>
 
-      <Box component="form" onSubmit={handleSubmit} sx={{ width: "100%" }}>
-        {/* NEW PASSWORD */}
-        <Box sx={{ width: "100%", mb: 2 }}>
-          <Typography
-            component="label"
-            htmlFor="newPassword"
-            sx={{
-              fontFamily: "Raleway",
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: "20px",
-              color: "rgba(69,69,69,1)",
-              mb: 0.5,
-              display: "block",
-            }}
-          >
-            New Password
-          </Typography>
-          <TextField
-            id="newPassword"
-            fullWidth
-            name="newPassword"
-            type={showNewPassword ? "text" : "password"}
-            placeholder="Enter new password"
-            variant="outlined"
-            value={formData.newPassword || ""}
-            onChange={handleChange}
-            onFocus={() => setNewPasswordFocused(true)}
-            onBlur={() => setNewPasswordFocused(false)}
-            required
-            sx={{ "& .MuiOutlinedInput-root": { height: 48 } }}
-            InputProps={{
-              endAdornment: newPasswordFocused ? (
-                <InputAdornment position="end">
-                  <IconButton
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleToggleNewPasswordVisibility();
-                    }}
-                    edge="end"
-                    sx={{ color: "#0369A1" }}
-                  >
-                    {showNewPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </IconButton>
-                </InputAdornment>
-              ) : undefined,
-            }}
-          />
-        </Box>
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="confirmPassword">confirm password</label>
+          <div style={{ position: "relative" }}>
+            <input
+              id="confirmPassword"
+              className="auth-input"
+              style={{ paddingRight: 42 }}
+              name="confirmPassword"
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="Re-enter new password"
+              value={formData.confirmPassword || ""}
+              onChange={handleChange}
+              required
+            />
+            <button type="button" className="auth-eye-btn" style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)" }}
+              onClick={() => setShowConfirmPassword(p => !p)} aria-label={showConfirmPassword ? "Hide password" : "Show password"}>
+              {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
+        </div>
 
-        {/* CONFIRM PASSWORD */}
-        <Box sx={{ width: "100%", mb: 2 }}>
-          <Typography
-            component="label"
-            htmlFor="confirmPassword"
-            sx={{
-              fontFamily: "Raleway",
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: "20px",
-              color: "rgba(69,69,69,1)",
-              mb: 0.5,
-              display: "block",
-            }}
-          >
-            Confirm Password
-          </Typography>
-          <TextField
-            id="confirmPassword"
-            fullWidth
-            name="confirmPassword"
-            type={showNewPassword ? "text" : "password"}
-            placeholder="Re-enter new password"
-            variant="outlined"
-            value={formData.confirmPassword || ""}
-            onChange={handleChange}
-            onFocus={() => setNewPasswordFocused(true)}
-            onBlur={() => setNewPasswordFocused(false)}
-            required
-            sx={{ "& .MuiOutlinedInput-root": { height: 48 } }}
-            InputProps={{
-              endAdornment: newPasswordFocused ? (
-                <InputAdornment position="end">
-                  <IconButton
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleToggleNewPasswordVisibility();
-                    }}
-                    edge="end"
-                    sx={{ color: "#0369A1" }}
-                  >
-                    {showNewPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </IconButton>
-                </InputAdornment>
-              ) : undefined,
-            }}
-          />
-        </Box>
-
-        {/* Submit */}
-        <Button
-          type="submit"
-          fullWidth
-          variant="contained"
-          sx={{
-            mt: 1,
-            mb: 2,
-            backgroundColor: "#0369A1",
-            borderRadius: 2,
-          }}
-        >
-          Confirm
-        </Button>
-      </Box>
-    </Box>
+        <button type="submit" className="auth-submit" disabled={loading}>
+          {loading ? "updating…" : "confirm"}
+        </button>
+      </form>
+    </div>
   );
 };
 

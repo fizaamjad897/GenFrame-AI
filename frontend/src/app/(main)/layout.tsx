@@ -8,6 +8,7 @@ import ImpersonationHeader from "../../components/layout/ImpersonationHeader";
 import { PageHeaderProvider, usePageHeader } from "../context/PageHeaderContext";
 import { SidebarDataProvider, useSidebarData } from "@/providers/SidebarDataProvider";
 import { AuthGuard } from "@/app/components/auth/AuthGuard";
+import { PageTransition } from "@/components/motion/Reveal";
 
 export function LayoutWrapper({
     side,
@@ -79,7 +80,7 @@ export function LayoutWrapper({
                             sidebarCollapsed={!showDesktopSidebar}
                         />
                     )}
-                    <div className="px-4 mt-4 w-full">{children}</div>
+                    <div className="px-4 mt-4 w-full"><PageTransition>{children}</PageTransition></div>
                 </div>
             ) : (
                 <>
@@ -103,7 +104,7 @@ export function LayoutWrapper({
                             />
                         )}
                     </div>
-                    <div className="px-6 w-full">{children}</div>
+                    <div className="px-6 w-full"><PageTransition>{children}</PageTransition></div>
                 </>
             )}
         </SidebarLayout>

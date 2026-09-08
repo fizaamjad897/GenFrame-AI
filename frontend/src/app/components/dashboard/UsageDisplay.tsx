@@ -38,13 +38,13 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
     const isOverage = totalUsed > totalMax;
 
     const getProgressColor = () => {
-        if (isOverage) return 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)';
-        return 'rgba(3, 105, 161, 1)';
+        if (isOverage) return 'linear-gradient(90deg, #EF4444 0%, #DC2626 100%)';
+        return 'rgba(139, 92, 246, 1)';
     };
 
     const getPlanBadgeColor = () => {
-        if (isOverage) return { bg: 'rgba(239, 68, 68, 0.08)', color: '#ef4444', border: 'rgba(239, 68, 68, 0.15)' };
-        return { bg: 'rgba(3, 105, 161, 0.05)', color: 'rgba(3, 105, 161, 1)', border: 'rgba(3, 105, 161, 0.1)' };
+        if (isOverage) return { bg: 'rgba(239, 68, 68, 0.08)', color: '#EF4444', border: 'rgba(239, 68, 68, 0.15)' };
+        return { bg: 'rgba(139, 92, 246, 0.05)', color: 'rgba(139, 92, 246, 1)', border: 'rgba(139, 92, 246, 0.1)' };
     };
 
     const badgeColors = getPlanBadgeColor();
@@ -60,17 +60,17 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                     py: 1.5,
                     bgcolor: 'rgba(255, 255, 255, 0.72)',
                     backdropFilter: 'blur(16px)',
-                    border: '1px solid rgba(3, 105, 161, 0.14)',
+                    border: '1px solid rgba(139, 92, 246, 0.14)',
                     borderRadius: '14px',
-                    boxShadow: '0 8px 24px -12px rgba(3, 105, 161, 0.18)',
+                    boxShadow: '0 8px 24px -12px rgba(139, 92, 246, 0.18)',
                     transition: 'all 0.2s ease-in-out',
                     height: '100%',
                     cursor: 'pointer',
                     '&:hover': {
                         transform: 'translateY(-2px)',
                         bgcolor: 'rgba(255, 255, 255, 0.92)',
-                        borderColor: 'rgba(3, 105, 161, 0.35)',
-                        boxShadow: '0 14px 30px -14px rgba(3, 105, 161, 0.28)',
+                        borderColor: 'rgba(139, 92, 246, 0.35)',
+                        boxShadow: '0 14px 30px -14px rgba(139, 92, 246, 0.28)',
                     }
                 }}
                 onClick={() => router.push('/billing')}
@@ -80,25 +80,25 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         width: 40,
                         height: 40,
                         borderRadius: '10px',
-                        background: 'linear-gradient(135deg, #075985, #0369A1)',
+                        background: 'linear-gradient(135deg, #8B5CF6, #8B5CF6)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        color: '#fff',
+                        color: '#111827',
                         flexShrink: 0,
-                        boxShadow: '0 4px 10px -3px rgba(3, 105, 161, 0.45)',
+                        boxShadow: '0 4px 10px -3px rgba(139, 92, 246, 0.45)',
                     }}
                 >
-                    <Typography sx={{ fontSize: '10px', fontWeight: 600 }}>PAYG</Typography>
+                    <Typography sx={{ fontSize: '10px', fontWeight: 500 }}>PAYG</Typography>
                 </Box>
                 <Box sx={{ flex: 1 }}>
-                    <Typography sx={{ fontSize: '9px', fontWeight: 500, color: 'rgba(3, 105, 161, 0.6)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.2 }}>
+                    <Typography sx={{ fontSize: '9px', fontWeight: 500, color: 'rgba(139, 92, 246, 0.6)', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.2 }}>
                         Credit Usage
                     </Typography>
-                    <Typography sx={{ fontSize: '13px', fontWeight: 600, color: '#111827', lineHeight: 1.2 }}>
+                    <Typography sx={{ fontSize: '13px', fontWeight: 500, color: '#111827', lineHeight: 1.2 }}>
                         {totalUsed.toLocaleString()} used
                     </Typography>
-                    <Typography sx={{ fontSize: '11px', color: '#6b7280', fontWeight: 500, mt: 0.2 }}>
+                    <Typography sx={{ fontSize: '11px', color: '#6B7280', fontWeight: 500, mt: 0.2 }}>
                         Pay as you go
                     </Typography>
                 </Box>
@@ -115,11 +115,11 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                     sx={{
                         p: { xs: 1.5, md: '20px 32px' },
                         borderRadius: '20px',
-                        border: '1px solid rgba(3, 105, 161, 0.08)',
+                        border: '1px solid rgba(139, 92, 246, 0.08)',
                         bgcolor: 'rgba(255, 255, 255, 0.8)',
                         backdropFilter: 'blur(20px)',
                         mb: 3,
-                        boxShadow: '0 4px 12px rgba(3, 105, 161, 0.05)',
+                        boxShadow: '0 4px 12px rgba(139, 92, 246, 0.05)',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 3,
@@ -128,7 +128,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         overflow: 'hidden',
                         transition: 'all 0.3s ease',
                         '&:hover': {
-                            boxShadow: '0 24px 48px -12px rgba(3, 105, 161, 0.12)',
+                            boxShadow: '0 24px 48px -12px rgba(139, 92, 246, 0.12)',
                         }
                     }}
                 >
@@ -138,7 +138,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         right: 0,
                         width: '150px',
                         height: '150px',
-                        background: 'radial-gradient(circle, rgba(3, 105, 161, 0.03) 0%, transparent 70%)',
+                        background: 'radial-gradient(circle, rgba(139, 92, 246, 0.03) 0%, transparent 70%)',
                         zIndex: 0,
                     }} />
 
@@ -147,7 +147,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                             label={plan.toUpperCase()}
                             size="medium"
                             sx={{
-                                fontWeight: 600,
+                                fontWeight: 500,
                                 textTransform: 'uppercase',
                                 fontSize: '10px',
                                 bgcolor: badgeColors.bg,
@@ -158,8 +158,8 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                                 px: 1.5,
                             }}
                         />
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', fontSize: '13px' }}>
-                            {totalUsed.toLocaleString()} <Box component="span" sx={{ color: '#9ca3af', fontWeight: 500 }}>/ {totalMax.toLocaleString()} credits</Box>
+                        <Typography variant="body2" sx={{ fontWeight: 500, color: '#111827', whiteSpace: 'nowrap', fontSize: '13px' }}>
+                            {totalUsed.toLocaleString()} <Box component="span" sx={{ color: '#9CA3AF', fontWeight: 500 }}>/ {totalMax.toLocaleString()} credits</Box>
                         </Typography>
                     </Box>
 
@@ -170,7 +170,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                             sx={{
                                 height: 8,
                                 borderRadius: 4,
-                                bgcolor: '#f3f4f6',
+                                bgcolor: '#FFFFFF',
                                 '& .MuiLinearProgress-bar': {
                                     borderRadius: 4,
                                     background: getProgressColor(),
@@ -184,7 +184,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         <Typography
                             variant="caption"
                             sx={{
-                                color: isOverage ? '#ef4444' : '#6b7280',
+                                color: isOverage ? '#EF4444' : '#6B7280',
                                 fontWeight: 500,
                                 display: { xs: 'none', md: 'block' },
                                 fontSize: '13px',
@@ -197,17 +197,17 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                             onClick={() => router.push('/pricing')}
                             sx={{
                                 textTransform: 'none',
-                                color: 'rgba(3, 105, 161,1)',
-                                fontWeight: 600,
+                                color: 'rgba(139, 92, 246,1)',
+                                fontWeight: 500,
                                 fontSize: '12px',
                                 minWidth: 'auto',
                                 p: '4px 12px',
                                 borderRadius: '6px',
-                                bgcolor: 'rgba(3, 105, 161,0.05)',
-                                border: '1px solid rgba(3, 105, 161,0.1)',
+                                bgcolor: 'rgba(139, 92, 246,0.05)',
+                                border: '1px solid rgba(139, 92, 246,0.1)',
                                 transition: 'all 0.2s ease',
                                 '&:hover': {
-                                    bgcolor: 'rgba(3, 105, 161,0.1)',
+                                    bgcolor: 'rgba(139, 92, 246,0.1)',
                                 }
                             }}
                         >
@@ -227,9 +227,9 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         py: 1.5,
                         bgcolor: 'rgba(255, 255, 255, 0.72)',
                         backdropFilter: 'blur(16px)',
-                        border: '1px solid rgba(3, 105, 161, 0.14)',
+                        border: '1px solid rgba(139, 92, 246, 0.14)',
                         borderRadius: '14px',
-                        boxShadow: '0 8px 24px -12px rgba(3, 105, 161, 0.18)',
+                        boxShadow: '0 8px 24px -12px rgba(139, 92, 246, 0.18)',
                         transition: 'all 0.2s ease-in-out',
                         cursor: 'pointer',
                         height: '100%',
@@ -238,8 +238,8 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         '&:hover': {
                             transform: 'translateY(-2px)',
                             bgcolor: 'rgba(255, 255, 255, 0.92)',
-                            borderColor: 'rgba(3, 105, 161, 0.35)',
-                            boxShadow: '0 14px 30px -14px rgba(3, 105, 161, 0.28)',
+                            borderColor: 'rgba(139, 92, 246, 0.35)',
+                            boxShadow: '0 14px 30px -14px rgba(139, 92, 246, 0.28)',
                         }
                     }}
                     onClick={() => router.push('/pricing')}
@@ -250,16 +250,16 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                             height: 40,
                             borderRadius: '10px',
                             background: isOverage
-                                ? 'linear-gradient(135deg, #b91c1c, #ef4444)'
-                                : 'linear-gradient(135deg, #075985, #0369A1)',
+                                ? 'linear-gradient(135deg, #DC2626, #EF4444)'
+                                : 'linear-gradient(135deg, #8B5CF6, #8B5CF6)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: '#fff',
+                            color: '#111827',
                             flexShrink: 0,
                             overflow: 'hidden',
                             position: 'relative',
-                            boxShadow: '0 4px 10px -3px rgba(3, 105, 161, 0.45)',
+                            boxShadow: '0 4px 10px -3px rgba(139, 92, 246, 0.45)',
                         }}
                     >
                         <Box sx={{
@@ -271,7 +271,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                             bgcolor: 'rgba(0,0,0,0.18)',
                             transition: 'height 0.5s ease'
                         }} />
-                        <Typography sx={{ fontSize: '10px', fontWeight: 600, zIndex: 1 }}>{Math.round(usagePercent)}%</Typography>
+                        <Typography sx={{ fontSize: '10px', fontWeight: 500, zIndex: 1 }}>{Math.round(usagePercent)}%</Typography>
                     </Box>
                     <Box sx={{ flex: 1 }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.2 }}>
@@ -279,7 +279,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                                 sx={{
                                     fontSize: '9px',
                                     fontWeight: 500,
-                                    color: 'rgba(3, 105, 161, 0.6)',
+                                    color: 'rgba(139, 92, 246, 0.6)',
                                     textTransform: 'uppercase',
                                     letterSpacing: '0.05em',
                                 }}
@@ -291,14 +291,14 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                             <Typography
                                 sx={{
                                     fontSize: '13px',
-                                    fontWeight: 600,
+                                    fontWeight: 500,
                                     color: '#111827',
                                     lineHeight: 1.2,
                                 }}
                             >
                                 {totalUsed.toLocaleString()}
                             </Typography>
-                            <Typography sx={{ fontSize: '11px', color: '#9ca3af', fontWeight: 500 }}>
+                            <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 500 }}>
                                 / {totalMax.toLocaleString()}
                             </Typography>
                         </Box>
@@ -306,7 +306,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         <Typography
                             sx={{
                                 fontSize: '11px',
-                                color: isOverage ? '#ef4444' : '#6b7280',
+                                color: isOverage ? '#EF4444' : '#6B7280',
                                 fontWeight: 500,
                                 mt: 0.2
                             }}
@@ -318,15 +318,15 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                             <Typography 
                                 variant="caption" 
                                 sx={{ 
-                                    color: '#ef4444', 
-                                    fontWeight: 600, 
+                                    color: '#EF4444', 
+                                    fontWeight: 500, 
                                     display: 'block', 
                                     fontSize: '10px',
                                     mt: 0.5,
                                     bgcolor: 'rgba(239, 68, 68, 0.05)',
                                     p: 0.5,
                                     borderRadius: '4px',
-                                    border: '1px dashed rgba(239, 68, 68, 0.2)',
+                                    border: '1px solid rgba(239, 68, 68, 0.2)',
                                     lineHeight: 1.1
                                 }}
                             >
@@ -346,7 +346,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
             sx={{
                 p: 3,
                 borderRadius: '16px',
-                border: '1px solid rgba(3, 105, 161, 0.08)',
+                border: '1px solid rgba(139, 92, 246, 0.08)',
                 bgcolor: 'rgba(255, 255, 255, 0.8)',
                 backdropFilter: 'blur(20px)',
                 mb: 2.5,
@@ -362,21 +362,21 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                 right: 0,
                 width: '120px',
                 height: '120px',
-                background: 'radial-gradient(circle, rgba(3, 105, 161, 0.03) 0%, transparent 70%)',
+                background: 'radial-gradient(circle, rgba(139, 92, 246, 0.03) 0%, transparent 70%)',
                 zIndex: 0,
             }} />
 
             <Box sx={{ position: 'relative', zIndex: 1 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
                     <Box>
-                        <Typography variant="caption" sx={{ color: '#6b7280', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', mb: 0.5, display: 'block', fontSize: '10px' }}>
+                        <Typography variant="caption" sx={{ color: '#6B7280', fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', mb: 0.5, display: 'block', fontSize: '10px' }}>
                             Credits Used
                         </Typography>
                         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75 }}>
-                            <Typography variant="h4" sx={{ fontWeight: 600, color: '#111827', letterSpacing: '-0.02em', fontSize: '28px' }}>
+                            <Typography variant="h4" sx={{ fontWeight: 500, color: '#111827', letterSpacing: '-0.02em', fontSize: '28px' }}>
                                 {totalUsed.toLocaleString()}
                             </Typography>
-                            <Typography variant="body2" sx={{ color: '#9ca3af', fontWeight: 500 }}>
+                            <Typography variant="body2" sx={{ color: '#9CA3AF', fontWeight: 500 }}>
                                 / {totalMax.toLocaleString()} credits
                             </Typography>
                         </Box>
@@ -385,7 +385,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         label={plan.toUpperCase()}
                         size="medium"
                         sx={{
-                            fontWeight: 600,
+                            fontWeight: 500,
                             textTransform: 'uppercase',
                             fontSize: '10px',
                             bgcolor: badgeColors.bg,
@@ -405,7 +405,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         sx={{
                             height: 12,
                             borderRadius: 6,
-                            bgcolor: '#f3f4f6',
+                            bgcolor: '#FFFFFF',
                             '& .MuiLinearProgress-bar': {
                                 borderRadius: 6,
                                 background: getProgressColor(),
@@ -416,7 +416,7 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                 </Box>
 
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="body2" sx={{ color: isOverage ? '#ef4444' : '#6b7280', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '13px' }}>
+                    <Typography variant="body2" sx={{ color: isOverage ? '#EF4444' : '#6B7280', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '13px' }}>
                         {isOverage ? (
                             <>⚠️ Capacity reached</>
                         ) : (
@@ -429,15 +429,15 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                         onClick={() => router.push('/pricing')}
                         sx={{
                             textTransform: 'none',
-                            color: 'rgba(3, 105, 161, 1)',
-                            fontWeight: 600,
+                            color: 'rgba(139, 92, 246, 1)',
+                            fontWeight: 500,
                             fontSize: '12px',
                             px: 1.5,
                             py: 0.5,
                             borderRadius: '6px',
                             transition: 'all 0.2s ease',
                             '&:hover': {
-                                bgcolor: 'rgba(3, 105, 161, 0.05)',
+                                bgcolor: 'rgba(139, 92, 246, 0.05)',
                             }
                         }}
                     >
@@ -446,8 +446,8 @@ const UsageDisplay = ({ horizontal = false, engineType: propEngineType }: { hori
                 </Box>
 
                 {isOverage && (
-                    <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(239, 68, 68, 0.05)', borderRadius: '10px', border: '1px dashed rgba(239, 68, 68, 0.25)' }}>
-                        <Typography variant="caption" sx={{ color: '#ef4444', fontWeight: 500, display: 'block', fontSize: '12px' }}>
+                    <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(239, 68, 68, 0.05)', borderRadius: '10px', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                        <Typography variant="caption" sx={{ color: '#EF4444', fontWeight: 500, display: 'block', fontSize: '12px' }}>
                             Extra usage costs ${engineCredits?.overageRate || 0.19} per credit.
                         </Typography>
                     </Box>

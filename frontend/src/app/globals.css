@@ -1,16 +1,19 @@
 @import "tailwindcss";
 /* @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&display=swap'); */
 :root {
-  --foreground-rgb: 31, 41, 55;
-  --background-start-rgb: 249, 250, 251;
-  --background-end-rgb: 243, 244, 246;
-  --accent-primary: #0369A1;
-  --accent-secondary: #0EA5E9;
+  /* SignageX theme — app-wide design tokens. See frontend/src/app/theme/terminal.ts
+     for the canonical hex values; kept in sync by hand since Tailwind's CSS
+     vars can't import a .ts module. */
+  --foreground-rgb: 17, 24, 39;
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 249, 250, 251;
+  --accent-primary: #8B5CF6;
+  --accent-secondary: #A78BFA;
 
   /* Basic colors */
   --foreground: #111827;
-  --background: #ffffff;
-  --color-white: #ffffff;
+  --background: #FFFFFF;
+  --color-white: #FFFFFF;
 
   /* Typography */
   --font-size-heading-h1: 30px;
@@ -69,39 +72,49 @@
 }
 
 @theme {
-  --color-primary: #0369A1;
-  --color-primary-foreground: #ffffff;
-  --color-purple-25: #F0F9FF;
-  --color-purple-50: #E0F2FE;
-  --color-purple-75: #BAE6FD;
-  --color-purple-100: #7DD3FC;
-  --color-purple-200: #38BDF8;
-  --color-purple-300: #0EA5E9;
-  --color-purple-400: #0284C7;
-  --color-purple-500: #0369A1;
-  --color-purple-600: #075985;
+  --color-primary: #8B5CF6;
+  --color-primary-foreground: #FFFFFF;
+  /* SignageX's own purple ramp (D:\SignageX\signageX-frontend globals.css). */
+  --color-purple-25: #F6F4FA;
+  --color-purple-50: #E3EFFE;
+  --color-purple-75: #CFBCFB;
+  --color-purple-100: #BCA0FA;
+  --color-purple-200: #9F78F8;
+  --color-purple-300: #8B5CF6;
+  --color-purple-400: #6140AC;
+  --color-purple-500: #553896;
+  --color-purple-600: #553896;
 
-  --color-gray-50: #f9fafb;
-  --color-gray-100: #f3f4f6;
-  --color-gray-200: #e5e7eb;
-  --color-gray-300: #d1d5db;
-  --color-gray-400: #9ca3af;
-  --color-gray-500: #6b7280;
-  --color-gray-600: #4b5563;
+  /* Standard Tailwind gray ramp, matching SignageX. */
+  --color-gray-50: #F9FAFB;
+  --color-gray-100: #F3F4F6;
+  --color-gray-200: #E5E7EB;
+  --color-gray-300: #D1D5DB;
+  --color-gray-400: #9CA3AF;
+  --color-gray-500: #6B7280;
+  --color-gray-600: #4B5563;
   --color-gray-700: #374151;
-  --color-gray-800: #1f2937;
+  --color-gray-800: #1F2937;
   --color-gray-900: #111827;
 
-  --color-success-500: #10b981;
-  --color-success-50: #ecfcf5;
-  --color-warning-500: #f59e0b;
-  --color-warning-50: #fffbe8;
-  --color-danger-500: #ef4444;
-  --color-danger-50: #fef2f2;
+  --color-success-500: #10B981;
+  --color-success-50: #ECFCF5;
+  --color-warning-500: #F59E0B;
+  --color-warning-50: #FFFBE8;
+  --color-danger-500: #EF4444;
+  --color-danger-50: #FEF2F2;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-white: #ffffff;
+  --color-white: #FFFFFF;
+
+  /* Rounded, soft-shadow SignageX shape language — restores Tailwind's
+     default rounded-* radii app-wide (previously flattened to 2-4px), then
+     pushed further for a distinctive, friendlier squircle feel. */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
 
   --text-heading-h1: var(--font-size-heading-h1);
   --text-heading-h2: var(--font-size-heading-h2);
@@ -112,8 +125,8 @@
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: var(--color-white);
-  font-family: var(--font-outfit), var(--font-inter), system-ui, sans-serif;
+  background: var(--background);
+  font-family: var(--font-inter), var(--font-outfit), system-ui, sans-serif;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
@@ -128,71 +141,12 @@ h6,
 b,
 strong,
 .font-bold {
-  font-weight: 600 !important;
+  font-weight: 500 !important;
 }
 
 ::selection {
-  background-color: var(--color-purple-200);
-  color: white;
-}
-
-/* Premium Mesh Background Animation */
-@keyframes meshGradient {
-  0% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-.premium-mesh-bg {
-  background: linear-gradient(-45deg, #f9fafb, #ffffff, #f5f3ff, #fdf2f8);
-  background-size: 400% 400%;
-  animation: meshGradient 20s ease infinite;
-}
-
-/* Floating Animation */
-@keyframes floating {
-  0% {
-    transform: translateY(0px);
-  }
-
-  50% {
-    transform: translateY(-10px);
-  }
-
-  100% {
-    transform: translateY(0px);
-  }
-}
-
-.animate-floating {
-  animation: floating 6s ease-in-out infinite;
-}
-
-/* Glow Pulse */
-@keyframes glowPulse {
-  0% {
-    box-shadow: 0 0 5px rgba(3, 105, 161, 0.2);
-  }
-
-  50% {
-    box-shadow: 0 0 25px rgba(3, 105, 161, 0.4);
-  }
-
-  100% {
-    box-shadow: 0 0 5px rgba(3, 105, 161, 0.2);
-  }
-}
-
-.premium-glow {
-  animation: glowPulse 4s ease-in-out infinite;
+  background-color: var(--color-primary);
+  color: var(--color-white);
 }
 
 /* Custom scrollbar */
@@ -201,16 +155,16 @@ strong,
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: var(--color-gray-100);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-gray-300);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-gray-400);
 }
 
 /* Scrollbar Hide Utility */

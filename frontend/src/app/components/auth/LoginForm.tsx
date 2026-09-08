@@ -1,15 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  Box,
-  Typography,
-  TextField,
-  InputAdornment,
-  Button,
-  Link,
-  IconButton,
-} from '@mui/material';
 import { Eye, EyeOff } from 'lucide-react';
 
 import { ActiveForm } from '../Auth';
@@ -22,186 +13,66 @@ export interface FormProps {
   handleChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   switchForm: React.Dispatch<React.SetStateAction<ActiveForm>>;
+  loading?: boolean;
 }
 
-const LoginForm: React.FC<FormProps> = ({ formData, handleChange, handleSubmit, switchForm }) => {
+const LoginForm: React.FC<FormProps> = ({ formData, handleChange, handleSubmit, switchForm, loading }) => {
   const [showPassword, setShowPassword] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
 
-  const handleTogglePasswordVisibility = () => {
-    setShowPassword(!showPassword);
-  };
   return (
-    <Box
-      sx={{
-        width: '100%',
-        maxWidth: 400,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-      }}
-    >
-      <Typography
-        gutterBottom
-        sx={{
-          fontWeight: 600,
-          fontSize: 30,
-          lineHeight: '38px',
-          textAlign: 'center',
-        }}
-      >
-        Welcome Back!
-      </Typography>
+    <div style={{ width: '100%' }}>
+      <h1 className="auth-title">Welcome back</h1>
+      <p className="auth-subtitle">Enter your details to sign in</p>
 
-      <Typography
-        gutterBottom
-        sx={{
-          fontWeight: 500,
-          fontSize: 16,
-          lineHeight: '24px',
-          textAlign: 'center',
-          mb: 2,
-        }}
-      >
-        Enter the following details to login
-      </Typography>
-
-      <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
-        {/* Email */}
-        <Box sx={{ width: '100%', mb: 2 }}>
-          <Typography
-            component="label"
-            htmlFor="email"
-            sx={{
-              fontFamily: 'Raleway',
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: '20px',
-              color: 'rgba(69,69,69,1)',
-              mb: 0.5,
-              display: 'block',
-            }}
-          >
-            Email
-          </Typography>
-          <TextField
+      <form onSubmit={handleSubmit}>
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="email">email</label>
+          <input
             id="email"
-            fullWidth
+            className="auth-input"
             name="email"
             type="email"
-            placeholder="Enter email"
-            variant="outlined"
+            placeholder="you@company.com"
             value={formData.email}
             onChange={handleChange}
             required
-            sx={{ '& .MuiOutlinedInput-root': { height: 48 } }}
           />
-        </Box>
+        </div>
 
-        {/* Password */}
-        <Box sx={{ width: '100%', mb: 2 }}>
-          <Typography
-            component="label"
-            htmlFor="password"
-            sx={{
-              fontFamily: 'Raleway',
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: '20px',
-              color: 'rgba(69,69,69,1)',
-              mb: 0.5,
-              display: 'block',
-            }}
-          >
-            Password
-          </Typography>
-          <TextField
-            id="password"
-            fullWidth
-            name="password"
-            type={showPassword ? 'text' : 'password'}
-            placeholder="Enter password"
-            variant="outlined"
-            value={formData.password}
-            onChange={handleChange}
-            onFocus={() => setPasswordFocused(true)}
-            onBlur={() => setPasswordFocused(false)}
-            required
-            sx={{ '& .MuiOutlinedInput-root': { height: 48 } }}
-            InputProps={{
-              endAdornment: passwordFocused ? (
-                <InputAdornment position="end">
-                  <IconButton
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      handleTogglePasswordVisibility();
-                    }}
-                    edge="end"
-                    sx={{ color: '#0369A1' }}
-                  >
-                    {showPassword ? (
-                      <EyeOff size={20} />
-                    ) : (
-                      <Eye size={20} />
-                    )}
-                  </IconButton>
-                </InputAdornment>
-              ) : undefined,
-            }}
-          />
-        </Box>
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="password">password</label>
+          <div style={{ position: 'relative' }}>
+            <input
+              id="password"
+              className="auth-input"
+              style={{ paddingRight: 42 }}
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Enter password"
+              value={formData.password}
+              onChange={handleChange}
+              required
+            />
+            <button type="button" className="auth-eye-btn" style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}
+              onClick={() => setShowPassword(p => !p)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
+              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
+        </div>
 
-        {/* Forgot Password */}
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            mb: 2,
-          }}
-        >
-          <Typography
-            sx={{
-              fontFamily: 'Raleway',
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: '20px',
-              color: '#0369A1',
-              cursor: 'pointer',
-            }}
-            onClick={() => switchForm('forgot')}
-          >
-            Forgot Password?
-          </Typography>
-        </Box>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+          <span className="auth-link" style={{ fontSize: 12 }} onClick={() => switchForm('forgot')}>forgot password?</span>
+        </div>
 
-        {/* Submit */}
-        <Button
-          type="submit"
-          fullWidth
-          variant="contained"
-          sx={{
-            mt: 1,
-            mb: 2,
-            backgroundColor: '#0369A1',
-            borderRadius: 2,
-          }}
-        >
-          Login
-        </Button>
+        <button type="submit" className="auth-submit" disabled={loading}>
+          {loading ? 'signing in…' : 'sign in'}
+        </button>
 
-        {/* Switch to Signup 
-        <Typography variant="body2" align="center">
-          Don't have an account?{' '}
-          <span
-            onClick={() => switchForm('signup')}
-            style={{ color: 'rgba(3, 105, 161,1)', cursor: 'pointer' }}
-          >
-            Sign up
-          </span>
-        </Typography>
-        */}
-      </Box>
-    </Box>
+        <p className="auth-foot">
+          Don't have an account? <span className="auth-link" onClick={() => switchForm('signup')}>sign up</span>
+        </p>
+      </form>
+    </div>
   );
 };
 

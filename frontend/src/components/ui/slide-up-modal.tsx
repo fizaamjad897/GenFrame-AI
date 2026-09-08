@@ -50,7 +50,7 @@ export function SlideUpModal({
                 // allow inner content to scroll horizontally when it overflows
                 className={clsx(
                   "w-full transform bg-white transition-all relative",
-                  "rounded-t-2xl shadow-xl",
+                  "rounded-t-2xl border-t border-dashed border-gray-200",
                   "h-[calc(100vh-64px)]",
                   "overflow-auto",
                   "flex flex-col",

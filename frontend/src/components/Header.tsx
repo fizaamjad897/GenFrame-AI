@@ -76,7 +76,7 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
       sx={{
         background: '#fff',
         minHeight: 80,
-        boxShadow: 'none',
+        boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
         color: 'text.primary',
         borderBottom: '1px solid #e5e7eb',
       }}
@@ -120,7 +120,7 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
                 variant="h6"
                 sx={{
                   fontSize: { xs: '18px', md: '20px' },
-                  fontWeight: 600,
+                  fontWeight: 500,
                   color: '#111827',
                   letterSpacing: '-0.01em',
                 }}
@@ -143,8 +143,8 @@ const Header = ({ processedImages = [] }: HeaderProps) => {
               bgcolor: 'rgba(74, 0, 224, 1)',
               color: 'white',
               fontSize: { xs: '13px', md: '14px' },
-              fontWeight: 600,
-              borderRadius: '12px',
+              fontWeight: 500,
+              borderRadius: '18px',
               '&:hover': {
                 bgcolor: 'rgba(74, 0, 224, 0.9)',
               },

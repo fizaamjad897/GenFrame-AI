@@ -38,7 +38,10 @@ const SwitchPlanModal: React.FC<SwitchPlanModalProps> = ({
             fullWidth
             PaperProps={{
                 sx: {
-                    borderRadius: '24px',
+                    borderRadius: '18px',
+                    border: '1px solid #E5E7EB',
+                    boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+                    bgcolor: '#FFFFFF',
                     p: 2,
                 }
             }}
@@ -49,20 +52,21 @@ const SwitchPlanModal: React.FC<SwitchPlanModalProps> = ({
                         sx={{
                             width: 48,
                             height: 48,
-                            borderRadius: '12px',
-                            bgcolor: 'rgba(59, 130, 246, 0.1)',
+                            borderRadius: '18px',
+                            border: '1px solid rgba(139, 92, 246, 0.4)',
+                            bgcolor: 'transparent',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                         }}
                     >
-                        <SwapIcon sx={{ fontSize: 28, color: '#3b82f6' }} />
+                        <SwapIcon sx={{ fontSize: 28, color: '#8B5CF6' }} />
                     </Box>
                     <Box>
-                        <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '20px', color: '#111827' }}>
+                        <Typography variant="h6" sx={{ fontWeight: 500, fontSize: '20px', color: '#111827' }}>
                             Switch Your Plan
                         </Typography>
-                        <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '14px' }}>
+                        <Typography variant="body2" sx={{ color: '#6B7280', fontSize: '14px' }}>
                             You already have an active plan
                         </Typography>
                     </Box>
@@ -70,7 +74,7 @@ const SwitchPlanModal: React.FC<SwitchPlanModalProps> = ({
             </DialogTitle>
 
             <DialogContent>
-                <Alert severity="info" sx={{ mb: 2 }}>
+                <Alert severity="info" sx={{ mb: 2, borderRadius: '18px' }}>
                     <Typography sx={{ fontSize: '14px', mb: 1 }}>
                         You're currently on the <strong>{currentPlan}</strong> plan.
                     </Typography>
@@ -79,7 +83,7 @@ const SwitchPlanModal: React.FC<SwitchPlanModalProps> = ({
                     </Typography>
                 </Alert>
 
-                <Typography sx={{ fontSize: '14px', color: '#6b7280', mb: 2 }}>
+                <Typography sx={{ fontSize: '14px', color: '#6B7280', mb: 2 }}>
                     Would you like to:
                 </Typography>
 
@@ -98,11 +102,11 @@ const SwitchPlanModal: React.FC<SwitchPlanModalProps> = ({
                     onClick={onClose}
                     sx={{
                         textTransform: 'none',
-                        fontWeight: 600,
-                        color: '#6b7280',
+                        fontWeight: 500,
+                        color: '#6B7280',
                         px: 3,
                         '&:hover': {
-                            bgcolor: '#f3f4f6',
+                            bgcolor: '#FFFFFF',
                         },
                     }}
                 >
@@ -113,12 +117,16 @@ const SwitchPlanModal: React.FC<SwitchPlanModalProps> = ({
                     variant="contained"
                     sx={{
                         textTransform: 'none',
-                        fontWeight: 600,
+                        fontWeight: 500,
                         px: 3,
-                        borderRadius: '10px',
-                        bgcolor: '#3b82f6',
+                        borderRadius: '18px',
+                        boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+                        bgcolor: '#8B5CF6',
+                        color: '#FFFFFF',
                         '&:hover': {
-                            bgcolor: '#2563eb',
+                            bgcolor: '#8B5CF6',
+                            filter: 'brightness(0.92)',
+                            boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
                         },
                     }}
                 >

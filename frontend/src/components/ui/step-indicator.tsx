@@ -20,10 +20,7 @@ interface StepIndicatorProps {
 export function StepIndicator({ steps, title, icon }: StepIndicatorProps) {
   return (
     <div
-      className="w-full h-full px-2 py-4 lg:px-4 lg:py-8 flex flex-col rounded-lg "
-      style={{
-        background: "linear-gradient(192.32deg, #F3EFFE 1.56%, #DDD0FF 98.63%)",
-      }}
+      className="w-full h-full px-2 py-4 lg:px-4 lg:py-8 flex flex-col rounded-lg border border-dashed border-gray-200 bg-gray-50"
     >
       {/* Header with icon and title */}
       <div className="flex items-center gap-1 mb-6 lg:mb-12">

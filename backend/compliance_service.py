@@ -4,7 +4,7 @@ Design Compliance Report service.
 Post-generation audit of a resized/generated image: technical (dimensions,
 file size), visual (safe zone, contrast, clutter, color), and content
 (prompt adherence, readability, focal point via Gemini vision). Runs as a
-FastAPI background task so it adds no latency to the /api/resize response.
+FastAPI background task so it adds no latency to the /api-v2/resize response.
 """
 import os
 import time

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Outfit } from "next/font/google";
+import { Inter, Outfit, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./context/AuthContext";
 import ThemeRegistry from "./components/ThemeRegistry";
@@ -17,6 +17,16 @@ const outfit = Outfit({
   variable: "--font-outfit",
 });
 
+// Marketing surface: flat cream/near-black two-tone, monospace UI chrome,
+// clean grotesk headline/body. Scoped via CSS variables only — the rest of
+// the app keeps --font-inter / --font-outfit untouched.
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "700"],
+  variable: "--font-panel-mono",
+});
+
 export const metadata: Metadata = {
   title: "Visual Transformation Engine",
   description: "Process and resize images with custom presets",
@@ -29,7 +39,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${outfit.variable}`} suppressHydrationWarning>
+      <body className={`${inter.variable} ${outfit.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
         <ThemeRegistry>
           <AuthProvider>
             {children}

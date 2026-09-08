@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from typing import Optional, Tuple, Dict
 import os, io, asyncio, uuid, warnings
+import httpx
 from functools import partial
 from datetime import datetime
 
@@ -151,6 +152,18 @@ GEMINI_NATIVE_RESOLUTIONS: Dict[str, Tuple[int, int]] = {
     "9:16": (768, 1344),
     "3:4":  (896, 1152),
     "21:9": (1536, 640),
+    # Empirically verified against the live gemini-3-pro-image output (2026-08-27).
+    "4:3":  (1200, 896),
+    "3:2":  (1264, 848),
+    "2:3":  (848, 1264),
+}
+
+# HD variants: the same native ratio requested at Gemini's "2K" image_size —
+# a distinct, model-accepted output size, not a post-processed upscale.
+# Empirically verified against the live gemini-3-pro-image output (2026-08-27).
+GEMINI_HD_RESOLUTIONS: Dict[str, Tuple[int, int]] = {
+    "1:1":  (2048, 2048),
+    "16:9": (2752, 1536),
 }
 
 PRESET_MAPPING = {
@@ -160,11 +173,26 @@ PRESET_MAPPING = {
     "square": "1:1",
     "portrait": "3:4",
     "ultrawide": "21:9",
+    "classic": "4:3",
+    "wide": "3:2",
+    "tall": "2:3",
+    "square2k": "1:1",
+    "landscape2k": "16:9",
     "16:9": "16:9",
     "9:16": "9:16",
     "1:1": "1:1",
     "3:4": "3:4",
     "21:9": "21:9",
+    "4:3": "4:3",
+    "3:2": "3:2",
+    "2:3": "2:3",
+}
+
+# Preset keys (not ratios) that should request Gemini's 2K image_size instead
+# of the default 1K. Keyed by preset so plain "1:1"/"16:9" still get 1K.
+PRESET_IMAGE_SIZE: Dict[str, str] = {
+    "square2k": "2K",
+    "landscape2k": "2K",
 }
 
 def _is_creation_allowed_ratio(aspect_ratio: str) -> bool:
@@ -172,16 +200,18 @@ def _is_creation_allowed_ratio(aspect_ratio: str) -> bool:
     return key in PRESET_MAPPING
 
 
-def validate_aspect_ratio(aspect_ratio: str) -> Tuple[str, Tuple[int, int]]:
-    """Map any aspect ratio string to (gemini_ratio, (width, height))."""
+def validate_aspect_ratio(aspect_ratio: str) -> Tuple[str, Tuple[int, int], Optional[str]]:
+    """Map any aspect ratio string to (gemini_ratio, (width, height), image_size)."""
     key = (aspect_ratio or "").strip().lower().replace("x", ":").replace("-", ":")
     if key in PRESET_MAPPING:
         ratio = PRESET_MAPPING[key]
-        return ratio, GEMINI_NATIVE_RESOLUTIONS[ratio]
-        
+        image_size = PRESET_IMAGE_SIZE.get(key)
+        resolution = GEMINI_HD_RESOLUTIONS[ratio] if image_size == "2K" else GEMINI_NATIVE_RESOLUTIONS[ratio]
+        return ratio, resolution, image_size
+
     raise HTTPException(
         status_code=400,
-        detail=f"Aspect ratio '{aspect_ratio}' is not supported. Supported presets: square (1:1), story (9:16), landscape (16:9), portrait (3:4), ultrawide (21:9)."
+        detail=f"Aspect ratio '{aspect_ratio}' is not supported. Supported presets: square (1:1), story (9:16), landscape (16:9), portrait (3:4), ultrawide (21:9), classic (4:3), wide (3:2), tall (2:3), square2k (1:1 @2K), landscape2k (16:9 @2K)."
     )
 
 # ── Auth dependencies ─────────────────────────────────────────────────────────
@@ -231,7 +261,7 @@ def get_admin_user(current_user=Depends(get_current_user)):
     raise HTTPException(status_code=403, detail="Administrative privileges required")
 
 # ── User / auth routes ────────────────────────────────────────────────────────
-@app.post("/api/users/register", response_model=TokenResponse)
+@app.post("/api-v2/users/register", response_model=TokenResponse)
 async def register(user_data: UserRegister):
     new_user = create_user(user_data)
     if not new_user:
@@ -243,7 +273,7 @@ async def register(user_data: UserRegister):
     }
 
 
-@app.get("/api/status")
+@app.get("/api-v2/status")
 async def get_status():
     return {
         "status": "online",
@@ -254,7 +284,7 @@ async def get_status():
     }
 
 
-@app.post("/api/users/login", response_model=TokenResponse)
+@app.post("/api-v2/users/login", response_model=TokenResponse)
 async def login(credentials: UserLogin):
     user = verify_user_credentials(credentials.email, credentials.password)
     if not user:
@@ -266,7 +296,7 @@ async def login(credentials: UserLogin):
     }
 
 
-@app.post("/api/users/request-password-reset")
+@app.post("/api-v2/users/request-password-reset")
 async def request_password_reset(req: ForgotPasswordRequest):
     from auth import get_user_by_email
     user = get_user_by_email(req.email)
@@ -281,19 +311,19 @@ async def request_password_reset(req: ForgotPasswordRequest):
     return resp
 
 
-@app.post("/api/users/reset-password")
+@app.post("/api-v2/users/reset-password")
 async def reset_password(req: ResetPasswordRequest):
     if not reset_password_by_token(req.token, req.newPassword):
         raise HTTPException(status_code=400, detail="Invalid or expired token")
     return {"message": "Password reset successfully"}
 
 
-@app.get("/api/users/me", response_model=UserResponse)
+@app.get("/api-v2/users/me", response_model=UserResponse)
 async def get_current_user_info(current_user=Depends(get_current_user)):
     return user_doc_to_response(current_user)
 
 
-@app.post("/api/users/api-key")
+@app.post("/api-v2/users/api-key")
 async def create_api_key(type: str | None = None, current_user=Depends(get_current_user)):
     try:
         if type is None:
@@ -309,7 +339,7 @@ async def create_api_key(type: str | None = None, current_user=Depends(get_curre
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.delete("/api/users/api-key")
+@app.delete("/api-v2/users/api-key")
 async def remove_api_key(type: str | None = None, current_user=Depends(get_current_user)):
     ok = (auth_module.delete_api_key(str(current_user["_id"]), type)
           if type else auth_module.delete_api_key(str(current_user["_id"])))
@@ -318,7 +348,7 @@ async def remove_api_key(type: str | None = None, current_user=Depends(get_curre
     return {"message": "API key deleted", "type": type}
 
 # ── Stripe routes ─────────────────────────────────────────────────────────────
-@app.post("/api/stripe/create-checkout")
+@app.post("/api-v2/stripe/create-checkout")
 @app.post("/stripe/create-checkout")
 @app.post("/create-checkout")
 async def stripe_create_checkout(request: Request, body: dict = Body(...), current_user=Depends(get_current_user)):
@@ -338,7 +368,7 @@ async def stripe_create_checkout(request: Request, body: dict = Body(...), curre
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/stripe/create-portal")
+@app.post("/api-v2/stripe/create-portal")
 @app.post("/stripe/create-portal")
 @app.post("/create-portal")
 async def stripe_create_portal(current_user=Depends(get_current_user)):
@@ -351,7 +381,7 @@ async def stripe_create_portal(current_user=Depends(get_current_user)):
     return {"url": url}
 
 
-@app.post("/api/stripe/create-test-checkout")
+@app.post("/api-v2/stripe/create-test-checkout")
 async def stripe_create_test_checkout(current_user=Depends(get_current_user)):
     price_id = os.getenv("STRIPE_PRICE_TEST_DAILY")
     if not price_id:
@@ -385,9 +415,9 @@ async def stripe_create_test_checkout(current_user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Failed to create test checkout: {e}")
 
 
-@app.post("/api/stripe/webhook")
+@app.post("/api-v2/stripe/webhook")
 @app.post("/stripe/webhook")
-@app.post("/secure/api/stripe/webhook")
+@app.post("/secure/api-v2/stripe/webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None, alias="Stripe-Signature")):
     payload = await request.body()
     if not handle_webhook_event(payload, stripe_signature):
@@ -395,7 +425,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None, 
     return {"received": True}
 
 
-@app.post("/api/stripe/cancel-subscription")
+@app.post("/api-v2/stripe/cancel-subscription")
 async def stripe_cancel_subscription(body: dict | None = None, current_user=Depends(get_current_user)):
     engine_type  = None
     at_period_end = False
@@ -514,7 +544,7 @@ async def _perform_stripe_sync(user_id: str, email: str, stripe_customer_id: str
         return {"success": False, "detail": str(e)}
 
 
-@app.post("/api/stripe/manual-sync")
+@app.post("/api-v2/stripe/manual-sync")
 async def manual_sync_subscription(request: dict):
     email = request.get("email")
     session_id = request.get("session_id")
@@ -540,7 +570,7 @@ async def manual_sync_subscription(request: dict):
     return res
 
 
-@app.post("/api/stripe/refresh-subscription")
+@app.post("/api-v2/stripe/refresh-subscription")
 async def refresh_subscription(current_user=Depends(get_current_user)):
     if current_user.get("is_postpaid", False):
         return {"success": True, "detail": "Postpaid user.", "plan": None}
@@ -550,7 +580,7 @@ async def refresh_subscription(current_user=Depends(get_current_user)):
     return res
 
 # ── Plan / billing routes ─────────────────────────────────────────────────────
-@app.get("/api/plans")
+@app.get("/api-v2/plans")
 async def get_plans():
     plans = get_all_plans()
     for p in plans:
@@ -558,7 +588,7 @@ async def get_plans():
     return plans
 
 
-@app.get("/api/users/usage")
+@app.get("/api-v2/users/usage")
 async def get_usage(engine_type: str = None, current_user=Depends(get_current_user)):
     stats = get_user_usage_stats(str(current_user["_id"]), engine_type=engine_type)
     if not stats:
@@ -566,7 +596,7 @@ async def get_usage(engine_type: str = None, current_user=Depends(get_current_us
     return stats
 
 
-@app.get("/api/users/billing-history")
+@app.get("/api-v2/users/billing-history")
 async def get_billing(current_user=Depends(get_current_user)):
     history = get_billing_history(str(current_user["_id"]))
     for b in history:
@@ -574,7 +604,7 @@ async def get_billing(current_user=Depends(get_current_user)):
     return history
 
 
-@app.post("/api/billing/generate")
+@app.post("/api-v2/billing/generate")
 async def generate_bill(current_user=Depends(get_current_user)):
     bill = generate_monthly_bill(str(current_user["_id"]))
     if not bill:
@@ -583,7 +613,7 @@ async def generate_bill(current_user=Depends(get_current_user)):
     return bill
 
 # ── Image resize ──────────────────────────────────────────────────────────────
-@app.post("/api/resize", response_class=JSONResponse)
+@app.post("/api-v2/resize", response_class=JSONResponse)
 async def resize_image(
     background_tasks: BackgroundTasks,
     aspect_ratio: str = Form("1:1"),
@@ -680,7 +710,7 @@ async def resize_image(
                 detail=f"Insufficient credits. Need {tokens_to_deduct}, have {remaining}.",
             )
 
-    gemini_ratio, (tw, th) = validate_aspect_ratio(aspect_ratio)
+    gemini_ratio, (tw, th), gemini_image_size = validate_aspect_ratio(aspect_ratio)
 
     if not client:
         load_dotenv()
@@ -705,7 +735,10 @@ async def resize_image(
             contents=contents,
             config=types.GenerateContentConfig(
                 response_modalities=["IMAGE"],
-                image_config=types.ImageConfig(aspect_ratio=gemini_ratio),
+                image_config=types.ImageConfig(
+                    aspect_ratio=gemini_ratio,
+                    **({"image_size": gemini_image_size} if gemini_image_size else {}),
+                ),
             ),
         )
     except Exception as e:
@@ -760,8 +793,129 @@ async def resize_image(
         status_code=200,
     )
 
+# ── OOH resize via SignageX's public transformation API ───────────────────────
+# These 6 dimensions are routed to SignageX's own OOH service instead of our
+# Gemini pipeline. The request is forwarded server-side using the caller's own
+# org-module bearer token (this backend and that service share the same auth),
+# then folded back into our normal upload/credit/log/compliance flow.
+SIGNAGEX_OOH_API_URL = "https://transformation.signagexai.com/api/v1/ooh/resize"
+SIGNAGEX_OOH_DIMENSIONS: Dict[str, Tuple[int, int]] = {
+    "OOH_792X216": (792, 216),
+    "OOH_1060X360": (1060, 360),
+    "OOH_1232X672": (1232, 672),
+    "OOH_1836X432": (1836, 432),
+    "OOH_1952X896": (1952, 896),
+    "OOH_1024X320": (1024, 320),
+}
+
+
+@app.post("/api-v2/ooh/resize", response_class=JSONResponse)
+async def ooh_resize_signagex(
+    background_tasks: BackgroundTasks,
+    dimension: str = Form(...),
+    engine_type: str = Form("transformation"),
+    file: UploadFile = File(...),
+    authorization: str = Header(None),
+    current_user=Depends(get_current_user),
+):
+    dim_key = (dimension or "").strip().upper()
+    if dim_key not in SIGNAGEX_OOH_DIMENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported OOH dimension '{dimension}'. Supported: {', '.join(SIGNAGEX_OOH_DIMENSIONS)}",
+        )
+    tw, th = SIGNAGEX_OOH_DIMENSIONS[dim_key]
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    raw_token = authorization.split(" ", 1)[1]
+
+    is_postpaid = bool(current_user.get("is_postpaid", False))
+    tokens_to_deduct = 1.0 if is_postpaid else 4.0
+    user_id = str(current_user["_id"])
+    if not is_postpaid:
+        eng_data = current_user.get("engine_data") or {}
+        eng_credits = (eng_data.get(engine_type) or {}).get("credits") or {}
+        if not eng_credits and current_user.get("engineType") == engine_type:
+            eng_credits = current_user.get("credits") or {}
+        monthly_remaining = max(0.0, float(eng_credits.get("monthly_units_max", 0.0)) - float(eng_credits.get("monthly_units_used", 0.0)))
+        addon_remaining = max(0.0, float(eng_credits.get("addon_units_max", 0.0)) - float(eng_credits.get("addon_units_used", 0.0)))
+        remaining = monthly_remaining + addon_remaining
+        if remaining < tokens_to_deduct:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Insufficient credits. Need {tokens_to_deduct}, have {remaining}.",
+            )
+
+    image_bytes = await file.read()
+    if len(image_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large. Max 10MB.")
+    if len(image_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    try:
+        async with httpx.AsyncClient(timeout=180) as client_http:
+            signagex_resp = await client_http.post(
+                SIGNAGEX_OOH_API_URL,
+                headers={"Authorization": f"Bearer {raw_token}"},
+                files={"file": (file.filename or "image.png", image_bytes, file.content_type or "image/png")},
+                data={"dimension": dim_key},
+            )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"SignageX OOH service unreachable: {e}")
+
+    if signagex_resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"SignageX OOH service failed ({signagex_resp.status_code}): {signagex_resp.text[:300]}",
+        )
+
+    image_data = signagex_resp.content
+    if not image_data:
+        raise HTTPException(status_code=502, detail="SignageX OOH service returned an empty image.")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    unique_id = str(uuid.uuid4())[:8]
+    filename = f"resized_images/{timestamp}_{unique_id}.png"
+    try:
+        await run_blocking(
+            s3_client.put_object,
+            Bucket=DO_SPACES_BUCKET_NAME,
+            Key=filename,
+            Body=image_data,
+            ContentType="image/png",
+            ACL="public-read",
+        )
+        ep = DO_SPACES_ENDPOINT.replace("https://", "").replace("http://", "").strip()
+        uploaded_url = f"https://{DO_SPACES_BUCKET_NAME}.{ep}/{filename}"
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
+
+    if not consume_units(user_id, tokens_to_deduct, engine_type=engine_type):
+        raise HTTPException(status_code=429, detail="Insufficient credits.")
+    try:
+        increment_user_units(user_id)
+    except Exception:
+        pass
+
+    log_id = log_usage(user_id, "resize", dim_key, True, uploaded_url, None, [tw, th])
+    image_name = f"{timestamp}_{unique_id}.png"
+
+    report_id = str(uuid.uuid4())
+    compliance_service.create_pending_report(
+        report_id, log_id, user_id, engine_type, uploaded_url, None, dim_key, (tw, th),
+    )
+    background_tasks.add_task(
+        compliance_service.run_compliance_analysis, report_id, image_data, None, dim_key, (tw, th),
+    )
+
+    return JSONResponse(
+        content={"url": uploaded_url, "name": image_name, "logId": log_id, "reportId": report_id},
+        status_code=200,
+    )
+
 # ── History & feedback ────────────────────────────────────────────────────────
-@app.get("/api/history")
+@app.get("/api-v2/history")
 async def get_history(current_user=Depends(get_current_user)):
     try:
         user_id = str(current_user["_id"])
@@ -785,7 +939,7 @@ async def get_history(current_user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {e}")
 
 # ── Design compliance reports ─────────────────────────────────────────────────
-@app.get("/api/reports/history")
+@app.get("/api-v2/reports/history")
 async def get_reports_history(
     engine_type: str = None,
     status: str = None,
@@ -799,12 +953,12 @@ async def get_reports_history(
     return JSONResponse(content={"reports": reports})
 
 
-@app.get("/api/reports/summary")
+@app.get("/api-v2/reports/summary")
 async def get_reports_summary(current_user=Depends(get_current_user)):
     return compliance_service.get_report_summary(str(current_user["_id"]))
 
 
-@app.get("/api/reports/{report_id}")
+@app.get("/api-v2/reports/{report_id}")
 async def get_report_detail(report_id: str, current_user=Depends(get_current_user)):
     report = compliance_service.get_report(report_id, str(current_user["_id"]))
     if not report:
@@ -812,7 +966,7 @@ async def get_report_detail(report_id: str, current_user=Depends(get_current_use
     return report
 
 
-@app.post("/api/feedback")
+@app.post("/api-v2/feedback")
 async def submit_feedback(
     logId: str = Body(...),
     feedback: str = Body(...),
@@ -827,7 +981,7 @@ async def submit_feedback(
 
 from urllib.parse import urlparse
 
-@app.delete("/api/dev/clean-user-archive")
+@app.delete("/api-v2/dev/clean-user-archive")
 async def clean_user_archive(email: str = Body(..., embed=True), current_user=Depends(get_current_user)):
     user = auth_module.get_user_by_email(email)
     if not user:
@@ -855,7 +1009,7 @@ async def clean_user_archive(email: str = Body(..., embed=True), current_user=De
     return {"message": f"Deleted {deleted} objects.", "deleted_s3_count": deleted, "hidden_logs_count": result.modified_count}
 
 
-@app.post("/api/admin/trigger-billing-rollover")
+@app.post("/api-v2/admin/trigger-billing-rollover")
 async def trigger_billing_rollover(current_user=Depends(get_admin_user)):
     try:
         success = await asyncio.to_thread(perform_all_postpaid_rollovers, force=True)

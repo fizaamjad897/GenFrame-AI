@@ -2,6 +2,7 @@
 
 import React from "react";
 import { X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { Button } from "./button";
 import { Input } from "./input";
 
@@ -30,8 +31,6 @@ export function Modal({
   backdropOpacity = 0.3,
   divider = true,
 }: ModalProps) {
-  if (!isOpen) return null;
-
   const sizeClasses = {
     sm: "max-w-md",
     md: "max-w-lg",
@@ -41,18 +40,27 @@ export function Modal({
   };
 
   return (
+    <AnimatePresence>
+      {isOpen && (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {showBackdrop && (
-        <div
+        <motion.div
           className="absolute inset-0 bg-black"
-          style={{ opacity: backdropOpacity }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: backdropOpacity }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
           onClick={onClose}
         />
       )}
 
       {/* Modal */}
-      <div
-        className={`relative bg-white rounded-lg shadow-xl w-full mx-4 ${sizeClasses[size]}`}
+      <motion.div
+        initial={{ opacity: 0, y: 8, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 8, scale: 0.98 }}
+        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+        className={`relative bg-white rounded-lg border border-dashed border-gray-200 w-full mx-4 ${sizeClasses[size]}`}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-5">
@@ -81,8 +89,10 @@ export function Modal({
             <div className="p-6">{footer}</div>
           </>
         )}
-      </div>
+      </motion.div>
     </div>
+      )}
+    </AnimatePresence>
   );
 }
 

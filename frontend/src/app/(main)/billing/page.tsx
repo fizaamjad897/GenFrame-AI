@@ -32,6 +32,7 @@ import type { EngineType } from '@/types/billing';
 import { getPlanLabel, hasActiveSubscription } from '@/types/billing';
 import CancelSubscriptionModal from '@/app/components/modals/CancelSubscriptionModal';
 import BillingOverview from '@/app/components/billing/BillingOverview';
+import { FadeIn } from '@/components/motion/Reveal';
 
 const BillingPage = () => {
     const { user, refreshUser } = useUser();
@@ -287,28 +288,29 @@ const BillingPage = () => {
         return (
             <Box>
                 <Container maxWidth="lg" sx={{ py: { xs: 2, md: 4 } }}>
-                    <Paper elevation={0} sx={{ p: 4, borderRadius: '24px', border: '1px solid #e5e7eb', bgcolor: 'white' }}>
-                        <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 600, color: '#111827', mb: 2 }}>
+                    <FadeIn>
+                    <Paper elevation={0} sx={{ p: 4, borderRadius: '18px', border: '1px solid #E5E7EB', bgcolor: '#FFFFFF', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)' }}>
+                        <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 500, color: '#111827', mb: 2 }}>
                             Usage Billing Overview
                         </Typography>
 
                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' }, gap: 2 }}>
-                            <Card elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                            <Card elevation={0} sx={{ border: '1px solid #E5E7EB' }}>
                                 <CardContent>
-                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>Allocated Engines</Typography>
-                                    <Typography sx={{ fontSize: '18px', fontWeight: 600 }}>{availableEngines.length}</Typography>
+                                    <Typography sx={{ fontSize: '12px', color: '#6B7280', mb: 0.5 }}>Allocated Engines</Typography>
+                                    <Typography sx={{ fontSize: '18px', fontWeight: 500 }}>{availableEngines.length}</Typography>
                                 </CardContent>
                             </Card>
-                            <Card elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                            <Card elevation={0} sx={{ border: '1px solid #E5E7EB' }}>
                                 <CardContent>
-                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>Total Credits Used</Typography>
-                                    <Typography sx={{ fontSize: '18px', fontWeight: 600 }}>{totalUsed.toLocaleString()}</Typography>
+                                    <Typography sx={{ fontSize: '12px', color: '#6B7280', mb: 0.5 }}>Total Credits Used</Typography>
+                                    <Typography sx={{ fontSize: '18px', fontWeight: 500 }}>{totalUsed.toLocaleString()}</Typography>
                                 </CardContent>
                             </Card>
-                            <Card elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                            <Card elevation={0} sx={{ border: '1px solid #E5E7EB' }}>
                                 <CardContent>
-                                    <Typography sx={{ fontSize: '12px', color: '#6b7280', mb: 0.5 }}>Next Bill Date</Typography>
-                                    <Typography sx={{ fontSize: '18px', fontWeight: 600 }}>
+                                    <Typography sx={{ fontSize: '12px', color: '#6B7280', mb: 0.5 }}>Next Bill Date</Typography>
+                                    <Typography sx={{ fontSize: '18px', fontWeight: 500 }}>
                                         {nextBilling.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                                     </Typography>
                                 </CardContent>
@@ -318,27 +320,27 @@ const BillingPage = () => {
                         {/* Per-engine breakdown with individual rates */}
                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: availableEngines.length === 1 ? '1fr' : '1fr 1fr' }, gap: 2, mt: 2 }}>
                             {perEngineEstimates.map((item) => (
-                                <Card key={item.engine} elevation={0} sx={{ border: '1px solid #e5e7eb' }}>
+                                <Card key={item.engine} elevation={0} sx={{ border: '1px solid #E5E7EB' }}>
                                     <CardContent>
-                                        <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#111827', mb: 1 }}>
+                                        <Typography sx={{ fontSize: '14px', fontWeight: 500, color: '#111827', mb: 1 }}>
                                             {item.engine === 'creation' ? 'Creation' : 'Transformation'} Engine
                                         </Typography>
                                         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
                                             <Box>
-                                                <Typography sx={{ fontSize: '11px', color: '#9ca3af' }}>Credits Used</Typography>
-                                                <Typography sx={{ fontSize: '16px', fontWeight: 600 }}>{item.used}</Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#9CA3AF' }}>Credits Used</Typography>
+                                                <Typography sx={{ fontSize: '16px', fontWeight: 500 }}>{item.used}</Typography>
                                             </Box>
                                             <Box>
-                                                <Typography sx={{ fontSize: '11px', color: '#9ca3af' }}>Rate / Credit</Typography>
-                                                <Typography sx={{ fontSize: '16px', fontWeight: 600 }}>${item.rate.toFixed(2)}</Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#9CA3AF' }}>Rate / Credit</Typography>
+                                                <Typography sx={{ fontSize: '16px', fontWeight: 500 }}>${item.rate.toFixed(2)}</Typography>
                                             </Box>
                                             <Box>
-                                                <Typography sx={{ fontSize: '11px', color: '#9ca3af' }}>Overage Rate (1.5×)</Typography>
-                                                <Typography sx={{ fontSize: '16px', fontWeight: 600 }}>${(item.rate * 1.5).toFixed(2)}</Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#9CA3AF' }}>Overage Rate (1.5×)</Typography>
+                                                <Typography sx={{ fontSize: '16px', fontWeight: 500 }}>${(item.rate * 1.5).toFixed(2)}</Typography>
                                             </Box>
                                             <Box>
-                                                <Typography sx={{ fontSize: '11px', color: '#9ca3af' }}>Estimated Cost</Typography>
-                                                <Typography sx={{ fontSize: '16px', fontWeight: 600, color: '#0369A1' }}>${item.estimatedCost.toFixed(2)}</Typography>
+                                                <Typography sx={{ fontSize: '11px', color: '#9CA3AF' }}>Estimated Cost</Typography>
+                                                <Typography sx={{ fontSize: '16px', fontWeight: 500, color: '#8B5CF6' }}>${item.estimatedCost.toFixed(2)}</Typography>
                                             </Box>
                                         </Box>
                                     </CardContent>
@@ -347,17 +349,17 @@ const BillingPage = () => {
                         </Box>
 
                         {/* Total estimated */}
-                        <Box sx={{ mt: 2, p: 2, bgcolor: '#f8f9fa', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography sx={{ fontSize: '14px', fontWeight: 500, color: '#374151' }}>
+                        <Box sx={{ mt: 2, p: 2, bgcolor: '#FFFFFF', borderRadius: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography sx={{ fontSize: '14px', fontWeight: 500, color: '#111827' }}>
                                 Total Estimated Amount
                             </Typography>
-                            <Typography sx={{ fontSize: '20px', fontWeight: 700, color: '#0369A1' }}>
+                            <Typography sx={{ fontSize: '20px', fontWeight: 600, color: '#8B5CF6' }}>
                                 ${totalEstimated.toFixed(2)}
                             </Typography>
                         </Box>
 
                         <Box sx={{ mt: 3 }}>
-                            <Typography sx={{ fontSize: '13px', color: '#6b7280' }}>
+                            <Typography sx={{ fontSize: '13px', color: '#6B7280' }}>
                                 Charges are calculated from actual usage and billed on the 1st of every month.
                                 Minimum commitment applies per engine threshold. Overage above threshold is billed at 1.5× the base rate.
                             </Typography>
@@ -377,7 +379,7 @@ const BillingPage = () => {
                                         color="secondary"
                                         onClick={handleSimulateMonthEnd}
                                         disabled={simulateLoading}
-                                        sx={{ textTransform: 'none', borderRadius: '10px', fontWeight: 600 }}
+                                        sx={{ textTransform: 'none', borderRadius: '10px', fontWeight: 500 }}
                                     >
                                         {simulateLoading ? 'Simulating...' : 'Simulate Month End (Admin)'}
                                     </Button>
@@ -386,24 +388,25 @@ const BillingPage = () => {
                                     variant="outlined"
                                     disabled={!hasPrevBill}
                                     onClick={handleDownloadPrevMonthBill}
-                                    sx={{ 
-                                        textTransform: 'none', 
-                                        borderRadius: '10px', 
-                                        fontWeight: 600,
-                                        borderColor: hasPrevBill ? '#0369A1' : '#e5e7eb',
-                                        color: hasPrevBill ? '#0369A1' : '#9ca3af'
+                                    sx={{
+                                        textTransform: 'none',
+                                        borderRadius: '18px',
+                                        fontWeight: 500,
+                                        borderColor: hasPrevBill ? '#8B5CF6' : '#E5E7EB',
+                                        color: hasPrevBill ? '#8B5CF6' : '#9CA3AF'
                                     }}
                                 >
                                     Download Previous Month Bill
                                 </Button>
                             </Box>
                             {!hasPrevBill && (
-                                <Typography sx={{ fontSize: '12px', color: '#6b7280', mt: 0.5 }}>
+                                <Typography sx={{ fontSize: '12px', color: '#6B7280', mt: 0.5 }}>
                                     The bill for the current period will be available on the 1st of next month.
                                 </Typography>
                             )}
                         </Box>
                     </Paper>
+                    </FadeIn>
                 </Container>
             </Box>
         );
@@ -426,7 +429,7 @@ const BillingPage = () => {
                 {/* Tester-only $1 checkout helper */}
                 {user.email === 'muhammadhamzafaisal146@gmail.com' && (
                     <Box sx={{ mb: 3 }}>
-                        <Alert severity="info" sx={{ mb: 2, borderRadius: '16px' }}>
+                        <Alert severity="info" sx={{ mb: 2, borderRadius: '18px' }}>
                             This section is visible only for the tester account to verify live Stripe payments with a $1 plan.
                         </Alert>
                         <Button
@@ -451,6 +454,7 @@ const BillingPage = () => {
                     </Box>
                 )}
 
+                <FadeIn>
                 <BillingOverview
                     user={user}
                     selectedEngine={selectedEngine}
@@ -459,6 +463,7 @@ const BillingPage = () => {
                     onManage={handleManageSubscription}
                     onCancel={() => setCancelModalOpen(true)}
                 />
+                </FadeIn>
 
                 <CancelSubscriptionModal
                     open={cancelModalOpen}
@@ -470,13 +475,13 @@ const BillingPage = () => {
 
                 {/* Engine Type Selector */}
                 {/* <Box sx={{ mb: 3 }}>
-                    <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#111827', mb: 1.5 }}>Select Engine Type</Typography>
+                    <Typography sx={{ fontSize: '14px', fontWeight: 500, color: '#111827', mb: 1.5 }}>Select Engine Type</Typography>
                     <ToggleButtonGroup value={selectedEngine} exclusive
                         onChange={(_, value) => value && setSelectedEngine(value)}
                         sx={{
                             '& .MuiToggleButton-root': {
                                 textTransform: 'none', fontWeight: 500, px: 3, py: 1,
-                                '&.Mui-selected': { bgcolor: 'rgba(3, 105, 161, 1)', color: 'white', '&:hover': { bgcolor: 'rgba(3, 105, 161, 0.9)' } },
+                                '&.Mui-selected': { bgcolor: 'rgba(139, 92, 246, 1)', color: 'white', '&:hover': { bgcolor: 'rgba(139, 92, 246, 0.9)' } },
                             },
                         }}
                     >
@@ -488,8 +493,8 @@ const BillingPage = () => {
                 {/* Upgrade Plans */}
                 {/* <Box sx={{ mb: 4 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-                        <TrendingUpIcon sx={{ fontSize: 28, color: 'rgba(3, 105, 161, 1)' }} />
-                        <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 600, color: '#111827' }}>Upgrade Your Plan</Typography>
+                        <TrendingUpIcon sx={{ fontSize: 28, color: 'rgba(139, 92, 246, 1)' }} />
+                        <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 500, color: '#111827' }}>Upgrade Your Plan</Typography>
                     </Box>
 
                     <Grid container spacing={3}>
@@ -498,13 +503,13 @@ const BillingPage = () => {
                                 <CircularProgress size={32} />
                             </Box>
                         ) : apiPlans.map((plan) => {
-                            const planColor = plan.name.toLowerCase() === 'scale' ? '#0369A1' :
-                                plan.name.toLowerCase() === 'growth' ? '#3b82f6' : '#10b981';
+                            const planColor = plan.name.toLowerCase() === 'scale' ? '#8B5CF6' :
+                                plan.name.toLowerCase() === 'growth' ? '#3b82f6' : '#10B981';
                             return (
                                 <Grid size={{ xs: 12, md: 4 }} key={plan.name}>
                                     <Card elevation={0} sx={{
                                         height: '100%', borderRadius: '16px',
-                                        border: (engineHasActivePlan && currentPlanRaw.toLowerCase() === plan.name.toLowerCase()) ? `2px solid ${planColor}` : '1px solid #e5e7eb',
+                                        border: (engineHasActivePlan && currentPlanRaw.toLowerCase() === plan.name.toLowerCase()) ? `2px solid ${planColor}` : '1px solid #E5E7EB',
                                         transition: 'all 0.2s ease', display: 'flex', flexDirection: 'column',
                                         '&:hover': { transform: 'translateY(-4px)', boxShadow: '0 8px 16px rgba(0,0,0,0.08)' },
                                     }}>
@@ -514,9 +519,9 @@ const BillingPage = () => {
                                                     Active plan detected. Cancel to switch.
                                                 </Alert>
                                             )}
-                                            <Typography sx={{ fontSize: '18px', fontWeight: 600, color: '#111827', mb: 1 }}>{plan.name}</Typography>
-                                            <Typography sx={{ fontSize: '32px', fontWeight: 700, color: '#111827', mb: 0.5 }}>${plan.price}</Typography>
-                                            <Typography sx={{ fontSize: '13px', color: '#6b7280', mb: 2 }}>{plan.volume}</Typography>
+                                            <Typography sx={{ fontSize: '18px', fontWeight: 500, color: '#111827', mb: 1 }}>{plan.name}</Typography>
+                                            <Typography sx={{ fontSize: '32px', fontWeight: 600, color: '#111827', mb: 0.5 }}>${plan.price}</Typography>
+                                            <Typography sx={{ fontSize: '13px', color: '#6B7280', mb: 2 }}>{plan.volume}</Typography>
                                             <Box sx={{ mt: 'auto' }}>
                                                 <Button fullWidth
                                                     variant={engineHasActivePlan && currentPlanRaw.toLowerCase() === plan.name.toLowerCase() ? 'outlined' : 'contained'}
@@ -524,7 +529,7 @@ const BillingPage = () => {
                                                     disabled={!!processingItem || (currentPlanRaw.toLowerCase() === plan.name.toLowerCase()) || (engineHasActivePlan && currentPlanRaw.toLowerCase() !== plan.name.toLowerCase())}
                                                     sx={{
                                                         textTransform: 'none', fontWeight: 500, py: 1.2, borderRadius: '10px',
-                                                        ...(engineHasActivePlan && currentPlanRaw.toLowerCase() === plan.name.toLowerCase() ? { borderColor: planColor, color: planColor } : { bgcolor: 'rgba(3, 105, 161, 1)', '&:hover': { bgcolor: 'rgba(3, 105, 161, 0.9)' } }),
+                                                        ...(engineHasActivePlan && currentPlanRaw.toLowerCase() === plan.name.toLowerCase() ? { borderColor: planColor, color: planColor } : { bgcolor: 'rgba(139, 92, 246, 1)', '&:hover': { bgcolor: 'rgba(139, 92, 246, 0.9)' } }),
                                                     }}
                                                 >
                                                     {currentPlanRaw.toLowerCase() === plan.name.toLowerCase()
@@ -541,25 +546,27 @@ const BillingPage = () => {
                 </Box> */}
 
                 {/* Buy Addon Credits */}
-                <Paper elevation={0} sx={{ p: 4, borderRadius: '24px', border: '1px solid #e5e7eb', bgcolor: 'white', boxShadow: '0 4px 20px -5px rgba(0,0,0,0.05)' }}>
+                <FadeIn delay={0.06}>
+                <Paper elevation={0} sx={{ p: 4, borderRadius: '18px', border: '1px solid #E5E7EB', bgcolor: '#FFFFFF', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-                        <ShoppingCartIcon sx={{ fontSize: 28, color: '#10b981' }} />
-                        <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 600, color: '#111827' }}>Buy Addon Credits</Typography>
+                        <ShoppingCartIcon sx={{ fontSize: 28, color: '#10B981' }} />
+                        <Typography variant="h5" sx={{ fontSize: '20px', fontWeight: 500, color: '#111827' }}>Buy Addon Credits</Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
                         <Box>
-                            <Typography sx={{ fontSize: '16px', fontWeight: 600, color: '#111827', mb: 0.5 }}>100 Additional Credits</Typography>
-                            <Typography sx={{ fontSize: '14px', color: '#6b7280' }}>One-time purchase • Never expires • $20</Typography>
+                            <Typography sx={{ fontSize: '16px', fontWeight: 500, color: '#111827', mb: 0.5 }}>100 Additional Credits</Typography>
+                            <Typography sx={{ fontSize: '14px', color: '#6B7280' }}>One-time purchase • Never expires • $20</Typography>
                         </Box>
                         <Button variant="contained"
                             startIcon={processingItem === 'ADDON_100' ? <CircularProgress size={16} color="inherit" /> : <ShoppingCartIcon />}
                             onClick={() => handleBuyAddon('ADDON_100')} disabled={!!processingItem}
-                            sx={{ bgcolor: '#10b981', textTransform: 'none', fontWeight: 500, px: 3, py: 1.2, borderRadius: '10px', '&:hover': { bgcolor: '#059669' } }}
+                            sx={{ bgcolor: '#10B981', color: '#FFFFFF', textTransform: 'none', fontWeight: 500, px: 3, py: 1.2, borderRadius: '18px', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)', '&:hover': { bgcolor: '#10B981', filter: 'brightness(0.9)', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)' } }}
                         >
                             {processingItem === 'ADDON_100' ? 'Processing...' : 'Buy Now'}
                         </Button>
                     </Box>
                 </Paper>
+                </FadeIn>
             </Container>
         </Box>
     );

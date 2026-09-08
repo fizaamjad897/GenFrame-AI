@@ -66,14 +66,14 @@ export default function ComplianceBadge({ reportId }: { reportId?: string }) {
                     size="small"
                     icon={<CircularProgress size={10} thickness={6} sx={{ color: "#6b7280", ml: "6px" }} />}
                     label="Analyzing"
-                    sx={{ bgcolor: "#f3f4f6", color: "#6b7280", fontSize: "10px", fontWeight: 700, height: 20 }}
+                    sx={{ bgcolor: "#f3f4f6", color: "#6b7280", fontSize: "10px", fontWeight: 600, height: 20 }}
                 />
             ) : isFailed || !style ? (
                 <Chip
                     size="small"
                     onClick={() => setModalOpen(true)}
                     label="Report unavailable"
-                    sx={{ bgcolor: "#f3f4f6", color: "#9ca3af", fontSize: "10px", fontWeight: 700, height: 20, cursor: "pointer" }}
+                    sx={{ bgcolor: "#f3f4f6", color: "#9ca3af", fontSize: "10px", fontWeight: 600, height: 20, cursor: "pointer" }}
                 />
             ) : (
                 <Chip
@@ -85,7 +85,7 @@ export default function ComplianceBadge({ reportId }: { reportId?: string }) {
                         bgcolor: style.bg,
                         color: style.color,
                         fontSize: "10px",
-                        fontWeight: 700,
+                        fontWeight: 600,
                         height: 20,
                         cursor: "pointer",
                         "& .MuiChip-icon": { color: style.color },

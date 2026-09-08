@@ -30,7 +30,7 @@ def test_create_api_key_success(monkeypatch):
     # Patch auth module generator (main calls auth_module.generate_api_key_for_user)
     monkeypatch.setattr(auth_module, "generate_api_key_for_user", fake_generate)
 
-    resp = client.post("/api/users/api-key")
+    resp = client.post("/api-v2/users/api-key")
     assert resp.status_code == 200
     data = resp.json()
     assert data["api_key"] == "raw_api_key_ABC"
@@ -44,7 +44,7 @@ def test_create_api_key_already_exists():
     user = {"_id": "user123", "apiKeyHash": "exists"}
     app.dependency_overrides[get_current_user] = lambda: user
 
-    resp = client.post("/api/users/api-key")
+    resp = client.post("/api-v2/users/api-key")
     assert resp.status_code == 400
     assert "API key already exists" in resp.json()["detail"]
 
@@ -57,7 +57,7 @@ def test_delete_api_key_success(monkeypatch):
 
     monkeypatch.setattr(auth_module, "delete_api_key", lambda uid: True)
 
-    resp = client.delete("/api/users/api-key")
+    resp = client.delete("/api-v2/users/api-key")
     assert resp.status_code == 200
     assert resp.json()["message"] == "API key deleted"
 
@@ -70,7 +70,7 @@ def test_delete_api_key_no_key(monkeypatch):
 
     monkeypatch.setattr(auth_module, "delete_api_key", lambda uid: False)
 
-    resp = client.delete("/api/users/api-key")
+    resp = client.delete("/api-v2/users/api-key")
     assert resp.status_code == 400
     assert "No API key to delete" in resp.json()["detail"]
 
@@ -95,12 +95,12 @@ def test_api_key_auth_flow(monkeypatch):
     monkeypatch.setattr(auth_module, "verify_api_key", fake_verify)
 
     # Valid key
-    resp = client.get("/api/users/me", headers={"X-API-KEY": "valid-key"})
+    resp = client.get("/api-v2/users/me", headers={"X-API-KEY": "valid-key"})
     assert resp.status_code == 200
     json_data = resp.json()
     assert json_data["email"] == "test@example.com"
 
     # Invalid key
-    resp = client.get("/api/users/me", headers={"X-API-KEY": "invalid-key"})
+    resp = client.get("/api-v2/users/me", headers={"X-API-KEY": "invalid-key"})
     assert resp.status_code == 401
     assert resp.json()["detail"] == "Invalid API key"

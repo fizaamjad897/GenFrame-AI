@@ -19,7 +19,7 @@ export default function ResetPasswordPage() {
     <Suspense 
       fallback={
         <Box sx={{ display: 'flex', minHeight: '100vh', justifyContent: 'center', alignItems: 'center' }}>
-          <CircularProgress sx={{ color: 'rgba(3, 105, 161, 1)' }} />
+          <CircularProgress sx={{ color: 'rgba(139, 92, 246, 1)' }} />
         </Box>
       }
     >

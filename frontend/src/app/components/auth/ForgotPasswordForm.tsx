@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { Box, Typography, TextField, Button } from '@mui/material';
 
 import { ActiveForm } from '../Auth';
 
@@ -12,6 +11,7 @@ export interface ForgotPasswordProps {
   handleChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   switchForm: React.Dispatch<React.SetStateAction<ActiveForm>>;
+  loading?: boolean;
 }
 
 const ForgotPasswordForm: React.FC<ForgotPasswordProps> = ({
@@ -19,100 +19,39 @@ const ForgotPasswordForm: React.FC<ForgotPasswordProps> = ({
   handleChange,
   handleSubmit,
   switchForm,
+  loading,
 }) => {
   return (
-    <Box
-      sx={{
-        width: '100%',
-        maxWidth: 400,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-      }}
-    >
-      <Typography
-        gutterBottom
-        sx={{
-          fontWeight: 600,
-          fontSize: 30,
-          lineHeight: '38px',
-          textAlign: 'center',
-        }}
-      >
-        Forgot Password?
-      </Typography>
+    <div style={{ width: '100%' }}>
+      <h1 className="auth-title">Forgot password?</h1>
+      <p className="auth-subtitle">Enter your email to reset your password</p>
 
-      <Typography
-        gutterBottom
-        sx={{
-          fontWeight: 500,
-          fontSize: 16,
-          lineHeight: '24px',
-          textAlign: 'center',
-          mb: 2,
-        }}
-      >
-        Enter your email to reset your password
-      </Typography>
-
-      <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
-        {/* Email */}
-        <Box sx={{ width: '100%', mb: 2 }}>
-          <Typography
-            component="label"
-            htmlFor="email"
-            sx={{
-              fontFamily: 'Raleway',
-              fontWeight: 500,
-              fontSize: 14,
-              lineHeight: '20px',
-              color: 'rgba(69,69,69,1)',
-              mb: 0.5,
-              display: 'block',
-            }}
-          >
-            Email
-          </Typography>
-          <TextField
+      <form onSubmit={handleSubmit}>
+        <div className="auth-field">
+          <label className="auth-label" htmlFor="email">email</label>
+          <input
             id="email"
-            fullWidth
+            className="auth-input"
             name="email"
             type="email"
-            placeholder="Enter email"
-            variant="outlined"
+            placeholder="you@company.com"
             value={formData.email}
             onChange={handleChange}
             required
-            sx={{ '& .MuiOutlinedInput-root': { height: 48 } }}
           />
-        </Box>
+        </div>
 
-        {/* Submit */}
-        <Button
-          type="submit"
-          fullWidth
-          variant="contained"
-          sx={{
-            mt: 3,
-            mb: 2,
-            backgroundColor: '#0369A1',
-            borderRadius: 2,
-          }}
-        >
-          Continue
-        </Button>
+        <div style={{ marginTop: 8 }}>
+          <button type="submit" className="auth-submit" disabled={loading}>
+            {loading ? 'sending…' : 'continue'}
+          </button>
+        </div>
 
-        {/* Back to Login */}
-        <Typography
-          variant="body2"
-          align="center"
-          sx={{ cursor: 'pointer', color: '#0369A1' }}
-          onClick={() => switchForm('login')}
-        >
-          Back to Login
-        </Typography>
-      </Box>
-    </Box>
+        <p className="auth-foot">
+          <span className="auth-link" onClick={() => switchForm('login')}>back to sign in</span>
+        </p>
+      </form>
+    </div>
   );
 };
 
